@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>IndustrialIoT.Protocols.NCLinkApi</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IndustrialIoT.Protocols\IndustrialIoT.Protocols.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Domain\IndustrialIoT.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

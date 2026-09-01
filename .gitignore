@@ -1,0 +1,65 @@
+# ---- .NET build output ----
+bin/
+obj/
+[Bb]uild/
+[Ll]og/
+[Ll]ogs/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+*.nupkg
+*.snupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# ---- Visual Studio / Rider / VS Code ----
+.vs/
+.idea/
+*.rsuser
+*.sln.iml
+
+# ---- Frontend ----
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# ---- Env / secrets (keep templates if added later) ----
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# ---- Logs & runtime ----
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Host scratch / vendor extract ----
+tmp/
+reverse-engineering/
+hncsdk_*/
+nclink-api-server-*/
+host-check/
+upx/
+
+# ---- Archives & crash dumps ----
+*.rar
+*.stackdump
+*.tmp
+*.temp
+
+# ---- OS ----
+Thumbs.db
+Desktop.ini
+.DS_Store

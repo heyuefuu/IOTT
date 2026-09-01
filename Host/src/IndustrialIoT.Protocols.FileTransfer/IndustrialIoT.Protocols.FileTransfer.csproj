@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\IndustrialIoT.Protocols\IndustrialIoT.Protocols.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Domain\IndustrialIoT.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentFTP" Version="54.0.2" />
+    <PackageReference Include="HslCommunication" Version="12.6.4" />
+    <PackageReference Include="SMBLibrary" Version="1.5.6.2" />
+    <PackageReference Include="System.IO.Ports" Version="8.0.*" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

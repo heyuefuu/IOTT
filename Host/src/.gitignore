@@ -1,0 +1,18 @@
+# ---- .NET build output ----
+bin/
+obj/
+
+# ---- Scratch / temp artifacts ----
+# test outputs, build logs, NC programs, captures, dumps, packed exes
+tmp/
+
+# ---- Reverse engineering & extracted vendor SDKs ----
+reverse-engineering/
+hncsdk_*/
+nclink-api-server-*/
+host-check/
+upx/
+
+# ---- Logs & crash dumps ----
+*.log
+*.stackdump

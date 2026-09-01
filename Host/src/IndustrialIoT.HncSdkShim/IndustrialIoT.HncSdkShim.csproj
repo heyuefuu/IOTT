@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x86</PlatformTarget>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\IndustrialIoT.Protocols.HncSdk\IndustrialIoT.Protocols.HncSdk.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="native\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
+    <None Include="..\hncsdk_V1.32.00_正式版\hncsdk_V1.32.00_正式版\Demo无适配器版\lib\C#\HncNetDllNoAdapterCSharp.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>HncNetDllNoAdapterCSharp.dll</Link>
+    </None>
+    <None Include="..\hncsdk_V1.32.00_正式版\hncsdk_V1.32.00_正式版\Demo无适配器版\lib\C#\HncNetDllNoAdapterDll.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>HncNetDllNoAdapterDll.dll</Link>
+    </None>
+    <None Include="..\hncsdk_V1.32.00_正式版\hncsdk_V1.32.00_正式版\Demo无适配器版\lib\C#\HncNetDllNoAdatper.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>HncNetDllNoAdatper.dll</Link>
+    </None>
+    <None Include="..\hncsdk_V1.32.00_正式版\hncsdk_V1.32.00_正式版\Demo无适配器版\lib\C#\Thrift.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Thrift.dll</Link>
+    </None>
+    <None Include="..\hncsdk_V1.32.00_正式版\hncsdk_V1.32.00_正式版\Demo无适配器版\lib\C#\ftp.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>ftp.dll</Link>
+    </None>
+  </ItemGroup>
+</Project>

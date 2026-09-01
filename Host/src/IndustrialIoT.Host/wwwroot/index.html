@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Industrial IoT Test Console</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div>
+        <h1>Industrial IoT Test Console</h1>
+        <p>设备联调、自测与接口验证页面</p>
+      </div>
+      <div class="header-actions">
+        <button id="reload-devices-btn" type="button">刷新设备</button>
+        <a href="/swagger" target="_blank" rel="noreferrer">打开 Swagger</a>
+      </div>
+    </header>
+
+    <main class="layout-grid">
+      <aside class="panel sidebar">
+        <div class="panel-header"><h2>设备列表</h2><span id="device-count" class="muted">0 台</span></div>
+        <div id="device-list" class="device-list"></div>
+      </aside>
+
+      <section class="content-column">
+        <section class="panel">
+          <div class="panel-header"><h2>当前设备</h2><span id="selected-device-badge" class="badge">未选择</span></div>
+          <div id="device-detail" class="device-detail empty-state">请选择左侧设备。</div>
+          <div class="inline-actions"><button id="test-connection-btn" type="button" disabled>测试连接</button></div>
+          <div id="connection-result" class="result-box empty-state">尚未执行连接测试。</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>地址空间浏览</h2>
+            <div class="inline-actions tight">
+              <button id="browse-root-btn" type="button" disabled>浏览根节点</button>
+              <button id="export-csv-btn" type="button" disabled>导出 CSV</button>
+              <button id="export-json-btn" type="button" disabled>导出 JSON</button>
+              <button id="clear-browse-btn" type="button" disabled>清空</button>
+            </div>
+          </div>
+          <div id="browse-path" class="muted">当前路径：/</div>
+          <div id="browse-result" class="tree-list empty-state">未开始浏览。</div>
+          <details class="raw-box"><summary>Raw JSON</summary><pre id="browse-raw">[]</pre></details>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header"><h2>点位读取</h2></div>
+          <div class="grid-form two-columns">
+            <label><span>Address 列表</span><textarea id="read-tags-input" rows="6" placeholder="一行一个，格式：address,dataType&#10;例如：D100,Int16"></textarea></label>
+            <label><span>说明</span><div class="help-box">一行一条。dataType 使用枚举名。点击浏览结果中的变量节点可自动填充。</div></label>
+          </div>
+          <div class="inline-actions"><button id="read-tags-btn" type="button" disabled>读取点位</button></div>
+          <div id="read-result" class="result-box empty-state">尚未读取。</div>
+          <details class="raw-box"><summary>Raw JSON</summary><pre id="read-raw">{}</pre></details>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header"><h2>点位写入</h2></div>
+          <div class="grid-form two-columns">
+            <label><span>写入列表</span><textarea id="write-tags-input" rows="6" placeholder="一行一个，格式：address,dataType,value&#10;例如：D100,Int16,123"></textarea></label>
+            <label><span>支持类型</span><div class="help-box">Bool / Int16 / Int32 / Int64 / UInt16 / UInt32 / Float / Double / String / ByteArray。ByteArray 可写成 `01 0A FF`、`0x01,0x0A,0xFF` 或 `[1,10,255]`。</div></label>
+          </div>
+          <div class="inline-actions"><button id="write-tags-btn" type="button" disabled>写入点位</button></div>
+          <div id="write-result" class="result-box empty-state">尚未写入。</div>
+          <details class="raw-box"><summary>Raw JSON</summary><pre id="write-raw">{}</pre></details>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header"><h2>采集控制</h2><span class="muted">active tasks only</span></div>
+          <div class="grid-form two-columns">
+            <label><span>可用 Profile</span><select id="collection-profile-select" disabled><option value="">请选择设备</option></select></label>
+            <label><span>当前 Profile 详情</span><div id="profile-summary" class="help-box">未加载。</div></label>
+          </div>
+          <div class="inline-actions">
+            <button id="refresh-profiles-btn" type="button" disabled>刷新 Profile</button>
+            <button id="start-collection-btn" type="button" disabled>启动采集</button>
+            <button id="refresh-status-btn" type="button">刷新状态</button>
+          </div>
+          <div id="collection-result" class="result-box empty-state">尚未执行采集操作。</div>
+          <div id="collection-status" class="result-box empty-state">暂无活跃任务。</div>
+          <details class="raw-box"><summary>Raw JSON</summary><pre id="collection-raw">{}</pre></details>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header"><h2>批量导入点位</h2></div>
+          <div class="grid-form two-columns">
+            <label><span>导入文件</span><input id="import-tags-file" type="file" accept=".csv,.json" /></label>
+            <label><span>模板说明</span><div class="help-box">CSV 需要列：Address, DataType, GroupName, IntervalMs。可选：DisplayName, Unit。</div></label>
+          </div>
+          <div class="inline-actions"><button id="import-tags-btn" type="button" disabled>导入点位</button></div>
+          <div id="import-result" class="result-box empty-state">尚未导入。</div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

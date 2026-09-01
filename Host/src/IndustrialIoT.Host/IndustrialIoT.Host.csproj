@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="HslCommunication" Version="12.6.4" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.22" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.7" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IndustrialIoT.Application\IndustrialIoT.Application.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Infrastructure\IndustrialIoT.Infrastructure.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols\IndustrialIoT.Protocols.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Simulator\IndustrialIoT.Simulator.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.Modbus\IndustrialIoT.Protocols.Modbus.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.FINS\IndustrialIoT.Protocols.FINS.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.Mewtocol\IndustrialIoT.Protocols.Mewtocol.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.NCLink\IndustrialIoT.Protocols.NCLink.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.NCLinkApi\IndustrialIoT.Protocols.NCLinkApi.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.FANUC\IndustrialIoT.Protocols.FANUC.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.FileTransfer\IndustrialIoT.Protocols.FileTransfer.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.MTConnect\IndustrialIoT.Protocols.MTConnect.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.Haas\IndustrialIoT.Protocols.Haas.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.HuazhongRobot\IndustrialIoT.Protocols.HuazhongRobot.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.EstunRobot\IndustrialIoT.Protocols.EstunRobot.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.HncSdk\IndustrialIoT.Protocols.HncSdk.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.JingDiao\IndustrialIoT.Protocols.JingDiao.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.Gsk\IndustrialIoT.Protocols.Gsk.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.SiemensS7\IndustrialIoT.Protocols.SiemensS7.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Domain\IndustrialIoT.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

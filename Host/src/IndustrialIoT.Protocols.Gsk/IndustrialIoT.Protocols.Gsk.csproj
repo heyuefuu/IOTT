@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\IndustrialIoT.Protocols\IndustrialIoT.Protocols.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Domain\IndustrialIoT.Domain.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- 广数 GSK RM SDK native DLL — copy to output.
+       Drop an x64 `gskrm.dll` (and its dependencies, if any) into native\ before running.
+       If only an x86 dll is available, build the host with <PlatformTarget>x86</PlatformTarget>
+       or front the driver with an out-of-process x86 shim. -->
+  <ItemGroup>
+    <None Include="native\*.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>%(Filename)%(Extension)</Link>
+    </None>
+  </ItemGroup>
+
+</Project>

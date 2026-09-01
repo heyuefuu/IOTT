@@ -1,0 +1,166 @@
+/* 全局样式重置 */
+:root {
+  /* 主色调 */
+  --el-color-primary: #409eff;
+  --el-color-primary-light-3: #79bbff;
+  --el-color-primary-light-5: #a0cfff;
+  --el-color-primary-light-7: #c6e2ff;
+  --el-color-primary-light-8: #d9ecff;
+  --el-color-primary-light-9: #ecf5ff;
+
+  /* 成功色 */
+  --el-color-success: #67c23a;
+
+  /* 警告色 */
+  --el-color-warning: #e6a23c;
+
+  /* 危险色 */
+  --el-color-danger: #f56c6c;
+
+  /* 信息色 */
+  --el-color-info: #909399;
+
+  /* 字体大小 */
+  --el-font-size-extra-large: 20px;
+  --el-font-size-large: 18px;
+  --el-font-size-medium: 16px;
+  --el-font-size-base: 14px;
+  --el-font-size-small: 13px;
+  --el-font-size-extra-small: 12px;
+
+  /* 边框 */
+  --el-border-radius-base: 4px;
+  --el-border-radius-small: 2px;
+  --el-border-radius-round: 20px;
+  --el-border-radius-circle: 100%;
+
+  /* 设备状态颜色 */
+  --status-running: #67c23a;
+  --status-standby: #409eff;
+  --status-alarm: #e6a23c;
+  --status-offline: #f56c6c;
+
+  /* 间距 */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+}
+
+/* 暗黑模式定制 */
+:global(.dark) {
+  --el-color-primary: #409eff;
+  --el-bg-color: #1a1a1a;
+  --el-bg-color-page: #1a1a1a;
+  --el-bg-color-overlay: #2d2d2d;
+  --el-text-color-primary: #ffffff;
+  --el-text-color-regular: #e0e0e0;
+  --el-text-color-secondary: #a0a0a0;
+  --el-text-color-placeholder: #666666;
+  --el-border-color: #404040;
+  --el-border-color-light: #4d4d4d;
+}
+
+/* 全局重置 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: var(--el-font-size-base);
+  line-height: 1.5;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* 通用工具类 */
+.text-primary {
+  color: var(--el-color-primary);
+}
+
+.text-success {
+  color: var(--el-color-success);
+}
+
+.text-warning {
+  color: var(--el-color-warning);
+}
+
+.text-danger {
+  color: var(--el-color-danger);
+}
+
+.text-info {
+  color: var(--el-color-info);
+}
+
+/* 页面容器样式 */
+.page-content {
+  height: 100%;
+  padding: var(--spacing-md);
+  overflow: hidden;
+}
+
+/* 设备卡片样式 */
+.device-card {
+  border-radius: var(--el-border-radius-base);
+  transition: all 0.3s ease;
+}
+
+.device-card:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  transform: translateY(-2px);
+}
+
+.device-card.offline {
+  opacity: 0.7;
+  filter: grayscale(30%);
+}
+
+/* 响应式布局 */
+@media (max-width: 768px) {
+  .page-content {
+    padding: var(--spacing-sm);
+  }
+
+  .device-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--el-bg-color-overlay);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--el-border-color);
+  border-radius: var(--el-border-radius-small);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--el-color-info);
+}
+
+/* 暗黑模式滚动条 */
+:global(.dark) ::-webkit-scrollbar-track {
+  background: var(--el-bg-color);
+}
+
+:global(.dark) ::-webkit-scrollbar-thumb {
+  background: var(--el-border-color);
+}
+
+:global(.dark) ::-webkit-scrollbar-thumb:hover {
+  background: var(--el-text-color-secondary);
+}
