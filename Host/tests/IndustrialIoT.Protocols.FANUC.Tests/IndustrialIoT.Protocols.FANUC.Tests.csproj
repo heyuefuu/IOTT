@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\IndustrialIoT.Protocols.FANUC\IndustrialIoT.Protocols.FANUC.csproj" />
+  </ItemGroup>
+
+  <!-- Microsoft.Extensions.Logging.Abstractions comes in transitively via IndustrialIoT.Protocols -->
+
+</Project>

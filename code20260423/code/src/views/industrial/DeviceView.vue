@@ -528,7 +528,7 @@
                         <el-table-column label="采集频率" width="130" fixed="right">
                             <template #default="{ row }">
                                 <div class="freq-input">
-                                    <el-input v-model="row.frequency" size="small" placeholder="500" />
+                                    <el-input v-model="row.frequency" size="small" placeholder="1000" />
                                     <span class="freq-unit">ms</span>
                                 </div>
                             </template>
@@ -664,11 +664,12 @@
         </el-dialog>
         <el-dialog v-model="collectionDialogVisible" :title="`采集数据 - ${collectionDialogDeviceName || '未选择设备'}`" width="980px">
             <el-table :data="collectionRows" border size="small" height="420">
-                <el-table-column prop="displayName" label="显示名称" min-width="180" />
-                <el-table-column prop="path" label="路径" min-width="260" />
-                <el-table-column prop="dataType" label="数据类型" width="120" />
-                <el-table-column prop="value" label="值" min-width="140" />
-                <el-table-column prop="status" label="状态" width="100" />
+                <el-table-column prop="displayName" label="显示名称" min-width="150" />
+                <el-table-column prop="path" label="路径" min-width="220" />
+                <el-table-column prop="dataType" label="数据类型" width="110" />
+                <el-table-column prop="value" label="值" min-width="120" />
+                <el-table-column prop="status" label="状态" width="80" />
+                <el-table-column prop="errorMessage" label="错误信息" min-width="200" show-overflow-tooltip />
                 <el-table-column prop="time" label="采集时间" width="180" />
             </el-table>
             <template #footer>
@@ -1352,13 +1353,14 @@ type CollectionRow = {
     value: string;
     status: string;
     time: string;
+    /** 后端返回的原始错误信息（FOCAS 等协议的返回码在这里），失败时用于定位 */
+    errorMessage: string;
 };
 
 type CollectionHistoryMode = "day" | "week" | "month" | "custom";
 type DateStringRange = [string, string];
 type CollectionHistoryRow = CollectionRow & {
     quality: string;
-    errorMessage: string;
 };
 
 const pointTreeData = ref<PointTreeNode[]>([
@@ -1378,6 +1380,12 @@ const pointTableFlattenLoading = ref(false);
 /** 单棵子树内最多铺平的变量行数，防止根目录全量扫爆 */
 const POINT_FLATTEN_MAX_VARIABLES = 5000;
 const POINT_FLATTEN_MAX_FOLDER_STEPS = 2000;
+/**
+ * 未显式配置采集频率时的默认值（ms）。
+ * 一批点位在设备侧是串行往返，FOCAS 单 handle 下一批 40~60 个点可达 1~2s；
+ * 500ms 作为默认值对多数机床偏激进，改为 1s。已显式配置的频率仍按配置执行。
+ */
+const DEFAULT_COLLECTION_FREQUENCY_MS = 1000;
 const savedCollectionPointsByDevice = ref<Record<string, SavedCollectionPoint[]>>({});
 const collectionDeviceId = ref("");
 const pointDialogDeviceProtocol = ref("");
@@ -1803,7 +1811,9 @@ const handleSavePointConfig = async () => {
                 name: row.displayName,
                 path: row.path,
                 datatype: normalizeDataType(row.type || row.dataType),
-                collectionFrequency: Number(String(row.frequency ?? "").trim() || 500),
+                collectionFrequency: Number(
+                    String(row.frequency ?? "").trim() || DEFAULT_COLLECTION_FREQUENCY_MS,
+                ),
                 protocol: normalizeDatacollectionProtocol(pointDialogDeviceProtocol.value),
             })),
             visiblePaths,
@@ -1813,7 +1823,9 @@ const handleSavePointConfig = async () => {
             dataType: row.type,
             displayName: row.displayName,
             path: row.path,
-            collectionFrequency: Number(String(row.frequency ?? "").trim() || 500),
+            collectionFrequency: Number(
+                String(row.frequency ?? "").trim() || DEFAULT_COLLECTION_FREQUENCY_MS,
+            ),
         }));
         // 与当前列表勾选保持一致：先移除当前可见路径，再写入当前勾选路径
         const nextPaths = new Set(savedPathsInDb.value);
@@ -4207,6 +4219,9 @@ async function runCollectionBatch(deviceId: string, points: SavedCollectionPoint
             dataType: p.dataType,
             value: hasError ? "-" : stringifyTagValue(r?.value),
             status: hasError ? "失败" : "成功",
+            errorMessage: !hasError
+                ? "-"
+                : (r?.errorMessage?.trim() || "响应中缺少该点位"),
             time: now,
         };
     });
@@ -4260,7 +4275,9 @@ const runCollection = async (deviceIdFromCard?: string) => {
             dataType: mapDbDatatypeToReadType(r.datatype),
             displayName: r.name,
             path: r.path,
-            collectionFrequency: Number(r.collectionFrequency || 500),
+            collectionFrequency: Number(
+                r.collectionFrequency || DEFAULT_COLLECTION_FREQUENCY_MS,
+            ),
         }));
         savedCollectionPointsByDevice.value[deviceId] = points;
     } catch (e: unknown) {
@@ -4279,8 +4296,9 @@ const runCollection = async (deviceIdFromCard?: string) => {
         collectionRows.value = [];
         const groups = new Map<number, SavedCollectionPoint[]>();
         for (const p of points) {
-            const freq = Number(p.collectionFrequency || 500);
-            const key = Number.isFinite(freq) && freq > 0 ? freq : 500;
+            const freq = Number(p.collectionFrequency || DEFAULT_COLLECTION_FREQUENCY_MS);
+            const key =
+                Number.isFinite(freq) && freq > 0 ? freq : DEFAULT_COLLECTION_FREQUENCY_MS;
             if (!groups.has(key)) groups.set(key, []);
             groups.get(key)!.push(p);
         }
@@ -4288,10 +4306,20 @@ const runCollection = async (deviceIdFromCard?: string) => {
         // 先执行一轮立即采集，再按各自频率定时采集
         for (const [freq, groupPoints] of groups.entries()) {
             await runCollectionBatch(deviceId, groupPoints);
+
+            // 上一轮没回来就跳过这一拍：一批点位在设备侧是串行往返（FOCAS 单 handle 更是如此），
+            // 裸 setInterval 会让请求无上限堆积，延迟越滚越大，最后表现为「偶尔才采到」。
+            let inFlight = false;
             const timerId = window.setInterval(() => {
-                void runCollectionBatch(deviceId, groupPoints).catch((e: unknown) => {
-                    console.error(e);
-                });
+                if (inFlight) return;
+                inFlight = true;
+                void runCollectionBatch(deviceId, groupPoints)
+                    .catch((e: unknown) => {
+                        console.error(e);
+                    })
+                    .finally(() => {
+                        inFlight = false;
+                    });
             }, freq);
             if (!collectionTimerIdsByDevice.value[deviceId]) {
                 collectionTimerIdsByDevice.value[deviceId] = [];

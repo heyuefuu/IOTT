@@ -22,6 +22,16 @@ internal sealed partial class FocasAddressMapper
     private const int PmcRI = 5; // Robot Input
     private const int PmcRO = 6; // Robot Output
 
+    /// <summary>
+    /// Per-batch memo of every FOCAS round trip, so one <see cref="ReadBatch"/> touches the
+    /// controller once per underlying API call instead of once per requested tag.
+    /// <para>
+    /// FANUC embedded Ethernet answers a single request in tens of milliseconds and the driver
+    /// serializes all calls on one handle, so an uncached 50-tag batch used to cost 20-30 round
+    /// trips (1-2s) and would pile up behind the next poll. Everything reachable from
+    /// <see cref="ReadCore"/> must go through a Get*/Read* helper that consults this cache.
+    /// </para>
+    /// </summary>
     private sealed class BatchReadCache
     {
         public double[]? ActPositions { get; set; }
@@ -32,6 +42,15 @@ internal sealed partial class FocasAddressMapper
         public Dictionary<int, byte[]> PmcBytes { get; } = [];
         public string? ProgramBlock { get; set; }
         public (int StatusCode, string Message)? AlarmStatusInfo { get; set; }
+
+        /// <summary>Scalar reads keyed by API name (spindle speed, feed rate, tool id, ...).</summary>
+        public Dictionary<string, object> Scalars { get; } = [];
+
+        /// <summary>CNC parameters keyed by parameter number.</summary>
+        public Dictionary<int, int> Parameters { get; } = [];
+
+        /// <summary>Macro variables keyed by variable number.</summary>
+        public Dictionary<int, double> MacroVariables { get; } = [];
     }
 
     internal FocasAddressMapper(IFocasApi api) => _api = api;
@@ -151,8 +170,7 @@ internal sealed partial class FocasAddressMapper
         // /CNC/Status/Running
         if (path.Equals("/cnc/status/running", StringComparison.OrdinalIgnoreCase))
         {
-            int rc = _api.ReadRunStatus(_handle, out int status);
-            ThrowIfError(rc, "ReadRunStatus");
+            int status = GetIntScalar("ReadRunStatus", cache, _api.ReadRunStatus);
             return (status != 0, DataType.Bool);
         }
 
@@ -165,11 +183,7 @@ internal sealed partial class FocasAddressMapper
 
         // /CNC/Spindle/Speed
         if (path.Equals("/cnc/spindle/speed", StringComparison.OrdinalIgnoreCase))
-        {
-            int rc = _api.ReadSpindleSpeed(_handle, out int speed);
-            ThrowIfError(rc, "ReadSpindleSpeed");
-            return (speed, DataType.Int32);
-        }
+            return (GetIntScalar("ReadSpindleSpeed", cache, _api.ReadSpindleSpeed), DataType.Int32);
 
         // /CNC/Alarm/Active
         if (path.Equals("/cnc/alarm/active", StringComparison.OrdinalIgnoreCase))
@@ -228,8 +242,12 @@ internal sealed partial class FocasAddressMapper
 
         if (path.Equals("/cnc/feed/actual", StringComparison.OrdinalIgnoreCase))
         {
-            int rc = _api.ReadActualFeedRate(_handle, out var feedRate);
-            ThrowIfError(rc, "ReadActualFeedRate");
+            var feedRate = GetScalar("ReadActualFeedRate", cache, () =>
+            {
+                int rc = _api.ReadActualFeedRate(_handle, out var value);
+                ThrowIfError(rc, "ReadActualFeedRate");
+                return value;
+            });
             return (feedRate, DataType.Double);
         }
 
@@ -237,8 +255,12 @@ internal sealed partial class FocasAddressMapper
         {
             if (!_api.SupportsModalReads)
                 throw new NotSupportedException("FOCAS commanded feed read is not supported on this controller.");
-            int rc = _api.ReadCommandedFeedRate(_handle, out var feedRate);
-            ThrowIfError(rc, "ReadCommandedFeedRate");
+            var feedRate = GetScalar("ReadCommandedFeedRate", cache, () =>
+            {
+                int rc = _api.ReadCommandedFeedRate(_handle, out var value);
+                ThrowIfError(rc, "ReadCommandedFeedRate");
+                return value;
+            });
             return (feedRate, DataType.Double);
         }
 
@@ -246,9 +268,7 @@ internal sealed partial class FocasAddressMapper
         {
             if (!_api.SupportsModalReads)
                 throw new NotSupportedException("FOCAS tool id read is not supported on this controller.");
-            int rc = _api.ReadToolId(_handle, out var toolId);
-            ThrowIfError(rc, "ReadToolId");
-            return (toolId, DataType.Int32);
+            return (GetIntScalar("ReadToolId", cache, _api.ReadToolId), DataType.Int32);
         }
 
         // /CNC/PMC/DI[n], /CNC/PMC/DO[n], /CNC/PMC/RI[n], /CNC/PMC/RO[n]
@@ -307,11 +327,65 @@ internal sealed partial class FocasAddressMapper
         if (cache?.ActPositions is { } positions)
             return positions;
 
+        // Both ReadActPos and ReadAxisPositions resolve to a single cnc_rdposition; deriving the
+        // absolute-only view from the richer one keeps /CNC/Axis/* and /CNC/Fanuc/Axis/* in the
+        // same batch down to one round trip instead of two.
+        if (cache is not null)
+        {
+            positions = GetAxisPositions(cache).Select(position => position.Absolute).ToArray();
+            cache.ActPositions = positions;
+            return positions;
+        }
+
         int rc = _api.ReadActPos(_handle, out positions);
         ThrowIfError(rc, "ReadActPos");
-        if (cache is not null)
-            cache.ActPositions = positions;
         return positions;
+    }
+
+    /// <summary>Runs <paramref name="read"/> at most once per batch, keyed by <paramref name="apiName"/>.</summary>
+    private T GetScalar<T>(string apiName, BatchReadCache? cache, Func<T> read)
+    {
+        if (cache is null)
+            return read();
+
+        if (cache.Scalars.TryGetValue(apiName, out var cached))
+            return (T)cached;
+
+        var value = read();
+        cache.Scalars[apiName] = value!;
+        return value;
+    }
+
+    private int GetIntScalar(string apiName, BatchReadCache? cache, FanucIntReader reader)
+        => GetScalar(apiName, cache, () =>
+        {
+            int rc = reader(_handle, out var value);
+            ThrowIfError(rc, apiName);
+            return value;
+        });
+
+    private int GetParameter(int number, BatchReadCache? cache)
+    {
+        if (cache is not null && cache.Parameters.TryGetValue(number, out var cached))
+            return cached;
+
+        int rc = _api.ReadParameter(_handle, number, out var value);
+        ThrowIfError(rc, "ReadParameter");
+        if (cache is not null)
+            cache.Parameters[number] = value;
+        return value;
+    }
+
+    private double GetMacroVariable(int number, BatchReadCache? cache)
+    {
+        if (cache is not null && cache.MacroVariables.TryGetValue(number, out var cached))
+            return cached;
+
+        int rc = _api.ReadMacroVariable(_handle, number, out var value);
+        ThrowIfError(rc, "ReadMacroVariable");
+        if (cache is not null)
+            cache.MacroVariables[number] = value;
+        return value;
     }
 
     private FocasSystemInfo GetSystemInfo(BatchReadCache? cache)
@@ -417,19 +491,21 @@ internal sealed partial class FocasAddressMapper
             "/cnc/fanuc/status/alarm" => ReadFanucStatusValue(status => status.Alarm, cache),
             "/cnc/fanuc/status/automodecode" => ReadFanucStatusValue(status => status.Auto, cache),
             "/cnc/fanuc/status/automodename" => ReadFanucStatusString(status => MapFanucAutoMode(status.Auto), cache),
-            "/cnc/fanuc/feed/actual" => ReadFanucInt(_api.ReadActualFeed, "ReadActualFeed"),
-            "/cnc/fanuc/feed/override" => ReadFanucInt(_api.ReadFeedOverride, "ReadFeedOverride"),
+            "/cnc/fanuc/feed/actual" => ReadFanucInt(_api.ReadActualFeed, "ReadActualFeed", cache),
+            "/cnc/fanuc/feed/override" => ReadFanucInt(_api.ReadFeedOverride, "ReadFeedOverride", cache),
             "/cnc/fanuc/program/mainnumber" => ReadFanucProgramValue(program => program.MainNumber, cache),
             "/cnc/fanuc/program/subnumber" => ReadFanucProgramValue(program => program.RunningNumber, cache),
             "/cnc/fanuc/program/name" => ReadFanucProgramString(program => program.Name, cache),
-            "/cnc/fanuc/tool/maxgroup" => ReadFanucInt(_api.ReadMaxToolGroup, "ReadMaxToolGroup"),
-            "/cnc/fanuc/production/partcountcurrent" => ReadFanucPartCountCurrent(),
-            "/cnc/fanuc/production/partcounttotal" => ReadFanucParameter(6712),
-            "/cnc/fanuc/time/cuttingseconds" => ReadFanucDuration(6753, 6754),
-            "/cnc/fanuc/time/workingseconds" => ReadFanucDuration(6751, 6752),
-            "/cnc/fanuc/time/poweronseconds" => ReadFanucPowerOnSeconds(),
-            "/cnc/fanuc/alarm/status" => ReadFanucAlarmValue(alarm => alarm.StatusCode),
-            "/cnc/fanuc/alarm/message" => ReadFanucAlarmString(alarm => alarm.Message),
+            "/cnc/fanuc/tool/maxgroup" => ReadFanucInt(_api.ReadMaxToolGroup, "ReadMaxToolGroup", cache),
+            "/cnc/fanuc/production/partcountcurrent" => ReadFanucPartCountCurrent(cache),
+            "/cnc/fanuc/production/partcounttotal" => ReadFanucParameter(6712, cache),
+            "/cnc/fanuc/time/cuttingseconds" => ReadFanucDuration(6753, 6754, cache),
+            "/cnc/fanuc/time/workingseconds" => ReadFanucDuration(6751, 6752, cache),
+            "/cnc/fanuc/time/poweronseconds" => ReadFanucPowerOnSeconds(cache),
+            // Shares GetAlarmStatusInfo with /CNC/Alarm/* — one cnc_alarm2 per batch even when
+            // both families are configured on the same device.
+            "/cnc/fanuc/alarm/status" => (GetAlarmStatusInfo(cache).StatusCode, DataType.Int32),
+            "/cnc/fanuc/alarm/message" => (GetAlarmStatusInfo(cache).Message, DataType.String),
             _ => throw new ArgumentException($"Unknown FANUC address: '{path}'")
         };
     }
@@ -493,56 +569,24 @@ internal sealed partial class FocasAddressMapper
     private (object Value, DataType Type) ReadFanucProgramString(Func<FocasProgramInfo, string> selector, BatchReadCache? cache)
         => (selector(GetProgramInfo(cache)), DataType.String);
 
-    private (object Value, DataType Type) ReadFanucInt(FanucIntReader reader, string apiName)
-    {
-        int rc = reader(_handle, out var value);
-        ThrowIfError(rc, apiName);
-        return (value, DataType.Int32);
-    }
+    private (object Value, DataType Type) ReadFanucInt(FanucIntReader reader, string apiName, BatchReadCache? cache)
+        => (GetIntScalar(apiName, cache, reader), DataType.Int32);
 
-    private (object Value, DataType Type) ReadFanucParameter(int number)
-    {
-        int rc = _api.ReadParameter(_handle, number, out var value);
-        ThrowIfError(rc, "ReadParameter");
-        return (value, DataType.Int32);
-    }
+    private (object Value, DataType Type) ReadFanucParameter(int number, BatchReadCache? cache)
+        => (GetParameter(number, cache), DataType.Int32);
 
-    private (object Value, DataType Type) ReadFanucPartCountCurrent()
-    {
-        int rc = _api.ReadMacroVariable(_handle, 3901, out var value);
-        ThrowIfError(rc, "ReadMacroVariable");
-        return ((int)Math.Round(value), DataType.Int32);
-    }
+    private (object Value, DataType Type) ReadFanucPartCountCurrent(BatchReadCache? cache)
+        => ((int)Math.Round(GetMacroVariable(3901, cache)), DataType.Int32);
 
-    private (object Value, DataType Type) ReadFanucDuration(int millisecondParam, int minuteParam)
+    private (object Value, DataType Type) ReadFanucDuration(int millisecondParam, int minuteParam, BatchReadCache? cache)
     {
-        int rc = _api.ReadParameter(_handle, millisecondParam, out var milliseconds);
-        ThrowIfError(rc, "ReadParameter");
-        rc = _api.ReadParameter(_handle, minuteParam, out var minutes);
-        ThrowIfError(rc, "ReadParameter");
+        var milliseconds = GetParameter(millisecondParam, cache);
+        var minutes = GetParameter(minuteParam, cache);
         return (minutes * 60 + (milliseconds / 1000), DataType.Int32);
     }
 
-    private (object Value, DataType Type) ReadFanucPowerOnSeconds()
-    {
-        int rc = _api.ReadParameter(_handle, 6750, out var minutes);
-        ThrowIfError(rc, "ReadParameter");
-        return (minutes * 60, DataType.Int32);
-    }
-
-    private (object Value, DataType Type) ReadFanucAlarmValue(Func<(int StatusCode, string Message), int> selector)
-    {
-        int rc = _api.ReadAlarmStatus(_handle, out var statusCode, out var message);
-        ThrowIfError(rc, "ReadAlarmStatus");
-        return (selector((statusCode, message)), DataType.Int32);
-    }
-
-    private (object Value, DataType Type) ReadFanucAlarmString(Func<(int StatusCode, string Message), string> selector)
-    {
-        int rc = _api.ReadAlarmStatus(_handle, out var statusCode, out var message);
-        ThrowIfError(rc, "ReadAlarmStatus");
-        return (selector((statusCode, message)), DataType.String);
-    }
+    private (object Value, DataType Type) ReadFanucPowerOnSeconds(BatchReadCache? cache)
+        => (GetParameter(6750, cache) * 60, DataType.Int32);
 
     // ── Address space definition (for browser) ───────────────────────
 
