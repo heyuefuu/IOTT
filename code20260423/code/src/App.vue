@@ -110,10 +110,8 @@ import {
 	Cpu,
 	Operation,
 	Files,
-	FolderOpened,
 	Lock,
 	ArrowDown,
-	DataLine,
 } from "@element-plus/icons-vue";
 
 const route = useRoute();
@@ -141,23 +139,11 @@ const rawMenuItems = [
 		label: "机器人监控",
 		icon: Operation,
 	},
-	{ path: "/collection/manage", label: "采集任务管理", icon: DataLine },
-	{
-		path: "/transfer",
-		label: "程序传输",
-		icon: FolderOpened,
-		subItems: [
-			{ path: "/transfer/device", label: "传输设备" },
-			{ path: "/transfer/browser", label: "文件浏览器" },
-			{ path: "/transfer/records", label: "传输验证记录" },
-		],
-	},
 	{
 		path: "/cs",
 		label: "Client/Server 模式",
 		icon: Files,
 		subItems: [
-			{ path: "/cs/gateway", label: "网关管理" },
 			{ path: "/cs/client", label: "客户端数据源" },
 			{ path: "/cs/server", label: "服务器服务" },
 		],

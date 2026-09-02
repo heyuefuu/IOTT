@@ -138,10 +138,10 @@ public class CollectionSchedulerService : BackgroundService, ICollectionPipeline
     private async Task RunGroupLoopAsync(CollectionTaskEntry entry, CollectionGroupConfig group, CancellationToken ct)
     {
         var pool = _serviceProvider.GetRequiredService<IDeviceConnectionPool>();
-        var driver = await pool.GetOrCreateAsync(entry.DeviceId, ct);
-        if (TryResolveNCLinkSampleChannel(driver, group, out var sampleChannelId))
+        var initialDriver = await pool.GetOrCreateAsync(entry.DeviceId, ct);
+        if (TryResolveNCLinkSampleChannel(initialDriver, group, out var sampleChannelId))
         {
-            await RunNCLinkSampleLoopAsync(entry, (NCLinkDriver)driver, group, sampleChannelId, ct);
+            await RunNCLinkSampleLoopAsync(entry, (NCLinkDriver)initialDriver, group, sampleChannelId, ct);
             return;
         }
 
@@ -150,6 +150,13 @@ public class CollectionSchedulerService : BackgroundService, ICollectionPipeline
         {
             try
             {
+                // Re-resolve every tick: the pool evicts and disposes a driver whenever a health
+                // check or another caller sees it fail, and a disposed FOCAS driver has already run
+                // cnc_freelibhndl. Holding the reference captured before the loop meant one eviction
+                // broke this task permanently while manual reads (which always get a fresh pooled
+                // driver) kept working — the "collection works, then stops, then works" symptom.
+                var driver = await pool.GetOrCreateAsync(entry.DeviceId, ct);
+
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 var values = await driver.ReadTagsAsync(group.Tags, ct);
                 sw.Stop();

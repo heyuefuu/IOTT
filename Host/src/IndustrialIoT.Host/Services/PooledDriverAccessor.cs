@@ -1,5 +1,6 @@
 namespace IndustrialIoT.Host.Services;
 
+using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Infrastructure.BackgroundServices;
 using IndustrialIoT.Protocols.Abstractions;
 using Microsoft.Extensions.Logging;
@@ -68,8 +69,21 @@ public sealed class PooledDriverAccessor : IPooledDriverAccessor
         }
         catch (Exception ex)
         {
-            // The pooled socket may be broken — drop it so the next request reconnects
-            _logger.LogWarning(ex, "Pooled operation failed for device {DeviceId}, evicting connection", deviceId);
+            // Only tear the pooled connection down when the connection itself is gone. A failed
+            // request is not proof of that: an unsupported address, a rejected write or a CNC that
+            // was momentarily busy all surface as exceptions here. Evicting on those disconnects
+            // and disposes a driver that background collection tasks are actively using, which is
+            // how one bad manual read used to stop collection for that device entirely.
+            if (driver.State == ConnectionState.Connected)
+            {
+                _logger.LogWarning(ex,
+                    "Pooled operation failed for device {DeviceId}, keeping the connection (still connected)", deviceId);
+                return new(false, default, ex.Message);
+            }
+
+            _logger.LogWarning(ex,
+                "Pooled operation failed for device {DeviceId} and the driver is {State}, evicting connection",
+                deviceId, driver.State);
             await _pool.ReleaseAsync(deviceId, CancellationToken.None);
             return new(false, default, ex.Message);
         }

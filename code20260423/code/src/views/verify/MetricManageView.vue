@@ -63,12 +63,6 @@
 						{{ scope.row.threshold ?? "-" }}
 					</template>
 				</el-table-column>
-				<el-table-column label="当前状态" width="120">
-					<template #default="scope">
-						<el-tag :type="scope.row.statusType">{{ scope.row.statusLabel }}</el-tag>
-					</template>
-				</el-table-column>
-				<el-table-column prop="description" label="对齐说明" min-width="360" />
 				<el-table-column
 					prop="createdAt"
 					label="创建时间"

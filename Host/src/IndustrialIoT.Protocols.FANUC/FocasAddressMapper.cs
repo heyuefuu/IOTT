@@ -98,6 +98,13 @@ internal sealed partial class FocasAddressMapper
                 Timestamp = DateTimeOffset.UtcNow
             };
         }
+        catch (FocasApiException ex) when (FocasError.IsRecoverable(ex.ReturnCode))
+        {
+            // Connection-level failure (CNC busy, handle/socket dead): every remaining tag in this
+            // batch would fail the same way. Let the driver retry — or reconnect — the whole batch
+            // instead of publishing a screenful of Bad values for a blip.
+            throw;
+        }
         catch (Exception ex)
         {
             return new TagValue
@@ -833,7 +840,7 @@ internal sealed partial class FocasAddressMapper
     private static void ThrowIfError(int returnCode, string apiName)
     {
         if (returnCode != 0)
-            throw new InvalidOperationException($"FOCAS API {apiName} failed with code {returnCode}");
+            throw new FocasApiException(apiName, returnCode);
     }
 
     private string? TryNormalizeAxisPath(string path)
@@ -917,7 +924,7 @@ internal sealed partial class FocasAddressMapper
         _ => "其它类型"
     };
 
-    private static object GetDefaultValue(DataType dt) => dt switch
+    internal static object GetDefaultValue(DataType dt) => dt switch
     {
         DataType.Bool   => false,
         DataType.Int16  => (short)0,

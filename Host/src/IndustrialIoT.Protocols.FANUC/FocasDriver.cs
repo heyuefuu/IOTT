@@ -34,6 +34,10 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
     private const string CncMemoryRoot = "//CNC_MEM";
     private const string CncMemoryBrowseRootsKey = "CncMemoryBrowseRoots";
 
+    /// <summary>Attempts (including the first) a recoverable FOCAS read gets before it degrades to Bad quality.</summary>
+    private const int ReadRetryAttempts = 3;
+    private const int ReadRetryDelayMs = 120;
+
     public ProtocolType Protocol => ProtocolType.FOCAS;
     public ConnectionState State => _state;
     public bool SupportsResume => false;
@@ -175,15 +179,19 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
     public async Task<TagValue> ReadTagAsync(string address, DataType dataType, CancellationToken ct = default)
     {
         EnsureConnected();
-        await _semaphore.WaitAsync(ct);
-        try
-        {
-            return _mapper.Read(address, dataType);
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+        return await ReadWithRecoveryAsync(
+            () => _mapper.Read(address, dataType),
+            failed => new TagValue
+            {
+                Address = address,
+                DataType = dataType,
+                Value = FocasAddressMapper.GetDefaultValue(dataType),
+                Quality = TagQuality.Bad,
+                Timestamp = DateTimeOffset.UtcNow,
+                ErrorMessage = failed.Message
+            },
+            $"read {address}",
+            ct);
     }
 
     // ───────────────────────── Batch Read ─────────────────────────
@@ -192,10 +200,96 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
         IReadOnlyList<TagReadRequest> requests, CancellationToken ct = default)
     {
         EnsureConnected();
+        return await ReadWithRecoveryAsync<IReadOnlyList<TagValue>>(
+            () => _mapper.ReadBatch(requests),
+            failed => requests.Select(request => new TagValue
+            {
+                Address = request.Address,
+                DataType = request.DataType,
+                Value = FocasAddressMapper.GetDefaultValue(request.DataType),
+                Quality = TagQuality.Bad,
+                Timestamp = DateTimeOffset.UtcNow,
+                ErrorMessage = failed.Message
+            }).ToArray(),
+            $"batch read of {requests.Count} tags",
+            ct);
+    }
+
+    /// <summary>
+    /// Runs a FOCAS read under the driver lock, retrying the transient controller states and
+    /// re-opening the library handle when the connection itself has gone bad.
+    /// <para>
+    /// A 0i-class CNC answers with <c>EW_BUSY</c>/<c>EW_REJECT</c> whenever it is momentarily busy
+    /// (operator on the MDI panel, another FOCAS client, a program transfer in flight), and drops
+    /// the socket with <c>EW_HANDLE</c>/<c>EW_BUS</c> after network hiccups. Without this the whole
+    /// poll fails on one unlucky code and recovers on the next tick — the "sometimes works,
+    /// sometimes fails" symptom customers report.
+    /// </para>
+    /// </summary>
+    /// <param name="read">The mapper call, executed while holding <see cref="_semaphore"/>.</param>
+    /// <param name="onExhausted">Builds the degraded (Bad-quality) result once retries run out.</param>
+    private async Task<T> ReadWithRecoveryAsync<T>(
+        Func<T> read, Func<Exception, T> onExhausted, string operation, CancellationToken ct)
+    {
+        FocasApiException? lastError = null;
+        for (var attempt = 1; attempt <= ReadRetryAttempts; attempt++)
+        {
+            await _semaphore.WaitAsync(ct);
+            try
+            {
+                return read();
+            }
+            catch (FocasApiException ex) when (FocasError.IsRecoverable(ex.ReturnCode))
+            {
+                lastError = ex;
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+
+            if (attempt == ReadRetryAttempts) break;
+
+            if (FocasError.RequiresReconnect(lastError.ReturnCode))
+            {
+                _logger.LogWarning("FOCAS {Operation} failed with {Error}; reconnecting (attempt {Attempt}/{Total})",
+                    operation, lastError.Message, attempt, ReadRetryAttempts);
+                if (!await ReconnectAsync(ct))
+                    break;
+            }
+            else
+            {
+                _logger.LogDebug("FOCAS {Operation} hit {Error}; retrying (attempt {Attempt}/{Total})",
+                    operation, lastError.Message, attempt, ReadRetryAttempts);
+                await Task.Delay(ReadRetryDelayMs * attempt, ct);
+            }
+        }
+
+        _logger.LogWarning("FOCAS {Operation} failed after {Attempts} attempts: {Error}",
+            operation, ReadRetryAttempts, lastError!.Message);
+
+        // A dead handle must not stay in the connection pool: fault the driver so the pool evicts it
+        // and the next caller gets a freshly connected one.
+        if (FocasError.RequiresReconnect(lastError.ReturnCode))
+            SetState(ConnectionState.Faulted, lastError.Message);
+
+        return onExhausted(lastError);
+    }
+
+    /// <summary>Drops the current library handle and opens a new one against the same device.</summary>
+    private async Task<bool> ReconnectAsync(CancellationToken ct)
+    {
+        if (_config is null) return false;
+
         await _semaphore.WaitAsync(ct);
         try
         {
-            return _mapper.ReadBatch(requests);
+            var reconnected = TryReconnectAfterEwHandle("FOCAS read", out var error);
+            if (!reconnected)
+                _logger.LogWarning("FOCAS reconnect failed: {Error}", error);
+            else
+                _logger.LogInformation("FOCAS reconnected (handle={Handle})", _handle);
+            return reconnected;
         }
         finally
         {
@@ -237,13 +331,11 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            if (usePathMode)
-                _logger.LogInformation("FOCAS path upload start requested: {RemotePath}, thread={ThreadId}", metadata.RemotePath, Environment.CurrentManagedThreadId);
+            LogTransferStep("upload start requested", metadata.RemotePath, usePathMode);
             var startRc = usePathMode
                 ? _api.StartProgramDownloadAtPath(_handle, NormalizeCncMemoryDirectory(metadata.RemotePath))
                 : _api.StartProgramDownload(_handle);
-            if (usePathMode)
-                _logger.LogInformation("FOCAS path upload start returned: {RemotePath}, rc={ReturnCode}, thread={ThreadId}", metadata.RemotePath, startRc, Environment.CurrentManagedThreadId);
+            LogTransferStep("upload start returned", metadata.RemotePath, usePathMode, startRc);
             string? reconnectError = null;
             if (startRc == -8 && TryReconnectAfterEwHandle("FOCAS upload start", out reconnectError))
             {
@@ -261,25 +353,23 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
             started = true;
             var totalBytes = metadata.FileSize ?? (source.CanSeek ? source.Length - source.Position : 0);
             var transferred = 0L;
-            var buffer = new byte[usePathMode ? 1024 : ProgramChunkSize];
+            var chunkSize = usePathMode ? 1024 : ProgramChunkSize;
+            var buffer = new byte[chunkSize];
             while (true)
             {
-                var read = usePathMode
-                    ? source.Read(buffer, 0, buffer.Length)
-                    : await source.ReadAsync(buffer.AsMemory(0, ProgramChunkSize), ct);
+                // Synchronous read on purpose — see NoAwaitBetweenFocasTransferCalls below.
+                var read = source.Read(buffer, 0, chunkSize);
                 if (read == 0) break;
                 var pending = read;
                 var offset = 0;
                 while (pending > 0)
                 {
                     var acceptedLength = pending;
-                    if (usePathMode)
-                        _logger.LogInformation("FOCAS path upload chunk requested: {RemotePath}, pending={Pending}, offset={Offset}, thread={ThreadId}", metadata.RemotePath, pending, offset, Environment.CurrentManagedThreadId);
+                    LogTransferStep($"upload chunk requested (pending={pending}, offset={offset})", metadata.RemotePath, usePathMode);
                     var chunkRc = usePathMode
                         ? _api.DownloadProgramChunkAtPath(_handle, buffer[offset..], pending, out acceptedLength)
                         : _api.DownloadProgramChunk(_handle, buffer, pending);
-                    if (usePathMode)
-                        _logger.LogInformation("FOCAS path upload chunk returned: {RemotePath}, rc={ReturnCode}, accepted={AcceptedLength}, thread={ThreadId}", metadata.RemotePath, chunkRc, acceptedLength, Environment.CurrentManagedThreadId);
+                    LogTransferStep($"upload chunk returned (accepted={acceptedLength})", metadata.RemotePath, usePathMode, chunkRc);
                     if (chunkRc != 0 && chunkRc != 10)
                         return FailTransfer(transferId, stopwatch, transferred, FormatDetailedFocasError("FOCAS upload failed", chunkRc));
                     acceptedLength = usePathMode ? acceptedLength : pending;
@@ -299,6 +389,7 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
             }
 
             var endRc = usePathMode ? _api.EndProgramDownloadAtPath(_handle) : _api.EndProgramDownload(_handle);
+            LogTransferStep("upload finalize returned", metadata.RemotePath, usePathMode, endRc);
             if (endRc != 0) return FailTransfer(transferId, stopwatch, transferred, FormatDetailedFocasError("FOCAS upload finalize failed", endRc));
             completed = true;
             var checksum = await ComputeChecksumAsync(source, ct);
@@ -350,12 +441,18 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
             }
             if (startRc != 0) return FailTransfer(transferId, stopwatch, 0, FormatDetailedFocasError("FOCAS download start failed", startRc));
             started = true;
-            var buffer = new byte[usePathMode ? 1024 : ProgramChunkSize];
+            var chunkSize = usePathMode ? 1024 : ProgramChunkSize;
+            var buffer = new byte[chunkSize];
+            // Buffer device-side chunks in memory and flush once at the end: writing to `destination`
+            // mid-sequence would await between FOCAS calls — see NoAwaitBetweenFocasTransferCalls.
+            using var received = new MemoryStream();
             while (true)
             {
+                LogTransferStep("download chunk requested", remotePath, usePathMode);
                 var chunkRc = usePathMode
                     ? _api.UploadProgramChunkFromPath(_handle, buffer, out var actualLength)
                     : _api.UploadProgramChunk(_handle, buffer, out actualLength);
+                LogTransferStep($"download chunk returned (actual={actualLength})", remotePath, usePathMode, chunkRc);
                 if (chunkRc != 0 && chunkRc != 10) return FailTransfer(transferId, stopwatch, transferred, FormatDetailedFocasError("FOCAS download failed", chunkRc));
                 if (usePathMode && chunkRc == 10 && actualLength == 0)
                 {
@@ -363,15 +460,20 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
                     continue;
                 }
                 if (actualLength == 0) break;
-                await destination.WriteAsync(buffer.AsMemory(0, actualLength), ct);
+                received.Write(buffer, 0, actualLength);
                 transferred += actualLength;
                 progress?.Report(new() { BytesTransferred = transferred, TotalBytes = 0 });
                 if (buffer[actualLength - 1] == (byte)'%') break;
             }
 
             var endRc = usePathMode ? _api.EndProgramUploadFromPath(_handle) : _api.EndProgramUpload(_handle);
+            LogTransferStep("download finalize returned", remotePath, usePathMode, endRc);
             if (endRc != 0) return FailTransfer(transferId, stopwatch, transferred, FormatDetailedFocasError("FOCAS download finalize failed", endRc));
             completed = true;
+
+            // FOCAS sequence is done — safe to await again from here on.
+            received.Position = 0;
+            await received.CopyToAsync(destination, ct);
             var checksum = await ComputeChecksumAsync(destination, ct);
             stopwatch.Stop();
             return new() { Success = true, TransferId = transferId, BytesTransferred = transferred, Duration = stopwatch.Elapsed, Checksum = checksum };
@@ -505,6 +607,29 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
         if (old == newState) return;
         _state = newState;
         StateChanged?.Invoke(this, new() { OldState = old, NewState = newState, Reason = reason });
+    }
+
+    /// <summary>
+    /// Logs one step of a FOCAS transfer sequence together with the managed thread it ran on.
+    /// <para>
+    /// <c>cnc_dwnstart</c>/<c>cnc_download</c>/<c>cnc_dwnend</c> (and the upload equivalents) are a
+    /// stateful sequence held inside Fwlib. If the thread changes mid-sequence the later calls come
+    /// back <c>-8 (EW_HANDLE)</c> even though the handle itself is fine, so the thread id is the
+    /// single most useful field when diagnosing a failed transfer.
+    /// </para>
+    /// </summary>
+    private void LogTransferStep(string step, string remotePath, bool usePathMode, int? returnCode = null)
+    {
+        var mode = usePathMode ? "path" : "program-number";
+        if (returnCode is null)
+        {
+            _logger.LogInformation("FOCAS {Mode} {Step}: {RemotePath}, thread={ThreadId}",
+                mode, step, remotePath, Environment.CurrentManagedThreadId);
+            return;
+        }
+
+        _logger.LogInformation("FOCAS {Mode} {Step}: {RemotePath}, rc={ReturnCode}, thread={ThreadId}",
+            mode, step, remotePath, returnCode.Value, Environment.CurrentManagedThreadId);
     }
 
     private static short? ParseProgramNumber(string remotePath)

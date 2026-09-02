@@ -25,12 +25,6 @@
 					</el-button>
 					<template #dropdown>
 						<el-dropdown-menu>
-							<el-dropdown-item @click="navigateTo('/collection/manage')">
-								采集任务管理
-							</el-dropdown-item>
-							<el-dropdown-item @click="navigateTo('/transfer/browser')">
-								程序传输
-							</el-dropdown-item>
 							<el-dropdown-item @click="navigateTo('/system/log')">
 								系统日志
 							</el-dropdown-item>
@@ -403,7 +397,7 @@ const modules = ref([
 	{ title: "CNC 通讯", description: "设备管理、地址浏览、读写、采集与程序传输", icon: Monitor, path: "/industrial/device", status: "active", features: ["真实接口"] },
 	{ title: "PLC 通讯", description: "PLC 设备配置、地址浏览和读写", icon: Cpu, path: "/plc/device", status: "active", features: ["真实接口"] },
 	{ title: "机器人通讯", description: "机器人设备配置、数据浏览和读写", icon: Operation, path: "/robot/device", status: "active", features: ["真实接口"] },
-	{ title: "Client/Server", description: "网关、客户端数据源和服务端管理", icon: Files, path: "/cs/gateway", status: "active", features: ["真实接口"] },
+	{ title: "Client/Server", description: "客户端数据源和服务端管理", icon: Files, path: "/cs/client", status: "active", features: ["真实接口"] },
 	{ title: "验证管理", description: "验证任务、指标、模板和数据可视化", icon: Document, path: "/verify/task", status: "active", features: ["任务持久化", "指标管理", "报表模板"] },
 	{ title: "系统管理", description: "日志查询、导出与用户权限管理", icon: Setting, path: "/system/log", status: "active", features: ["日志审计", "权限管理"] },
 ]);

@@ -97,7 +97,7 @@
 							<div class="task-detail">
 								<el-descriptions :column="2" border>
 									<el-descriptions-item label="任务ID">{{ scope.row.id }}</el-descriptions-item>
-									<el-descriptions-item label="测试设备">{{ getDeviceName(scope.row.deviceId) }}</el-descriptions-item>
+									<el-descriptions-item label="测试机床">{{ getMachineName(scope.row.machineId) }}</el-descriptions-item>
 									<el-descriptions-item label="创建时间">{{ scope.row.createdAt }}</el-descriptions-item>
 									<el-descriptions-item label="完成时间">{{ scope.row.completedAt || "-" }}</el-descriptions-item>
 									<el-descriptions-item label="测试内容" :span="2">{{ getMetricSummary(scope.row.metricIds) }}</el-descriptions-item>
@@ -278,20 +278,7 @@
 									</el-option>
 								</el-select>
 							</el-form-item>
-							<el-form-item label="测试设备" prop="deviceId">
-								<el-select
-									v-model="currentTask.deviceId"
-									placeholder="请选择测试设备"
-								>
-									<el-option
-										v-for="machine in machines"
-										:key="machine.id"
-										:label="machine.name"
-										:value="machine.id"
-									/>
-								</el-select>
-							</el-form-item>
-						</el-form>
+													</el-form>
 					</div>
 
 					<!-- 步骤2: 测试内容配置 -->
@@ -370,7 +357,6 @@
 								<el-descriptions-item label="任务名称">{{ currentTask.name }}</el-descriptions-item>
 								<el-descriptions-item label="任务类型">{{ getTaskTypeName(currentTask.type) }}</el-descriptions-item>
 								<el-descriptions-item label="测试机床">{{ getMachineName(currentTask.machineId) }}</el-descriptions-item>
-								<el-descriptions-item label="测试设备">{{ getDeviceName(currentTask.deviceId) }}</el-descriptions-item>
 								<el-descriptions-item label="优先级">{{ currentTask.priority }}</el-descriptions-item>
 								<el-descriptions-item label="指标数量">{{ currentTask.metricIds.length }}</el-descriptions-item>
 								<el-descriptions-item label="测试内容">{{ getMetricSummary(currentTask.metricIds) }}</el-descriptions-item>
@@ -716,13 +702,6 @@ const getMachineName = (machineId: string) => {
 	const machine = machines.value.find((m) => m.id === machineId);
 	return machine ? machine.name : "未知机床";
 };
-
-// 获取设备名称
-const getDeviceName = (deviceId: string) => {
-	const device = machines.value.find((item) => item.id === deviceId);
-	return device ? device.name : "未知设备";
-};
-
 const getMetricName = (metricId: string) => {
 	return availableMetrics.value.find((metric) => metric.id === metricId)?.name || metricId;
 };
@@ -838,6 +817,7 @@ const parseScheduleTime = (time?: string): Date | null => {
 // 保存/执行共用的提交体：把向导里的定时设置写进任务
 const taskPayload = () => ({
 	...currentTask,
+	deviceId: currentTask.machineId || currentTask.deviceId,
 	scheduleType:
 		executionSettings.scheduled && executionSettings.scheduleTime ? "daily" : "none",
 	scheduleTime: executionSettings.scheduled

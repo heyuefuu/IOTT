@@ -26,6 +26,9 @@ public class ConnectionPoolService : BackgroundService, IDeviceConnectionPool
     private readonly ConcurrentDictionary<string, PoolEntry> _pool = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _deviceLocks = new();
     private readonly SemaphoreSlim _globalLimit = new(150); // max connections
+
+    /// <summary>Health-check misses a pooled connection may accumulate before it is evicted.</summary>
+    private const int MaxConsecutivePingFailures = 3;
     private readonly IProtocolDriverFactory _factory;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<ConnectionPoolService> _logger;
@@ -134,11 +137,26 @@ public class ConnectionPoolService : BackgroundService, IDeviceConnectionPool
             {
                 try
                 {
-                    if (!await entry.Driver.PingAsync(stoppingToken))
+                    if (await entry.Driver.PingAsync(stoppingToken))
                     {
-                        _logger.LogWarning("Device {DeviceId} ping failed, removing from pool", id);
-                        await ReleaseAsync(id, stoppingToken);
+                        entry.ConsecutivePingFailures = 0;
+                        continue;
                     }
+
+                    // A single miss is normal: FOCAS answers EW_BUSY while the CNC serves the MDI
+                    // panel, and Modbus/S7 devices drop one poll under load. Evicting on the first
+                    // miss disposes a connection that in-flight collection tasks are still using.
+                    entry.ConsecutivePingFailures++;
+                    if (entry.ConsecutivePingFailures < MaxConsecutivePingFailures)
+                    {
+                        _logger.LogDebug("Device {DeviceId} ping failed ({Count}/{Max})",
+                            id, entry.ConsecutivePingFailures, MaxConsecutivePingFailures);
+                        continue;
+                    }
+
+                    _logger.LogWarning("Device {DeviceId} ping failed {Count} times, removing from pool",
+                        id, entry.ConsecutivePingFailures);
+                    await ReleaseAsync(id, stoppingToken);
                 }
                 catch (Exception ex)
                 {
@@ -162,5 +180,8 @@ public class ConnectionPoolService : BackgroundService, IDeviceConnectionPool
         public required IProtocolDriver Driver { get; init; }
         public required string DeviceId { get; init; }
         public required DateTimeOffset ConnectedAt { get; init; }
+
+        /// <summary>Health-check misses in a row; reset on the first success.</summary>
+        public int ConsecutivePingFailures { get; set; }
     }
 }
