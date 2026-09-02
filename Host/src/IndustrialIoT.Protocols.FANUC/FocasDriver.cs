@@ -439,6 +439,20 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
                 if (startRc == 0)
                     usePathMode = false;
             }
+
+            // Program-number mode had no EW_HANDLE recovery at all: the pooled handle can be stale
+            // by the time a transfer starts (idle socket dropped by the CNC, or a reconnect between
+            // this call and the last read), and cnc_upstart then fails in a few milliseconds with
+            // -8. Re-open the handle once and retry, mirroring UploadProgramAsync.
+            if (!usePathMode && startRc == -8)
+            {
+                if (!TryReconnectAfterEwHandle("FOCAS download start", out var reconnectError))
+                    return FailTransfer(transferId, stopwatch, 0, reconnectError ?? FormatDetailedFocasError("FOCAS download start failed", startRc));
+
+                startRc = _api.StartProgramUpload(_handle, programNumber!.Value);
+                _logger.LogInformation("FOCAS download start retry returned: {RemotePath}, rc={ReturnCode}", remotePath, startRc);
+            }
+
             if (startRc != 0) return FailTransfer(transferId, stopwatch, 0, FormatDetailedFocasError("FOCAS download start failed", startRc));
             started = true;
             var chunkSize = usePathMode ? 1024 : ProgramChunkSize;
