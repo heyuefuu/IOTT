@@ -262,7 +262,7 @@ const maxCount = computed(() =>
 );
 
 // 各区的 Modicon 引用号基准，用于把 0 基地址显示回引用号
-const REFERENCE_BASE: Record<string, number> = {
+const REFERENCE_BASE = {
 	C: 1,
 	DI: 10001,
 	IR: 30001,
@@ -420,8 +420,9 @@ const registerRows = computed<RegisterRow[]>(() => {
 
 		let int32 = "";
 		let float = "";
-		if (i + 1 < words.value.length) {
-			const combined = combine32(w, words.value[i + 1]);
+		const nextWord = words.value[i + 1];
+		if (nextWord !== undefined) {
+			const combined = combine32(w, nextWord);
 			buf.setUint32(0, combined, false);
 			int32 = String(buf.getInt32(0, false));
 			float = trimFloat(buf.getFloat32(0, false));

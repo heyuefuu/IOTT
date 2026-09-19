@@ -51,11 +51,26 @@ public sealed class VerifyAutomationService : IVerifyAutomationService
             StartedAt = Now(),
         };
 
+        var deviceId = request.DeviceId?.Trim();
+        var includeGateways = string.IsNullOrEmpty(deviceId);
+        if (!includeGateways)
+        {
+            devices = devices.Where(device => string.Equals(device.Id, deviceId, StringComparison.Ordinal)).ToList();
+            if (devices.Count != 1)
+            {
+                response.Status = "failed";
+                response.Result = "执行失败";
+                response.Detail = $"所选设备 {deviceId} 不存在或标识不唯一，请检查设备配置与上游同步状态";
+                response.CompletedAt = Now();
+                return response;
+            }
+        }
+
         foreach (var metricId in metricIds)
         {
             try
             {
-                response.Metrics.Add(await RunMetricAsync(metricId, devices, options, ct));
+                response.Metrics.Add(await RunMetricAsync(metricId, devices, options, includeGateways, ct));
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -78,12 +93,12 @@ public sealed class VerifyAutomationService : IVerifyAutomationService
     }
 
     private async Task<VerifyMetricResult> RunMetricAsync(
-        string metricId, IReadOnlyList<DeviceSnapshot> devices, VerifyRunOptions options, CancellationToken ct) =>
+        string metricId, IReadOnlyList<DeviceSnapshot> devices, VerifyRunOptions options, bool includeGateways, CancellationToken ct) =>
         metricId switch
         {
             "industrial-protocol" => CheckIndustrialProtocol(devices),
-            "communication-stability" => await CheckCommunicationStabilityAsync(devices, options, ct),
-            "max-connections" => await CheckMaxConnectionsAsync(devices, options, ct),
+            "communication-stability" => await CheckCommunicationStabilityAsync(devices, options, includeGateways, ct),
+            "max-connections" => await CheckMaxConnectionsAsync(devices, options, includeGateways, ct),
             "transfer-protocol" => CheckTransferProtocol(devices),
             "file-integrity" => await CheckFileIntegrityAsync(devices, ct),
             "transfer-speed" => await CheckTransferSpeedAsync(devices, ct),
@@ -125,9 +140,9 @@ public sealed class VerifyAutomationService : IVerifyAutomationService
     }
 
     private async Task<VerifyMetricResult> CheckCommunicationStabilityAsync(
-        IReadOnlyList<DeviceSnapshot> devices, VerifyRunOptions options, CancellationToken ct)
+        IReadOnlyList<DeviceSnapshot> devices, VerifyRunOptions options, bool includeGateways, CancellationToken ct)
     {
-        var targets = BuildProbeTargets(devices).Take(10).ToList();
+        var targets = BuildProbeTargets(devices, includeGateways).Take(10).ToList();
         if (targets.Count == 0)
             return Fail("communication-stability", "5.2.2", "通讯稳定性", "连续通讯探测", "无可探测设备或网关", []);
 
@@ -163,9 +178,9 @@ public sealed class VerifyAutomationService : IVerifyAutomationService
     }
 
     private async Task<VerifyMetricResult> CheckMaxConnectionsAsync(
-        IReadOnlyList<DeviceSnapshot> devices, VerifyRunOptions options, CancellationToken ct)
+        IReadOnlyList<DeviceSnapshot> devices, VerifyRunOptions options, bool includeGateways, CancellationToken ct)
     {
-        var first = BuildProbeTargets(devices).FirstOrDefault();
+        var first = BuildProbeTargets(devices, includeGateways).FirstOrDefault();
         if (first is null)
             return Fail("max-connections", "5.2.3", "最大并发连接数", "并发 TCP 建连", "无可用于并发压测的目标", []);
 
@@ -398,14 +413,17 @@ public sealed class VerifyAutomationService : IVerifyAutomationService
         return output;
     }
 
-    private List<ProbeTarget> BuildProbeTargets(IReadOnlyList<DeviceSnapshot> devices)
+    private List<ProbeTarget> BuildProbeTargets(IReadOnlyList<DeviceSnapshot> devices, bool includeGateways)
     {
         var targets = devices
             .Where(x => NotBlank(x.Host) && x.Port is > 0 and <= 65535)
             .Select(x => new ProbeTarget(x.Name, x.Host, x.Port))
             .ToList();
-        foreach (var gw in _csService.ListGateways().Where(x => NotBlank(x.Ip) && x.Port is > 0 and <= 65535))
-            targets.Add(new ProbeTarget(gw.Name, gw.Ip, gw.Port));
+        if (includeGateways)
+        {
+            foreach (var gw in _csService.ListGateways().Where(x => NotBlank(x.Ip) && x.Port is > 0 and <= 65535))
+                targets.Add(new ProbeTarget(gw.Name, gw.Ip, gw.Port));
+        }
         return targets;
     }
 

@@ -275,9 +275,9 @@ const dataTypeGroups = [
 			{ label: "系统参数", value: "parameter" },
 		],
 	},
-];
+] as const;
 
-const CLR_DATA_TYPES = new Set(
+const CLR_DATA_TYPES = new Set<string>(
 	dataTypeGroups[0].options.map((o) => o.value),
 );
 

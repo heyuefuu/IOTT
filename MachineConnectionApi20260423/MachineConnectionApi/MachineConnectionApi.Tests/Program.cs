@@ -9,6 +9,8 @@ internal static class Program
 {
     private static async Task Main()
     {
+        MachineConnectionApi.Tests.ApiAuthorizationRegressionTests.RunAll();
+        await MachineConnectionApi.Tests.VerifyTaskRunnerRegressionTests.DeviceSelectionIsNormalizedAndConflictsFail();
         await MachineConnectionApi.Tests.VerifyTaskRunnerRegressionTests.ConcurrentExecutionIsRejected();
         await MachineConnectionApi.Tests.VerifyTaskRunnerRegressionTests.ExecutionFailureReleasesTaskForRetry();
         await MachineConnectionApi.Tests.JsonFileStoreRegressionTests.ConcurrentUpdatesDoNotLoseRows();

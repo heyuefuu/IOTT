@@ -343,7 +343,7 @@ interface TransferTask {
 	fileName: string;
 	direction: "upload" | "download";
 	progress: number;
-	status: "pending" | "transferring" | "completed" | "failed";
+	status: "pending" | "transferring" | "completed" | "partial" | "failed";
 	localPath?: string;
 	devicePath?: string;
 	fileType?: string;
@@ -798,15 +798,21 @@ const downloadSelectedFiles = async () => {
 				selectedDevice.value.id,
 				paths[0] as string,
 			);
+			task.status = "completed";
+			ElMessage.success("下载完成");
 		} else {
-			await machineConnectionProgramTransferApi.downloadBatchZip(
+			const result = await machineConnectionProgramTransferApi.downloadBatchZip(
 				selectedDevice.value.id,
 				paths,
 			);
+			const failed = result.failedFiles ?? 0;
+			const partial = result.status === "PartialSuccess" || failed > 0;
+			task.status = partial ? "partial" : "completed";
+			const message = `下载完成：成功 ${result.completedFiles ?? 0} 个，失败 ${failed} 个`;
+			if (partial) ElMessage.warning(message);
+			else ElMessage.success(message);
 		}
-		task.status = "completed";
 		task.progress = 100;
-		ElMessage.success("下载完成");
 		selectedDeviceFiles.value = [];
 	} catch (e: unknown) {
 		task.status = "failed";
@@ -819,7 +825,7 @@ const downloadSelectedFiles = async () => {
 // 清除已完成任务
 const clearCompletedTasks = () => {
 	transferTasks.value = transferTasks.value.filter(
-		(t) => t.status !== "completed" && t.status !== "failed",
+		(t) => t.status !== "completed" && t.status !== "partial" && t.status !== "failed",
 	);
 };
 
@@ -839,6 +845,7 @@ const getStatusType = (status: string): string => {
 		case "failed":
 			return "danger";
 		case "transferring":
+		case "partial":
 			return "warning";
 		default:
 			return "info";
@@ -853,6 +860,8 @@ const getStatusText = (status: string): string => {
 			return "传输中";
 		case "completed":
 			return "已完成";
+		case "partial":
+			return "部分完成";
 		case "failed":
 			return "失败";
 		default:

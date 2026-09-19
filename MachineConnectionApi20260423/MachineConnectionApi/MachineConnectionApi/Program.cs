@@ -54,7 +54,8 @@ builder.Services.AddSingleton<IVerifyTaskStore, VerifyTaskStore>();
 builder.Services.AddSingleton<IVerifyTaskRunner, VerifyTaskRunner>();
 builder.Services.AddHostedService<VerifyTaskSchedulerHostedService>();
 
-builder.Services.AddControllers();
+builder.Services.AddScoped<BusinessApiAuthorizationFilter>();
+builder.Services.AddControllers(options => options.Filters.AddService<BusinessApiAuthorizationFilter>());
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -107,32 +108,6 @@ app.UseAuthorization();
 
 // 确保存在可登录账号（首次启动创建默认管理员 admin / admin@123）
 app.Services.GetRequiredService<IAuthService>().EnsureSeeded();
-
-// 用户管理接口须携带有效会话且具备 permission_manage 权限（登录/登出/me 除外）
-app.Use(async (context, next) =>
-{
-    var path = context.Request.Path;
-    if (path.StartsWithSegments("/api/system/users"))
-    {
-        var auth = context.RequestServices.GetRequiredService<IAuthService>();
-        var session = auth.Validate(context.Request.Headers["X-Auth-Token"].FirstOrDefault());
-        if (session is null)
-        {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new { error = "未登录或登录已过期" });
-            return;
-        }
-        // 权限清单本身放开（编辑对话框需要），写操作要求权限管理权限
-        var readonlyList = context.Request.Method == HttpMethods.Get && path.Value!.EndsWith("/permissions", StringComparison.OrdinalIgnoreCase);
-        if (!readonlyList && !session.HasPermission("permission_manage"))
-        {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsJsonAsync(new { error = "没有权限管理权限" });
-            return;
-        }
-    }
-    await next();
-});
 
 app.MapControllers();
 

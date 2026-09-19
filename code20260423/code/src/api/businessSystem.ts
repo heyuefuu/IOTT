@@ -1,9 +1,10 @@
-import axios from "axios";
+import { createMachineConnectionClient } from "./machineConnectionClient";
+export { AUTH_TOKEN_KEY } from "./machineConnectionClient";
 
 const baseURL =
 	import.meta.env.VITE_MACHINE_CONNECTION_API ?? "/machine-connection";
 
-const client = axios.create({
+const client = createMachineConnectionClient({
 	baseURL,
 	timeout: 120_000,
 	headers: { "Content-Type": "application/json" },
@@ -60,16 +61,7 @@ export interface LoginResponse {
 	user: LoginUserInfo;
 }
 
-/** 登录 token 的 localStorage 键；auth store 写入，这里的拦截器读取并附加请求头 */
-export const AUTH_TOKEN_KEY = "mc.auth.token";
-
 const enc = encodeURIComponent;
-
-client.interceptors.request.use((config) => {
-	const token = localStorage.getItem(AUTH_TOKEN_KEY);
-	if (token) config.headers["X-Auth-Token"] = token;
-	return config;
-});
 
 export const businessSystemApi = {
 	async login(username: string, password: string): Promise<LoginResponse> {

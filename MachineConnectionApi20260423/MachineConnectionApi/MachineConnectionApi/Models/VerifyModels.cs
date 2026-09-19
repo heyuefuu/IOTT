@@ -4,6 +4,7 @@ public sealed class VerifyRunRequest
 {
     public string? TaskId { get; set; }
     public string? TaskName { get; set; }
+    public string? DeviceId { get; set; }
     public IReadOnlyList<string>? MetricIds { get; set; }
     public VerifyRunOptions? Options { get; set; }
 }

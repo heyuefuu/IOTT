@@ -2,6 +2,7 @@ namespace MachineConnectionApi.Controllers;
 
 using MachineConnectionApi.Models;
 using MachineConnectionApi.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
@@ -14,6 +15,7 @@ public sealed class SystemAuthController : ControllerBase
 
     /// <summary>用户名口令登录，返回会话 token（后续请求经 X-Auth-Token 头携带）。</summary>
     [HttpPost("login")]
+    [AllowAnonymous]
     public ActionResult<LoginResponse> Login([FromBody] LoginRequest request)
     {
         var (session, error) = _auth.Login(request.Username, request.Password);

@@ -1,4 +1,4 @@
-import axios from "axios";
+import { createMachineConnectionClient } from "./machineConnectionClient";
 import type { DeviceTypeApi } from "./machineConnectionDevices";
 
 /** 与 IndustrialIoT.Host ConnectionVerificationController 的 DTO 一致（经网关代理） */
@@ -30,7 +30,7 @@ export interface BatchTestResult {
 const baseURL =
 	import.meta.env.VITE_MACHINE_CONNECTION_API ?? "/machine-connection";
 
-const client = axios.create({
+const client = createMachineConnectionClient({
 	baseURL,
 	timeout: 300_000,
 	headers: { "Content-Type": "application/json" },

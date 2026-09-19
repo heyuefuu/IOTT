@@ -1,4 +1,4 @@
-import axios from "axios";
+import { createMachineConnectionClient } from "./machineConnectionClient";
 
 export type AddressNodeType = "Folder" | "Variable";
 
@@ -78,7 +78,7 @@ export interface WriteTagsResponse {
 const baseURL =
     import.meta.env.VITE_MACHINE_CONNECTION_API ?? "/machine-connection";
 
-const client = axios.create({
+const client = createMachineConnectionClient({
     baseURL,
     timeout: 120_000,
     headers: { "Content-Type": "application/json" },

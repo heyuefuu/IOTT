@@ -871,6 +871,7 @@ import {
 } from "@/api/telemetryInflux";
 import {
     machineConnectionProgramTransferApi,
+    type BatchTransferTaskDto,
     type ProgramTransferResponse,
 } from "@/api/machineConnectionProgramTransfer";
 import { buildProgramTransferConfig } from "./deviceTransferConfig";
@@ -1393,6 +1394,7 @@ const collectionRows = ref<CollectionRow[]>([]);
 const collectionRowsByDevice = ref<Record<string, CollectionRow[]>>({});
 const collectionLoading = ref(false);
 const collectionTimerIdsByDevice = ref<Record<string, number[]>>({});
+const collectionRunsByDevice = new Map<string, { starting: boolean }>();
 const collectingDeviceIds = ref<string[]>([]);
 const collectionHistoryDialogVisible = ref(false);
 const collectionHistoryDeviceId = ref("");
@@ -1620,7 +1622,7 @@ const handleWriteSinglePoint = async (row: PointRow) => {
 const handlePointSelectionChange = (rows: PointRow[]) => {
     selectedPointRows.value = rows;
 
-    // 需求：未勾选的点位频率默认为空；勾选后若无已保存值则回填默认 500
+    // 未勾选的点位频率默认为空；勾选后若无已保存值则回填默认频率
     const selected = new Set(rows.map((r) => r.id));
     const cfgMap = savedPointConfigByPath.value;
     for (const row of pointTableData.value) {
@@ -1639,10 +1641,10 @@ const handlePointSelectionChange = (rows: PointRow[]) => {
             row.frequency = String(cfg.collectionFrequency);
             continue;
         }
-        // 无库值：给默认 500
+        // 无库值：给默认频率
         const n = Number(String(row.frequency ?? "").trim());
         if (!Number.isFinite(n) || n <= 0) {
-            row.frequency = "500";
+            row.frequency = String(DEFAULT_COLLECTION_FREQUENCY_MS);
         }
     }
 };
@@ -1837,9 +1839,9 @@ const handleSavePointConfig = async () => {
             nextPaths.add(r.path);
         }
         savedPathsInDb.value = nextPaths;
-        // 保存后同步回填缓存（避免再次切换节点又回到默认 500）
+        // 保存后同步回填缓存，保持切换节点前后的频率一致
         for (const r of selectedVars) {
-            const n = Number(String(r.frequency ?? "").trim() || 500);
+            const n = Number(String(r.frequency ?? "").trim() || DEFAULT_COLLECTION_FREQUENCY_MS);
             if (Number.isFinite(n) && n > 0) {
                 savedPointConfigByPath.value.set(r.path, { collectionFrequency: n });
             }
@@ -3131,6 +3133,16 @@ watch(
     },
 );
 
+function notifyBatchDownloadResult(task: BatchTransferTaskDto) {
+    const completed = task.completedFiles ?? 0;
+    const failed = task.failedFiles ?? 0;
+    if (task.status === "PartialSuccess" || failed > 0) {
+        ElMessage.warning(`批量下载部分完成：成功 ${completed} 个，失败 ${failed} 个，成功文件已打包为 ZIP`);
+    } else {
+        ElMessage.success(`已批量下载 ${completed} 个文件并打包为 ZIP`);
+    }
+}
+
 const startTransfer = async () => {
     const deviceId = transferForm.value.deviceId;
     if (!deviceId) {
@@ -3246,8 +3258,8 @@ const startTransfer = async () => {
             if (!paths.length) {
                 ElMessage.warning("所选路径下没有可下载的程序文件");
             } else {
-                await machineConnectionProgramTransferApi.downloadBatchZip(deviceId, paths);
-                ElMessage.success(`已批量下载 ${paths.length} 个程序文件并打包为 ZIP`);
+                const task = await machineConnectionProgramTransferApi.downloadBatchZip(deviceId, paths);
+                notifyBatchDownloadResult(task);
             }
         } else if (
             transferRemotePathPickedKind.value === "folder"
@@ -3262,13 +3274,11 @@ const startTransfer = async () => {
             if (!leaves.length) {
                 ElMessage.warning("该目录下没有可下载的叶子节点（如 Variable）");
             } else {
-                await machineConnectionProgramTransferApi.downloadBatchZip(
+                const task = await machineConnectionProgramTransferApi.downloadBatchZip(
                     deviceId,
                     leaves,
                 );
-                ElMessage.success(
-                    `已批量下载 ${leaves.length} 个节点并打包为 ZIP`,
-                );
+                notifyBatchDownloadResult(task);
             }
         } else {
             await machineConnectionProgramTransferApi.download(deviceId, remotePath);
@@ -4033,12 +4043,14 @@ const handleDeviceImportFile = async (event: Event) => {
 
 function stopCollectionTimers(deviceId?: string) {
     if (deviceId) {
+        collectionRunsByDevice.delete(deviceId);
         const timerIds = collectionTimerIdsByDevice.value[deviceId] ?? [];
         for (const id of timerIds) {
             window.clearInterval(id);
         }
         delete collectionTimerIdsByDevice.value[deviceId];
         collectingDeviceIds.value = collectingDeviceIds.value.filter((id) => id !== deviceId);
+        collectionLoading.value = [...collectionRunsByDevice.values()].some((run) => run.starting);
         return;
     }
 
@@ -4048,7 +4060,9 @@ function stopCollectionTimers(deviceId?: string) {
         }
     }
     collectionTimerIdsByDevice.value = {};
+    collectionRunsByDevice.clear();
     collectingDeviceIds.value = [];
+    collectionLoading.value = false;
 }
 
 const isCollectingDevice = (deviceId: string) => {
@@ -4065,7 +4079,6 @@ const stopCollection = (deviceId?: string) => {
         return;
     }
     stopCollectionTimers(deviceId);
-    collectionLoading.value = false;
     ElMessage.success(deviceId ? "该设备已停止采集" : "已停止全部采集");
 };
 
@@ -4266,10 +4279,16 @@ const runCollection = async (deviceIdFromCard?: string) => {
     collectionDialogVisible.value = true;
     collectionRows.value = collectionRowsByDevice.value[deviceId] ?? [];
     stopCollectionTimers(deviceId);
+    const run = { starting: true };
+    collectionRunsByDevice.set(deviceId, run);
+    const isCurrentRun = () => collectionRunsByDevice.get(deviceId) === run;
+    collectingDeviceIds.value.push(deviceId);
+    collectionLoading.value = true;
     let points: SavedCollectionPoint[] = [];
     try {
         // 每次开始采集都以数据库 datacollection 为准，避免使用旧缓存频率
         const rows = await datacollectionApi.list(deviceId);
+        if (!isCurrentRun()) return;
         points = rows.map((r) => ({
             address: r.path,
             dataType: mapDbDatatypeToReadType(r.datatype),
@@ -4281,16 +4300,18 @@ const runCollection = async (deviceIdFromCard?: string) => {
         }));
         savedCollectionPointsByDevice.value[deviceId] = points;
     } catch (e: unknown) {
+        if (!isCurrentRun()) return;
+        stopCollectionTimers(deviceId);
         console.error(e);
         ElMessage.warning("该设备暂无已保存采集点位，请先在“点位配置”中勾选并保存（或检查数据库连接）");
         return;
     }
     if (points.length === 0) {
+        stopCollectionTimers(deviceId);
         ElMessage.warning("该设备暂无已保存采集点位，请先在“点位配置”中勾选并保存");
         return;
     }
 
-    collectionLoading.value = true;
     try {
         collectionRowsByDevice.value[deviceId] = [];
         collectionRows.value = [];
@@ -4303,15 +4324,18 @@ const runCollection = async (deviceIdFromCard?: string) => {
             groups.get(key)!.push(p);
         }
 
-        // 先执行一轮立即采集，再按各自频率定时采集
-        for (const [freq, groupPoints] of groups.entries()) {
+        // 所有频率组首读成功后再注册轮询，停止或新启动会使当前运行失效。
+        for (const groupPoints of groups.values()) {
             await runCollectionBatch(deviceId, groupPoints);
+            if (!isCurrentRun()) return;
+        }
 
+        for (const [freq, groupPoints] of groups.entries()) {
             // 上一轮没回来就跳过这一拍：一批点位在设备侧是串行往返（FOCAS 单 handle 更是如此），
             // 裸 setInterval 会让请求无上限堆积，延迟越滚越大，最后表现为「偶尔才采到」。
             let inFlight = false;
             const timerId = window.setInterval(() => {
-                if (inFlight) return;
+                if (!isCurrentRun() || inFlight) return;
                 inFlight = true;
                 void runCollectionBatch(deviceId, groupPoints)
                     .catch((e: unknown) => {
@@ -4326,15 +4350,17 @@ const runCollection = async (deviceIdFromCard?: string) => {
             }
             collectionTimerIdsByDevice.value[deviceId].push(timerId);
         }
-        if (!collectingDeviceIds.value.includes(deviceId)) {
-            collectingDeviceIds.value.push(deviceId);
-        }
         ElMessage.success(`已启动采集（${points.length}项，${groups.size}个频率组）`);
     } catch (e: unknown) {
+        if (!isCurrentRun()) return;
+        stopCollectionTimers(deviceId);
         const ax = e as { response?: { data?: { error?: string } } };
         ElMessage.error(ax.response?.data?.error ?? "数据采集失败");
     } finally {
-        collectionLoading.value = false;
+        if (isCurrentRun()) {
+            run.starting = false;
+            collectionLoading.value = [...collectionRunsByDevice.values()].some((item) => item.starting);
+        }
     }
 };
 

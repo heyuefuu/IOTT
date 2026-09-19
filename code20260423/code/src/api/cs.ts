@@ -1,11 +1,11 @@
-import axios from "axios";
+import { createMachineConnectionClient } from "./machineConnectionClient";
 
 /** 与 machineConnection* 系列一致：经 /machine-connection 反代到 MachineConnectionApi。 */
 const baseURL =
     import.meta.env.VITE_MACHINE_CONNECTION_API ?? "/machine-connection";
 
 /** 独立实例，避免 @/api 的全局响应拦截器（其按 res.code===200 判定，会破坏原始 JSON 返回）。 */
-const client = axios.create({
+const client = createMachineConnectionClient({
     baseURL,
     timeout: 300_000,
     headers: { "Content-Type": "application/json" },

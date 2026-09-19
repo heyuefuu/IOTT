@@ -73,6 +73,7 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
             {
                 TaskId = task.Id,
                 TaskName = task.Name,
+                DeviceId = ResolveDeviceId(task),
                 MetricIds = task.MetricIds,
             }, ct);
         }
@@ -141,6 +142,16 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
         if (updated is null) return null;
         _activityLog.Write("error", $"执行验证任务（{trigger}）", $"{task.Name}：{ex.Message}");
         return updated;
+    }
+
+    private static string? ResolveDeviceId(VerifyTaskDto task)
+    {
+        var deviceId = task.DeviceId?.Trim();
+        var machineId = task.MachineId?.Trim();
+        if (!string.IsNullOrEmpty(deviceId) && !string.IsNullOrEmpty(machineId)
+            && !string.Equals(deviceId, machineId, StringComparison.Ordinal))
+            throw new ArgumentException("设备 ID 与机床 ID 不一致，请重新选择设备");
+        return !string.IsNullOrEmpty(deviceId) ? deviceId : machineId;
     }
 
     private static string FormatDuration(TimeSpan value)

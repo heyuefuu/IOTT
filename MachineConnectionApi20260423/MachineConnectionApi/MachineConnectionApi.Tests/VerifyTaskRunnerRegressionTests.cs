@@ -5,6 +5,37 @@ using MachineConnectionApi.Services;
 
 internal static class VerifyTaskRunnerRegressionTests
 {
+    public static async Task DeviceSelectionIsNormalizedAndConflictsFail()
+    {
+        foreach (var (deviceId, machineId, expected) in new[]
+        {
+            (" selected ", "selected", "selected"), ("", " selected ", "selected"),
+            ("selected", "", "selected"), ("", "", ""),
+        })
+        {
+            var task = new VerifyTaskDto
+            {
+                Id = "selection", Name = "Selection", Type = "function", CreatedAt = DateTimeOffset.Now,
+                DeviceId = deviceId, MachineId = machineId,
+            };
+            var service = new BlockingVerifyService();
+            service.Release.SetResult();
+            var runner = new VerifyTaskRunner(new MemoryTaskStore(task), service, new NullActivityLog());
+            await runner.RunTaskAsync(task.Id, "手动", CancellationToken.None);
+            AssertEqual(expected, service.LastRequest?.DeviceId, "SelectedDevice");
+        }
+        var conflicting = new VerifyTaskDto
+        {
+            Id = "conflict", Name = "Conflict", Type = "function", CreatedAt = DateTimeOffset.Now,
+            DeviceId = "first", MachineId = "selected",
+        };
+        var blockedService = new BlockingVerifyService();
+        var blockedRunner = new VerifyTaskRunner(new MemoryTaskStore(conflicting), blockedService, new NullActivityLog());
+        var failed = await blockedRunner.RunTaskAsync(conflicting.Id, "定时", CancellationToken.None);
+        AssertEqual("failed", failed?.Status, "ConflictingSelectionStatus");
+        AssertEqual<VerifyRunRequest?>(null, blockedService.LastRequest, "ConflictingSelectionNotExecuted");
+    }
+
     public static async Task ExecutionFailureReleasesTaskForRetry()
     {
         var task = new VerifyTaskDto
@@ -87,11 +118,13 @@ internal static class VerifyTaskRunnerRegressionTests
     private sealed class BlockingVerifyService : IVerifyAutomationService
     {
         private int _calls;
+        public VerifyRunRequest? LastRequest { get; private set; }
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public async Task<VerifyRunResponse> RunAsync(VerifyRunRequest request, CancellationToken ct)
         {
+            LastRequest = request;
             if (Interlocked.Increment(ref _calls) == 1)
             {
                 Started.TrySetResult();

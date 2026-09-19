@@ -1,4 +1,4 @@
-import axios from "axios";
+import { createMachineConnectionClient } from "./machineConnectionClient";
 
 /** PLC 品牌/协议能力矩阵（来自 Industrial IoT /api/plc/capabilities 静态清单） */
 export interface PlcProtocolCapability {
@@ -33,7 +33,7 @@ export interface NCLinkProbeModel {
 const baseURL =
 	import.meta.env.VITE_MACHINE_CONNECTION_API ?? "/machine-connection";
 
-const client = axios.create({
+const client = createMachineConnectionClient({
 	baseURL,
 	timeout: 60_000,
 	headers: { "Content-Type": "application/json" },

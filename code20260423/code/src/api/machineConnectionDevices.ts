@@ -1,4 +1,4 @@
-import axios from 'axios'
+import { createMachineConnectionClient } from './machineConnectionClient'
 
 /** 与 MachineConnectionApi / Industrial IoT 文档中设备 DTO 一致（枚举为 JSON 字符串） */
 export type DeviceTypeApi = 'CNC' | 'PLC' | 'Robot'
@@ -100,7 +100,7 @@ export interface DeviceImportResult {
 const baseURL =
 	import.meta.env.VITE_MACHINE_CONNECTION_API ?? '/machine-connection'
 
-const client = axios.create({
+const client = createMachineConnectionClient({
 	baseURL,
 	timeout: 120_000,
 	headers: { 'Content-Type': 'application/json' },

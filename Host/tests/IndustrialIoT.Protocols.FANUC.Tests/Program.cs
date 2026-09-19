@@ -6,6 +6,7 @@ internal static class Program
     {
         Console.WriteLine("FOCAS batch read regression tests");
         await FocasBatchReadRegressionTests.RunAll();
+        await FocasTransferRegressionTests.RunAll();
         Console.WriteLine("All tests passed.");
     }
 }

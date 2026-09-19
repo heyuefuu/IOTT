@@ -1,4 +1,4 @@
-import axios from "axios";
+import { createMachineConnectionClient } from "./machineConnectionClient";
 import { downloadBlob } from "./browserDownload";
 
 const baseURL =
@@ -58,14 +58,14 @@ export interface ProgramTransferCapability {
     limitation?: string | null;
 }
 
-const jsonClient = axios.create({
+const jsonClient = createMachineConnectionClient({
     baseURL,
     timeout: 300_000,
     headers: { "Content-Type": "application/json" },
 });
 
 /** multipart 上传勿设置默认 Content-Type，由浏览器带 boundary */
-const uploadClient = axios.create({
+const uploadClient = createMachineConnectionClient({
     baseURL,
     timeout: 300_000,
 });
@@ -353,7 +353,7 @@ export const machineConnectionProgramTransferApi = {
         deviceId: string,
         remotePaths: string[],
         options?: { pollIntervalMs?: number; timeoutMs?: number },
-    ): Promise<void> {
+    ): Promise<BatchTransferTaskDto> {
         if (!remotePaths.length) throw new Error("没有可下载的路径");
         const { taskId } = await this.queueDownloadBatch(deviceId, remotePaths);
         const task = await this.waitForBatchTransferTaskComplete(taskId, options);
@@ -380,7 +380,7 @@ export const machineConnectionProgramTransferApi = {
                 ?? task.artifactFileName?.trim()
                 ?? "batch-download.zip";
             downloadBlob(res.data, fn);
-            return;
+            return task;
         }
         throw new Error("批量任务已结束，但没有可下载的制品（可能全部失败）");
     },

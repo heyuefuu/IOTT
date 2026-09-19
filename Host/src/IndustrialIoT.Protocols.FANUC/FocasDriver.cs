@@ -31,6 +31,7 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
     private const int DefaultPort = 8193;       // FOCAS2 default Ethernet port
     private const int DefaultTimeoutMs = 10_000;
     private const int ProgramChunkSize = 256;
+    private const int TransferRetryDelayMs = 10;
     private const string CncMemoryRoot = "//CNC_MEM";
     private const string CncMemoryBrowseRootsKey = "CncMemoryBrowseRoots";
 
@@ -319,6 +320,18 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
         }
     }
 
+    private void WaitForTransferBuffer(Stopwatch idle, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var timeout = _config?.ReadTimeout ?? TimeSpan.FromSeconds(5);
+        if (timeout <= TimeSpan.Zero) timeout = TimeSpan.FromSeconds(5);
+        if (idle.Elapsed >= timeout)
+            throw new TimeoutException("FOCAS transfer buffer made no progress before the read timeout");
+        // FOCAS transfer calls must stay on the same thread while waiting for the CNC.
+        Thread.Sleep(TransferRetryDelayMs);
+        ct.ThrowIfCancellationRequested();
+    }
+
     public async Task<TransferProgressResult> UploadProgramAsync(
         Stream source, NCProgramMetadata metadata, IProgress<TransferProgress>? progress = null, CancellationToken ct = default)
     {
@@ -355,8 +368,10 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
             var transferred = 0L;
             var chunkSize = usePathMode ? 1024 : ProgramChunkSize;
             var buffer = new byte[chunkSize];
+            var idle = Stopwatch.StartNew();
             while (true)
             {
+                ct.ThrowIfCancellationRequested();
                 // Synchronous read on purpose — see NoAwaitBetweenFocasTransferCalls below.
                 var read = source.Read(buffer, 0, chunkSize);
                 if (read == 0) break;
@@ -364,6 +379,7 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
                 var offset = 0;
                 while (pending > 0)
                 {
+                    ct.ThrowIfCancellationRequested();
                     var acceptedLength = pending;
                     LogTransferStep($"upload chunk requested (pending={pending}, offset={offset})", metadata.RemotePath, usePathMode);
                     var chunkRc = usePathMode
@@ -372,19 +388,20 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
                     LogTransferStep($"upload chunk returned (accepted={acceptedLength})", metadata.RemotePath, usePathMode, chunkRc);
                     if (chunkRc != 0 && chunkRc != 10)
                         return FailTransfer(transferId, stopwatch, transferred, FormatDetailedFocasError("FOCAS upload failed", chunkRc));
-                    acceptedLength = usePathMode ? acceptedLength : pending;
-                    if (usePathMode && chunkRc == 10 && acceptedLength == 0)
+                    // EW_BUFFER rejects the chunk; retain it until the CNC accepts it.
+                    acceptedLength = chunkRc == 10 ? 0 : usePathMode ? acceptedLength : pending;
+                    if (acceptedLength == 0)
                     {
-                        _logger.LogInformation("FOCAS path upload waiting for buffer: {RemotePath}, pending={Pending}", metadata.RemotePath, pending);
-                        ct.ThrowIfCancellationRequested();
-                        Thread.Sleep(10);
+                        WaitForTransferBuffer(idle, ct);
                         continue;
                     }
+                    if (acceptedLength < 0 || acceptedLength > pending)
+                        return FailTransfer(transferId, stopwatch, transferred, "FOCAS upload returned an invalid accepted length");
+                    idle.Restart();
                     transferred += acceptedLength;
                     progress?.Report(new() { BytesTransferred = transferred, TotalBytes = totalBytes });
                     pending -= acceptedLength;
                     offset += acceptedLength;
-                    if (!usePathMode || chunkRc == 0) break;
                 }
             }
 
@@ -460,20 +477,23 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
             // Buffer device-side chunks in memory and flush once at the end: writing to `destination`
             // mid-sequence would await between FOCAS calls — see NoAwaitBetweenFocasTransferCalls.
             using var received = new MemoryStream();
+            var idle = Stopwatch.StartNew();
             while (true)
             {
+                ct.ThrowIfCancellationRequested();
                 LogTransferStep("download chunk requested", remotePath, usePathMode);
                 var chunkRc = usePathMode
                     ? _api.UploadProgramChunkFromPath(_handle, buffer, out var actualLength)
                     : _api.UploadProgramChunk(_handle, buffer, out actualLength);
                 LogTransferStep($"download chunk returned (actual={actualLength})", remotePath, usePathMode, chunkRc);
                 if (chunkRc != 0 && chunkRc != 10) return FailTransfer(transferId, stopwatch, transferred, FormatDetailedFocasError("FOCAS download failed", chunkRc));
-                if (usePathMode && chunkRc == 10 && actualLength == 0)
+                if (chunkRc == 10)
                 {
-                    ct.ThrowIfCancellationRequested();
+                    WaitForTransferBuffer(idle, ct);
                     continue;
                 }
                 if (actualLength == 0) break;
+                idle.Restart();
                 received.Write(buffer, 0, actualLength);
                 transferred += actualLength;
                 progress?.Report(new() { BytesTransferred = transferred, TotalBytes = 0 });
