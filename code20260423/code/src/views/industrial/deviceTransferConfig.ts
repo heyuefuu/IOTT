@@ -8,6 +8,7 @@ export interface ProgramTransferFormFields {
 	transferConnectTimeoutMs?: number;
 	transferReadTimeoutMs?: number;
 	transferShareName?: string;
+	transferMountPoint?: string;
 }
 
 export interface ProgramTransferConfig {
@@ -28,12 +29,16 @@ export function buildProgramTransferConfig(
 
 	const protocol = String(form.transferProtocol ?? "").trim();
 	if (!protocol) return undefined;
-	if (protocol !== "FTP" && protocol !== "SMB") return undefined;
+	if (protocol !== "FTP" && protocol !== "SMB" && protocol !== "NFS") return undefined;
 
 	const extendedProperties: Record<string, string> = {};
 	if (protocol === "SMB") {
 		const shareName = String(form.transferShareName ?? "").trim();
 		if (shareName) extendedProperties.ShareName = shareName;
+	}
+	if (protocol === "NFS") {
+		const mountPoint = String(form.transferMountPoint ?? "").trim();
+		if (mountPoint) extendedProperties.MountPoint = mountPoint;
 	}
 
 	return {

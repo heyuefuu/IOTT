@@ -39,8 +39,7 @@ internal static class MTConnectXmlParser
 
         // Components 嵌套 — 每种组件（Axes/Controller/Path/Rotary/Linear...）展平递归
         foreach (var comp in compOrDevice.Element(ns + "Components")?.Elements() ?? [])
-            foreach (var sub in comp.Elements())
-                children.Add(BuildComponentNode(sub, ns));
+            children.Add(BuildComponentNode(comp, ns));
 
         return new AddressNode
         {

@@ -22,6 +22,7 @@ public sealed class HuazhongRobotDriver : IProtocolDriver, IAddressSpaceBrowser
     private readonly HuazhongRobotAddressSpace _addressSpace;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private ModbusTcpNet? _client;
+    private string _pingAddress = "100";
     private ConnectionState _state = ConnectionState.Disconnected;
 
     public HuazhongRobotDriver(ILogger<HuazhongRobotDriver> logger, HuazhongRobotAddressSpace addressSpace)
@@ -44,6 +45,9 @@ public sealed class HuazhongRobotDriver : IProtocolDriver, IAddressSpaceBrowser
         {
             var port = config.Port > 0 ? config.Port : DefaultPort;
             var station = byte.TryParse(config.ExtendedProperties.GetValueOrDefault("Station"), out var s) ? s : (byte)1;
+            var configuredPing = config.ExtendedProperties.GetValueOrDefault("PingAddress");
+            _pingAddress = !string.IsNullOrWhiteSpace(configuredPing)
+                ? configuredPing : _addressSpace.All.FirstOrDefault()?.Path ?? "100";
 
             var client = new ModbusTcpNet(config.Host, port, station)
             {
@@ -78,7 +82,7 @@ public sealed class HuazhongRobotDriver : IProtocolDriver, IAddressSpaceBrowser
     public async Task<bool> PingAsync(CancellationToken ct = default)
     {
         if (_state != ConnectionState.Connected || _client is null) return false;
-        try { return (await _client.ReadUInt16Async("100")).IsSuccess; }
+        try { return (await ReadTagAsync(_pingAddress, DataType.UInt16, ct)).Quality == TagQuality.Good; }
         catch { return false; }
     }
 

@@ -28,6 +28,10 @@ public sealed class HaasMdcDriver : IProtocolDriver, IAddressSpaceBrowser
     private readonly SemaphoreSlim _lock = new(1, 1);
     private TcpClient? _tcp;
     private NetworkStream? _stream;
+    private TimeSpan _readTimeout = TimeSpan.FromSeconds(5);
+    private readonly byte[] _responseBuffer = new byte[ResponseBufferSize];
+    private int _responseOffset;
+    private int _responseCount;
     private ConnectionState _state = ConnectionState.Disconnected;
 
     public ProtocolType Protocol => ProtocolType.HaasMdc;
@@ -49,13 +53,14 @@ public sealed class HaasMdcDriver : IProtocolDriver, IAddressSpaceBrowser
         {
             var port = config.Port > 0 ? config.Port : DefaultPort;
             var client = new TcpClient { ReceiveTimeout = (int)config.ReadTimeout.TotalMilliseconds };
+            _tcp = client;
+            _readTimeout = config.ReadTimeout > TimeSpan.Zero ? config.ReadTimeout : TimeSpan.FromSeconds(5);
             using (var cts = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
                 cts.CancelAfter(config.ConnectTimeout);
                 await client.ConnectAsync(config.Host, port, cts.Token);
             }
 
-            _tcp = client;
             _stream = client.GetStream();
 
             _logger.LogInformation("Haas MDC connected to {Host}:{Port}", config.Host, port);
@@ -174,19 +179,49 @@ public sealed class HaasMdcDriver : IProtocolDriver, IAddressSpaceBrowser
     /// <summary>底层 Q/E 命令通道：发送 ASCII 命令，读取响应。</summary>
     private async Task<string> SendCommandAsync(string command, CancellationToken ct)
     {
-        if (_stream is null) throw new InvalidOperationException("Not connected");
-
         await _lock.WaitAsync(ct);
         try
         {
+            var stream = _stream ?? throw new InvalidOperationException("Not connected");
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(_readTimeout);
             var payload = Encoding.ASCII.GetBytes(command + "\r\n");
-            await _stream.WriteAsync(payload, ct);
-
-            var buffer = new byte[ResponseBufferSize];
-            var read = await _stream.ReadAsync(buffer, ct);
-            return Encoding.ASCII.GetString(buffer, 0, read).Trim();
+            await stream.WriteAsync(payload, timeout.Token);
+            return await ReadResponseAsync(stream, timeout.Token);
+        }
+        catch (Exception ex)
+        {
+            Cleanup();
+            SetState(ConnectionState.Faulted, ex.Message);
+            throw;
         }
         finally { _lock.Release(); }
+    }
+
+    private async Task<string> ReadResponseAsync(NetworkStream stream, CancellationToken ct)
+    {
+        var response = new StringBuilder();
+        while (true)
+        {
+            if (_responseOffset == _responseCount)
+            {
+                _responseCount = await stream.ReadAsync(_responseBuffer, ct);
+                _responseOffset = 0;
+                if (_responseCount == 0)
+                    throw new IOException("Haas MDC closed before a complete response");
+            }
+            var current = (char)_responseBuffer[_responseOffset++];
+            if (current is '\r' or '\n')
+            {
+                var line = response.ToString().Trim();
+                if (line.Length > 0) return line;
+                response.Clear();
+                continue;
+            }
+            if (response.Length >= ResponseBufferSize)
+                throw new IOException("Haas MDC response exceeds maximum line length");
+            response.Append(current);
+        }
     }
 
     public ValueTask DisposeAsync()
@@ -254,6 +289,8 @@ public sealed class HaasMdcDriver : IProtocolDriver, IAddressSpaceBrowser
 
     private void Cleanup()
     {
+        _responseOffset = 0;
+        _responseCount = 0;
         _stream?.Dispose(); _stream = null;
         _tcp?.Close(); _tcp?.Dispose(); _tcp = null;
     }

@@ -42,8 +42,9 @@ public sealed partial class NativeGskrmApi
 
     public int GetConnectState(int handle, out bool connected)
     {
-        connected = Resolve(handle) != IntPtr.Zero;
-        return connected ? GskrmErrorCodes.Ok : GskrmErrorCodes.InvalidHandle;
+        var result = GetCncState(handle, out _);
+        connected = result == GskrmErrorCodes.Ok;
+        return result;
     }
 
     public int SetOvertime(int handle, int timeoutMs)

@@ -51,10 +51,10 @@ public sealed partial class NCLinkApiDriver : IProtocolDriver, IAddressSpaceBrow
 
     // ── 连接 ─────────────────────────────────────────────────────────────
 
-    public Task<ConnectionResult> ConnectAsync(DeviceConnectionConfig config, CancellationToken ct = default)
+    public async Task<ConnectionResult> ConnectAsync(DeviceConnectionConfig config, CancellationToken ct = default)
     {
         if (_state == ConnectionState.Connected)
-            return Task.FromResult(new ConnectionResult { Success = true });
+            return new ConnectionResult { Success = true };
 
         _config = config;
         TransitionState(ConnectionState.Connecting);
@@ -75,17 +75,29 @@ public sealed partial class NCLinkApiDriver : IProtocolDriver, IAddressSpaceBrow
                 ? dt
                 : null;
 
+            if (_client is not null)
+                await _client.DisposeAsync().ConfigureAwait(false);
             _client = new NCLinkApiClient(new Uri(apiBaseUrl), timeout, _logger);
+            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            if (config.ConnectTimeout > TimeSpan.Zero)
+                connectCts.CancelAfter(config.ConnectTimeout);
+            var status = await _client.GetValueAsync(_deviceId, NCLinkApiPaths.MachineStatus,
+                timeoutMs: _defaultRequestTimeoutMs, ct: connectCts.Token).ConfigureAwait(false);
+            if (!status.IsSuccess)
+                throw new NCLinkApiException(status.StatusCode, status.Status, "Device status check failed");
 
             TransitionState(ConnectionState.Connected);
             _logger.LogInformation("NC-Link API connected: {Base} device={Device}", apiBaseUrl, _deviceId);
-            return Task.FromResult(new ConnectionResult { Success = true });
+            return new ConnectionResult { Success = true };
         }
         catch (Exception ex)
         {
+            if (_client is not null)
+                await _client.DisposeAsync().ConfigureAwait(false);
+            _client = null;
             _logger.LogError(ex, "NC-Link API connect failed");
             TransitionState(ConnectionState.Faulted, ex.Message);
-            return Task.FromResult(new ConnectionResult { Success = false, ErrorMessage = ex.Message });
+            return new ConnectionResult { Success = false, ErrorMessage = ex.Message };
         }
     }
 

@@ -62,7 +62,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IAddressSpaceBrowser
             _logger.LogInformation("Connecting to Modbus TCP at {Endpoint} (unit {UnitId})...", endpoint, _unitId);
 
             // ModbusTcpClient.Connect is synchronous — offload to avoid blocking the caller
-            await Task.Run(() => _client.Connect(endpoint), ct).WaitAsync(config.ConnectTimeout, ct);
+            await Task.Run(() => _client.Connect(endpoint, ModbusEndianness.BigEndian), ct).WaitAsync(config.ConnectTimeout, ct);
 
             SetState(ConnectionState.Connected);
             _logger.LogInformation("Connected to Modbus TCP at {Endpoint}", endpoint);

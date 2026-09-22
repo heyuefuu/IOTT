@@ -164,9 +164,7 @@ public class SmbTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSp
                         ct.ThrowIfCancellationRequested();
 
                         var data = buffer.Length == read ? buffer : buffer[..read];
-                        var writeStatus = _fileStore.WriteFile(out _, fileHandle, transferred, data);
-                        if (writeStatus != NTStatus.STATUS_SUCCESS)
-                            return CreateFailedResult(transferId, sw, $"SMB write failed at offset {transferred}: {writeStatus}");
+                        WriteAll(fileHandle, transferred, data, ct);
 
                         transferred += read;
                         progress?.Report(new TransferProgress { BytesTransferred = transferred, TotalBytes = totalBytes });
@@ -242,16 +240,24 @@ public class SmbTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSp
                         ct.ThrowIfCancellationRequested();
 
                         var readStatus = _fileStore.ReadFile(out var data, fileHandle, transferred, BufferSize);
-                        if (readStatus == NTStatus.STATUS_END_OF_FILE || data is null || data.Length == 0)
+                        if (readStatus == NTStatus.STATUS_END_OF_FILE)
                             break;
 
                         if (readStatus != NTStatus.STATUS_SUCCESS)
                             return CreateFailedResult(transferId, sw, $"SMB read failed at offset {transferred}: {readStatus}");
+                        if (data is null || data.Length == 0)
+                        {
+                            if (totalBytes >= 0 && transferred == totalBytes) break;
+                            return CreateFailedResult(transferId, sw, $"SMB read returned no data before EOF at offset {transferred}");
+                        }
 
                         destination.Write(data, 0, data.Length);
                         transferred += data.Length;
-                        progress?.Report(new TransferProgress { BytesTransferred = transferred, TotalBytes = totalBytes });
+                        progress?.Report(new TransferProgress { BytesTransferred = transferred, TotalBytes = Math.Max(0, totalBytes) });
                     }
+
+                    if (totalBytes >= 0 && transferred != totalBytes)
+                        return CreateFailedResult(transferId, sw, $"SMB download incomplete: {transferred}/{totalBytes} bytes transferred.");
 
                     sw.Stop();
                     _logger.LogInformation("SMB download completed: {RemotePath} ({Bytes} bytes) in {Duration}", normalizedPath, transferred, sw.Elapsed);
@@ -324,9 +330,7 @@ public class SmbTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSp
                         ct.ThrowIfCancellationRequested();
 
                         var data = buffer.Length == read ? buffer : buffer[..read];
-                        var writeStatus = _fileStore.WriteFile(out _, fileHandle, writeOffset, data);
-                        if (writeStatus != NTStatus.STATUS_SUCCESS)
-                            return CreateFailedResult(transferId, sw, $"SMB resume write failed at offset {writeOffset}: {writeStatus}");
+                        WriteAll(fileHandle, writeOffset, data, ct);
 
                         writeOffset += read;
                         progress?.Report(new TransferProgress { BytesTransferred = writeOffset, TotalBytes = totalBytes });
@@ -475,6 +479,22 @@ public class SmbTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSp
         return ("", input);
     }
 
+    private void WriteAll(object fileHandle, long fileOffset, byte[] data, CancellationToken ct)
+    {
+        var written = 0;
+        while (written < data.Length)
+        {
+            ct.ThrowIfCancellationRequested();
+            var remaining = written == 0 ? data : data[written..];
+            var status = _fileStore!.WriteFile(out var accepted, fileHandle, fileOffset + written, remaining);
+            if (status != NTStatus.STATUS_SUCCESS)
+                throw new IOException($"SMB write failed at offset {fileOffset + written}: {status}");
+            if (accepted <= 0 || accepted > remaining.Length)
+                throw new IOException($"SMB write returned invalid byte count {accepted} at offset {fileOffset + written}");
+            written += accepted;
+        }
+    }
+
     private long GetFileSize(object fileHandle)
     {
         try
@@ -491,7 +511,7 @@ public class SmbTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSp
             _logger.LogWarning(ex, "Failed to get file size from SMB handle");
         }
 
-        return 0;
+        return -1;
     }
 
     private void EnsureDirectoryExists(string filePath)

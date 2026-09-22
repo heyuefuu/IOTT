@@ -135,8 +135,8 @@ public sealed partial class GskWebServerDriver :
         if (Prefix(normalized) == "realtime")
         {
             await WaitForFirstRealtimeFrameAsync(TimeSpan.FromSeconds(5), ct);
-            if (TryGetRealtimeValue(normalized, out var realtime, out var rtError))
-                return ToTagValue(normalized, dataType, realtime);
+            if (TryGetRealtimeValue(normalized, out var realtime, out var timestamp, out var rtError))
+                return ToTagValue(normalized, dataType, realtime, timestamp);
             return BadTag(normalized, dataType,
                 $"{rtError} Realtime fields are only published via WebSocket; " +
                 "the HTTP '/mc' endpoint serves static metadata and cannot provide '" + normalized + "'.");
@@ -145,7 +145,7 @@ public sealed partial class GskWebServerDriver :
         if (!TryResolveReadEndpoint(normalized, out var client, out var requestPath, out var error))
             return BadTag(normalized, dataType, error);
 
-        var document = await GetJsonAsync(client, requestPath, ct);
+        using var document = await GetJsonAsync(client, requestPath, ct);
         var value = ExtractAddressValue(document.RootElement, normalized);
         return ToTagValue(normalized, dataType, value);
     }

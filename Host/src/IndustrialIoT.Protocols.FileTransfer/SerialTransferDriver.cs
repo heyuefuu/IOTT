@@ -182,8 +182,15 @@ public class SerialTransferDriver : IProtocolDriver, INCProgramTransfer
 
             // Send end-of-transfer marker: zero-length frame
             var eofFrame = BuildFrame(seqNo, []);
-            _serialPort!.Write(eofFrame, 0, eofFrame.Length);
-            await WaitForAckAsync(ct);
+            var eofAcknowledged = false;
+            for (var retry = 0; retry < MaxRetries && !eofAcknowledged; retry++)
+            {
+                ct.ThrowIfCancellationRequested();
+                _serialPort!.Write(eofFrame, 0, eofFrame.Length);
+                eofAcknowledged = await WaitForAckAsync(ct) == ACK;
+            }
+            if (!eofAcknowledged)
+                throw new IOException($"End-of-transfer frame seq {seqNo} was not acknowledged after {MaxRetries} retries");
 
             sw.Stop();
             _logger.LogInformation("Serial upload completed: {FileName} ({Bytes} bytes) in {Duration}", metadata.FileName, transferred, sw.Elapsed);
@@ -256,18 +263,18 @@ public class SerialTransferDriver : IProtocolDriver, INCProgramTransfer
                     continue;
                 }
 
-                // End-of-transfer marker
-                if (data.Length == 0)
-                {
-                    _serialPort.Write([ACK], 0, 1);
-                    break;
-                }
-
                 if (seqNo != expectedSeq)
                 {
                     _logger.LogWarning("Sequence mismatch: expected {Expected}, got {Actual}", expectedSeq, seqNo);
                     _serialPort.Write([NAK], 0, 1);
                     continue;
+                }
+
+                // End-of-transfer marker must have the expected sequence number.
+                if (data.Length == 0)
+                {
+                    _serialPort.Write([ACK], 0, 1);
+                    break;
                 }
 
                 await destination.WriteAsync(data, ct);

@@ -243,10 +243,13 @@
                             <el-input v-model="deviceForm.transferHost" placeholder="如 192.168.1.20" />
                         </el-form-item>
                         <el-form-item label="传输端口" prop="transferPort" required>
-                            <el-input v-model.number="deviceForm.transferPort" placeholder="FTP 默认 21，SMB 默认 445" />
+                            <el-input v-model.number="deviceForm.transferPort" placeholder="FTP 默认 21，SMB 默认 445，NFS 默认 2049" />
                         </el-form-item>
                         <el-form-item v-if="deviceForm.transferProtocol === 'SMB'" label="共享名" prop="transferShareName" required>
                             <el-input v-model="deviceForm.transferShareName" placeholder="如 NC_PROGRAM" />
+                        </el-form-item>
+                        <el-form-item v-if="deviceForm.transferProtocol === 'NFS'" label="挂载目录" prop="transferMountPoint" required>
+                            <el-input v-model="deviceForm.transferMountPoint" placeholder="采集服务主机上已挂载的目录，如 Z:\ 或 /mnt/cnc" />
                         </el-form-item>
                         <el-form-item label="传输账号" prop="transferUsername">
                             <el-input v-model="deviceForm.transferUsername" placeholder="可留空使用匿名/来宾" />
@@ -430,6 +433,9 @@
                     }}</el-descriptions-item>
                 <el-descriptions-item v-if="detailDevice?.transferProtocol === 'SMB'" label="SMB 共享名">{{
                     detailDevice?.transferShareName || "-"
+                    }}</el-descriptions-item>
+                <el-descriptions-item v-if="detailDevice?.transferProtocol === 'NFS'" label="NFS 挂载目录" :span="2">{{
+                    detailDevice?.transferMountPoint || "-"
                     }}</el-descriptions-item>
                 <el-descriptions-item v-if="detailDevice?.transferProtocol" label="传输账号">{{
                     detailDevice?.transferUsername || "-"
@@ -934,6 +940,7 @@ interface DeviceUi {
     transferUsername: string;
     transferPassword: string;
     transferShareName: string;
+    transferMountPoint: string;
     transferConnectTimeoutMs: number;
     transferReadTimeoutMs: number;
     /** extendedProperties（NCLink） */
@@ -1062,6 +1069,7 @@ function mapDtoToUi(d: DeviceDto): DeviceUi {
         transferUsername: String(transfer?.username ?? ""),
         transferPassword: "",
         transferShareName: String(transfer?.extendedProperties?.ShareName ?? ""),
+        transferMountPoint: String(transfer?.extendedProperties?.MountPoint ?? ""),
         transferConnectTimeoutMs: Number(transfer?.connectTimeoutMs ?? 10000),
         transferReadTimeoutMs: Number(transfer?.readTimeoutMs ?? 5000),
         deviceGuid: String(ext.DeviceGuid ?? ""),
@@ -2354,17 +2362,20 @@ const transferChannelLabel = computed(() => {
 
 const transferChannelTagType = computed(() => {
     const protocol = selectedTransferDevice.value?.transferProtocol;
-    return protocol === "FTP" || protocol === "SMB" ? "success" : "info";
+    return protocol === "FTP" || protocol === "SMB" || protocol === "NFS" ? "success" : "info";
 });
 
 const transferChannelDetail = computed(() => {
     const ui = selectedTransferDevice.value;
     if (!ui) return "请选择设备";
+    if (ui.transferProtocol === "NFS") {
+        return `使用设备已保存的 NFS 挂载目录：${ui.transferMountPoint}`;
+    }
     if (ui.transferProtocol) {
         const auth = ui.transferUsername ? `，账号 ${ui.transferUsername}` : "";
         return `使用设备已保存的 ${ui.transferProtocol} 通道：${ui.transferHost}:${ui.transferPort}${auth}`;
     }
-    return `未配置 FTP/SMB，当前会使用设备主协议 ${ui.protocol} 执行传输`;
+    return `未配置独立文件传输通道，当前会使用设备主协议 ${ui.protocol} 执行传输`;
 });
 
 /**
@@ -3002,7 +3013,7 @@ async function loadRemotePathChildren(parentNode?: RemotePathNode) {
             parentNode._loaded = true;
         } else {
             const protocol = getDeviceTransferProtocol(ui);
-            if (protocol === "FTP" || protocol === "SMB") {
+            if (protocol === "FTP" || protocol === "SMB" || protocol === "NFS") {
                 const root = nodes.find((node) => node.path === "/") ?? createFolderNode("/");
                 if (!nodes.includes(root)) root.children = nodes;
                 root._loaded = true;
@@ -3196,7 +3207,7 @@ const startTransfer = async () => {
             return;
         }
     }
-    if (!isBatchAddressDownload && (protocol === "FTP" || protocol === "SMB")
+    if (!isBatchAddressDownload && (protocol === "FTP" || protocol === "SMB" || protocol === "NFS")
         && /^(?:nsu?=|[isgb]=)/i.test(remotePath)) {
         ElMessage.warning("文件传输请使用设备文件目录中的路径");
         return;
@@ -3527,7 +3538,7 @@ function isDownloadableProgramPathForProtocol(path: string, ui?: DeviceUi): bool
     if (protocol === "FOCAS") {
         return /^\/(?!\/)|^\/\/CNC_MEM(?:\/|$)/i.test(p);
     }
-    if (protocol === "FTP" || protocol === "SMB") {
+    if (protocol === "FTP" || protocol === "SMB" || protocol === "NFS") {
         return !/^(?:nsu?=|[isgb]=)/i.test(p);
     }
     return true;
@@ -3606,7 +3617,7 @@ function treeDefaultsForNewDevice(): Record<string, unknown> {
             rejectSHA1SignedCertificates: "false",
             suppressNonceValidationErrors: "true",
             endpointUrl: "",
-            transferProtocol: "FTP",
+            transferProtocol: "",
             transferPort: 21,
             transferConnectTimeoutMs: 10000,
             transferReadTimeoutMs: 5000,
@@ -3671,6 +3682,7 @@ const deviceForm = ref({
     transferUsername: "",
     transferPassword: "",
     transferShareName: "",
+    transferMountPoint: "",
     transferConnectTimeoutMs: 10000,
     transferReadTimeoutMs: 5000,
     deviceGuid: "",
@@ -3690,11 +3702,14 @@ const deviceForm = ref({
 watch(
     () => deviceForm.value.transferProtocol,
     (protocol) => {
-        if (protocol === "FTP" && (!deviceForm.value.transferPort || deviceForm.value.transferPort === 445)) {
+        if (protocol === "FTP" && (!deviceForm.value.transferPort || [445, 2049].includes(deviceForm.value.transferPort))) {
             deviceForm.value.transferPort = 21;
         }
-        if (protocol === "SMB" && (!deviceForm.value.transferPort || deviceForm.value.transferPort === 21)) {
+        if (protocol === "SMB" && (!deviceForm.value.transferPort || [21, 2049].includes(deviceForm.value.transferPort))) {
             deviceForm.value.transferPort = 445;
+        }
+        if (protocol === "NFS" && (!deviceForm.value.transferPort || [21, 445].includes(deviceForm.value.transferPort))) {
+            deviceForm.value.transferPort = 2049;
         }
     },
 );
@@ -3738,6 +3753,7 @@ const openAddDeviceDialog = () => {
         transferUsername: "",
         transferPassword: "",
         transferShareName: "",
+        transferMountPoint: "",
         transferConnectTimeoutMs: 10000,
         transferReadTimeoutMs: 5000,
         deviceGuid: "",
@@ -3795,6 +3811,7 @@ const editDevice = (device: DeviceUi) => {
         transferUsername: device.transferUsername || "",
         transferPassword: "",
         transferShareName: device.transferShareName || "",
+        transferMountPoint: device.transferMountPoint || "",
         transferConnectTimeoutMs: device.transferConnectTimeoutMs || 10000,
         transferReadTimeoutMs: device.transferReadTimeoutMs || 5000,
         deviceGuid: device.deviceGuid ?? "",
@@ -3844,10 +3861,6 @@ const saveDevice = async () => {
         ElMessage.warning("请输入有效端口 port");
         return;
     }
-    if (f.protocol === "OpcUa" && !String(f.transferProtocol ?? "").trim()) {
-        ElMessage.warning("西门子 OPC UA 设备请配置文件传输协议（FTP 或 SMB）");
-        return;
-    }
     if (String(f.transferProtocol ?? "").trim() && !String(f.transferHost ?? "").trim()) {
         ElMessage.warning("请填写文件传输主机");
         return;
@@ -3858,6 +3871,10 @@ const saveDevice = async () => {
     }
     if (f.transferProtocol === "SMB" && !String(f.transferShareName ?? "").trim()) {
         ElMessage.warning("SMB 文件传输请填写共享名 ShareName");
+        return;
+    }
+    if (f.transferProtocol === "NFS" && !String(f.transferMountPoint ?? "").trim()) {
+        ElMessage.warning("NFS 文件传输请填写采集服务主机上已挂载的目录 MountPoint");
         return;
     }
     if (f.protocol === "NCLink" && !String(f.deviceGuid ?? "").trim()) {

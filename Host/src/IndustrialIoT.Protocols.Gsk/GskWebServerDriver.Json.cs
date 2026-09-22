@@ -6,7 +6,8 @@ using IndustrialIoT.Protocols.Models;
 
 public sealed partial class GskWebServerDriver
 {
-    private static TagValue ToTagValue(string address, DataType dataType, JsonElement value)
+    private static TagValue ToTagValue(string address, DataType dataType, JsonElement value,
+        DateTimeOffset? timestamp = null)
     {
         var ok = TryConvertValue(value, dataType, out var converted, out var error);
         return new()
@@ -15,7 +16,7 @@ public sealed partial class GskWebServerDriver
             DataType = dataType,
             Value = converted,
             Quality = ok ? TagQuality.Good : TagQuality.Bad,
-            Timestamp = DateTimeOffset.UtcNow,
+            Timestamp = timestamp ?? DateTimeOffset.UtcNow,
             ErrorMessage = error
         };
     }

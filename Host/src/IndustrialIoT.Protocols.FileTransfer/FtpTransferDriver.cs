@@ -258,9 +258,11 @@ public class FtpTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSp
             _logger.LogInformation("FTP resume upload: {RemotePath} from offset {Offset}", remotePath, offset);
 
             // FluentFTP natively supports REST command for append/resume
-            await _client!.UploadStream(source, remotePath, FtpRemoteExists.Resume,
+            var status = await _client!.UploadStream(source, remotePath, FtpRemoteExists.Resume,
                 createRemoteDir: true, token: ct,
                 progress: CreateFtpProgress(totalBytes, progress));
+            if (status != FtpStatus.Success)
+                throw new InvalidOperationException($"FTP resume upload failed with status {status}.");
 
             sw.Stop();
             var bytesTransferred = source.CanSeek ? source.Position : totalBytes;

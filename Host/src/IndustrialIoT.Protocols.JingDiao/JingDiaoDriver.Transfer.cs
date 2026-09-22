@@ -9,7 +9,9 @@ public sealed partial class JingDiaoDriver
     {
         EnsureConnected();
         var result = await client!.BrowseFilesAsync(new JingDiaoBrowseFilesRequest(sessionId, path), ct);
-        if (result.ReturnCode != 0 || result.Value is null) return [];
+        if (result.ReturnCode != 0)
+            throw new IOException($"JingDiao directory read failed ({result.ReturnCode}): {result.ErrorMessage}");
+        if (result.Value is null) return [];
         return result.Value.Select(x => new ProgramFileEntry
         {
             Path = x.Path,

@@ -49,9 +49,9 @@ public sealed class NfsTransferDriver : IProtocolDriver, INCProgramTransfer, IAd
             if (!Directory.Exists(mount))
                 throw new DirectoryNotFoundException($"NFS mount point '{mount}' does not exist — please mount first");
 
-            _mountPoint = mount;
+            _mountPoint = Path.GetFullPath(mount);
             var rel = config.ExtendedProperties.GetValueOrDefault("RootRelativePath") ?? "";
-            _rootDir = Path.Combine(_mountPoint, rel);
+            _rootDir = ResolveWithinRoot(_mountPoint, rel);
             Directory.CreateDirectory(_rootDir);
 
             _logger.LogInformation("NFS driver attached to mount point {MountPoint} (root={Root})", mount, _rootDir);
@@ -161,14 +161,13 @@ public sealed class NfsTransferDriver : IProtocolDriver, INCProgramTransfer, IAd
 
     public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
     {
-        if (_rootDir is null) throw new InvalidOperationException("Not connected");
-        var baseDir = string.IsNullOrEmpty(parentPath) ? _rootDir : Path.Combine(_rootDir, parentPath.TrimStart('/', '\\'));
+        var baseDir = ResolvePath(parentPath ?? "", null);
         if (!Directory.Exists(baseDir)) return Task.FromResult<IReadOnlyList<AddressNode>>([]);
 
         var nodes = Directory.EnumerateFileSystemEntries(baseDir).Select(p =>
         {
             var isDir = Directory.Exists(p);
-            var rel = Path.GetRelativePath(_rootDir, p).Replace('\\', '/');
+            var rel = Path.GetRelativePath(_rootDir!, p).Replace('\\', '/');
             return new AddressNode
             {
                 Path = "/" + rel,
@@ -187,11 +186,46 @@ public sealed class NfsTransferDriver : IProtocolDriver, INCProgramTransfer, IAd
 
     private string ResolvePath(string remotePath, string? fileName)
     {
-        if (_rootDir is null) throw new InvalidOperationException("Not connected");
-        var combined = Path.Combine(_rootDir, remotePath.TrimStart('/', '\\'));
-        if (!string.IsNullOrEmpty(fileName) && Directory.Exists(combined))
-            combined = Path.Combine(combined, fileName);
-        return combined;
+        if (_state != ConnectionState.Connected || _rootDir is null)
+            throw new InvalidOperationException("Not connected");
+        if (remotePath.StartsWith("//", StringComparison.Ordinal) || remotePath.StartsWith(@"\\", StringComparison.Ordinal))
+            throw new UnauthorizedAccessException("NFS paths must be relative to the configured root");
+        var relative = remotePath.TrimStart('/', '\\');
+        if (fileName is not null)
+        {
+            if (string.IsNullOrWhiteSpace(fileName) || fileName is "." or ".." || fileName.IndexOfAny(['/', '\\', ':']) >= 0)
+                throw new ArgumentException("NFS file name must contain a single file name", nameof(fileName));
+            relative = Path.Combine(relative, fileName);
+        }
+        return ResolveWithinRoot(_rootDir, relative);
+    }
+
+    private static string ResolveWithinRoot(string root, string relativePath)
+    {
+        var relative = relativePath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+        if (Path.IsPathRooted(relative) || relative.Contains(':'))
+            throw new UnauthorizedAccessException("NFS paths must be relative to the configured root");
+        var fullRoot = Path.GetFullPath(root);
+        var resolved = Path.GetFullPath(Path.Combine(fullRoot, relative));
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var rootPrefix = Path.EndsInDirectorySeparator(fullRoot) ? fullRoot : fullRoot + Path.DirectorySeparatorChar;
+        if (!resolved.Equals(fullRoot, comparison) && !resolved.StartsWith(rootPrefix, comparison))
+            throw new UnauthorizedAccessException("NFS path escapes the configured root");
+        if (resolved.Equals(fullRoot, comparison)) return resolved;
+
+        var current = fullRoot;
+        foreach (var part in Path.GetRelativePath(fullRoot, resolved).Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, part);
+            try
+            {
+                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                    throw new UnauthorizedAccessException("NFS paths cannot traverse symbolic links or reparse points");
+            }
+            catch (FileNotFoundException) { }
+            catch (DirectoryNotFoundException) { }
+        }
+        return resolved;
     }
 
     private void SetState(ConnectionState next, string? reason = null)

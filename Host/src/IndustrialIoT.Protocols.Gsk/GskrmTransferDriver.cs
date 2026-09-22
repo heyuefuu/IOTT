@@ -121,7 +121,8 @@ public sealed class GskrmTransferDriver : IProtocolDriver, IAddressSpaceBrowser,
         try
         {
             int rc = _api.GetCNCFileList(_handle, out var list);
-            if (rc != GskrmErrorCodes.Ok) return [];
+            if (rc != GskrmErrorCodes.Ok)
+                throw new IOException($"GSKRM_GetCNCFileList failed: {GskrmErrorCodes.Describe(rc)}");
             return list.Select(entry => new ProgramFileEntry
             {
                 Path = "/" + entry.Name,
@@ -184,7 +185,7 @@ public sealed class GskrmTransferDriver : IProtocolDriver, IAddressSpaceBrowser,
             // GSKRM_SendCNCFile is path-based — materialize the inbound stream to disk first.
             long total = metadata.FileSize ?? (source.CanSeek ? source.Length : 0);
             long bytes = 0;
-            using (var sha = SHA256.Create())
+            using var sha = SHA256.Create();
             await using (var tmp = File.Create(tempPath))
             {
                 var buf = new byte[81920]; int n;
@@ -196,26 +197,26 @@ public sealed class GskrmTransferDriver : IProtocolDriver, IAddressSpaceBrowser,
                     progress?.Report(new() { BytesTransferred = bytes, TotalBytes = total });
                 }
                 sha.TransformFinalBlock([], 0, 0);
-
-                var remoteName = !string.IsNullOrWhiteSpace(metadata.FileName)
-                    ? metadata.FileName
-                    : throw new InvalidOperationException("GSKRM upload requires NCProgramMetadata.FileName (target file name on CNC)");
-                await _lock.WaitAsync(ct);
-                int rc;
-                try { rc = _api.SendCNCFile(_handle, tempPath, remoteName, new Progress<long>()); }
-                finally { _lock.Release(); }
-
-                if (rc != GskrmErrorCodes.Ok)
-                    return Fail(transferId, sw, bytes, $"GSKRM_SendCNCFile failed: {GskrmErrorCodes.Describe(rc)}");
-
-                sw.Stop();
-                return new()
-                {
-                    Success = true, TransferId = transferId,
-                    BytesTransferred = bytes, Duration = sw.Elapsed,
-                    Checksum = Convert.ToHexString(sha.Hash!).ToLowerInvariant()
-                };
             }
+
+            var remoteName = !string.IsNullOrWhiteSpace(metadata.FileName)
+                ? metadata.FileName
+                : throw new InvalidOperationException("GSKRM upload requires NCProgramMetadata.FileName (target file name on CNC)");
+            await _lock.WaitAsync(ct);
+            int rc;
+            try { rc = _api.SendCNCFile(_handle, tempPath, remoteName, new Progress<long>()); }
+            finally { _lock.Release(); }
+
+            if (rc != GskrmErrorCodes.Ok)
+                return Fail(transferId, sw, bytes, $"GSKRM_SendCNCFile failed: {GskrmErrorCodes.Describe(rc)}");
+
+            sw.Stop();
+            return new()
+            {
+                Success = true, TransferId = transferId,
+                BytesTransferred = bytes, Duration = sw.Elapsed,
+                Checksum = Convert.ToHexString(sha.Hash!).ToLowerInvariant()
+            };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

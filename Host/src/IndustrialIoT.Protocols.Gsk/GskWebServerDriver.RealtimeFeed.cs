@@ -15,6 +15,7 @@ public sealed partial class GskWebServerDriver
     private ClientWebSocket? _realtimeWs;
     private JsonDocument? _latestRealtimeDoc;
     private bool _hasRealtimeFrame;
+    private DateTimeOffset _latestRealtimeAt;
     private string? _lastRealtimeError;
     private string? _lastRealtimeEndpoint;
     private readonly object _realtimeLock = new();
@@ -104,6 +105,13 @@ public sealed partial class GskWebServerDriver
             }
             finally
             {
+                lock (_realtimeLock)
+                {
+                    _hasRealtimeFrame = false;
+                    _latestRealtimeDoc?.Dispose();
+                    _latestRealtimeDoc = null;
+                    _lastRealtimeError ??= "connection closed";
+                }
                 ws?.Dispose();
                 if (ReferenceEquals(_realtimeWs, ws)) _realtimeWs = null;
             }
@@ -161,6 +169,7 @@ public sealed partial class GskWebServerDriver
                 old = _latestRealtimeDoc;
                 _latestRealtimeDoc = doc;
                 _hasRealtimeFrame = true;
+                _latestRealtimeAt = DateTimeOffset.UtcNow;
             }
             old?.Dispose();
             _firstFrameTcs.TrySetResult(true);
@@ -171,9 +180,11 @@ public sealed partial class GskWebServerDriver
         }
     }
 
-    private bool TryGetRealtimeValue(string address, out JsonElement value, out string? error)
+    private bool TryGetRealtimeValue(string address, out JsonElement value,
+        out DateTimeOffset timestamp, out string? error)
     {
         value = default;
+        timestamp = default;
         lock (_realtimeLock)
         {
             if (!_hasRealtimeFrame || _latestRealtimeDoc is null)
@@ -186,7 +197,16 @@ public sealed partial class GskWebServerDriver
                         "and that the device is publishing realtime frames.";
                 return false;
             }
-            return TryGetRealtimeFieldValue(_latestRealtimeDoc.RootElement, address, out value, out error);
+            if (DateTimeOffset.UtcNow - _latestRealtimeAt > RealtimeReceiveTimeout)
+            {
+                error = "GSK realtime WebSocket frame expired";
+                return false;
+            }
+            if (!TryGetRealtimeFieldValue(_latestRealtimeDoc.RootElement, address, out var field, out error))
+                return false;
+            value = field.Clone();
+            timestamp = _latestRealtimeAt;
+            return true;
         }
     }
 

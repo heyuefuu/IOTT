@@ -159,6 +159,8 @@ public sealed class HncSdkDriver : IProtocolDriver, IAddressSpaceBrowser, IProgr
     {
         EnsureConnected();
         var result = await client!.BrowseFilesAsync(new(sessionId, path), ct);
+        if (result.ReturnCode != 0)
+            throw new IOException($"HNC directory read failed ({result.ReturnCode}): {result.ErrorMessage}");
         return result.Value?.Select(x => new ProgramFileEntry
         {
             Path = x.Path, Name = x.Name, IsDirectory = x.IsDirectory,

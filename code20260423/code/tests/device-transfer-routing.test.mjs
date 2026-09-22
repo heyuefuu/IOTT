@@ -4,6 +4,12 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 
+const transferModule = vm.createContext({ exports: {} });
+vm.runInContext(ts.transpileModule(
+    readFileSync(new URL("../src/views/industrial/deviceTransferConfig.ts", import.meta.url), "utf8"),
+    { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
+).outputText, transferModule);
+
 const component = readFileSync(new URL("../src/views/industrial/DeviceView.vue", import.meta.url), "utf8");
 const script = component.match(/<script[^>]*setup[^>]*>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(script, "DeviceView script setup exists");
@@ -14,6 +20,8 @@ const names = [
     "mapTransferFileItemToNode", "buildRemotePathTree", "getPathDepth", "hasDeepDescendants", "fetchRemoteTreeItems",
     "loadRemotePathChildren", "startTransfer", "isDownloadableProgramPathForProtocol",
     "remotePathPickerShowCheckboxes",
+    "BRAND_KEY_TO_FORM_LABEL", "inferBrandKey", "mapStatus", "formatSeenAt", "mapDtoToUi",
+    "buildExtendedProps", "treeDefaultsForNewDevice", "openAddDeviceDialog", "editDevice", "saveDevice",
 ];
 const parsed = ts.createSourceFile("DeviceView.ts", script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 const statements = parsed.statements.filter((statement) => {
@@ -37,6 +45,10 @@ function setup(protocol, transferProtocol = "", items = []) {
         transferRemotePath: { value: "/NC" }, transferRemotePathPickedKind: { value: "none" },
         transferBatchSelections: { value: [] }, transferSelectedFiles: { value: [{ name: "O0001.nc" }] },
         transferSubmitting: { value: false }, remotePathTreeData: { value: [] }, REMOTE_TREE_MAX_NODES: 2000,
+        deviceForm: { value: {} }, selectedTreeNodeId: { value: "" },
+        dialogVisible: { value: false }, dialogTitle: { value: "" }, async loadDevices() {},
+        buildProgramTransferConfig: transferModule.exports.buildProgramTransferConfig,
+        machineConnectionDevicesApi: { create: record("create", {}), update: record("update", {}) },
         computed: (getter) => ({ get value() { return getter(); } }),
         syncRemotePathPickerCurrentNode() {}, notifyBatchDownloadResult() {}, async loadTransferHistory() {},
         getApiErrorMessage: (error) => error.message,
@@ -53,7 +65,7 @@ function setup(protocol, transferProtocol = "", items = []) {
 }
 
 for (const protocol of ["OpcUa", "FOCAS"]) {
-    for (const transferProtocol of ["FTP", "SMB"]) {
+    for (const transferProtocol of ["FTP", "SMB", "NFS"]) {
         test(`${protocol} + ${transferProtocol} browses files and permits batch transfers`, async () => {
             const fixture = setup(protocol, transferProtocol, [
                 { name: "NC", path: "/NC", nodeType: "folder" },
@@ -79,26 +91,77 @@ for (const protocol of ["OpcUa", "FOCAS"]) {
     }
 }
 
-test("Empty FTP root remains selectable and a subdirectory contains only its own children", async () => {
-    const empty = setup("OpcUa", "FTP");
-    await empty.handlers.loadRemotePathChildren();
-    assert.equal(empty.context.remotePathTreeData.value[0].path, "/");
-    const fixture = setup("FOCAS", "FTP", [{ name: "O0001.nc", path: "/NC/O0001.nc", nodeType: "file" }]);
-    const parent = { path: "/NC", nodeType: "folder" };
-    await fixture.handlers.loadRemotePathChildren(parent);
-    assert.equal(parent.children.length, 1);
-    assert.equal(parent.children[0].path, "/NC/O0001.nc");
+for (const transferProtocol of ["FTP", "SMB", "NFS"]) {
+    test(`Empty ${transferProtocol} root remains selectable and a subdirectory contains only its own children`, async () => {
+        const empty = setup("OpcUa", transferProtocol);
+        await empty.handlers.loadRemotePathChildren();
+        assert.equal(empty.context.remotePathTreeData.value[0].path, "/");
+        const fixture = setup("FOCAS", transferProtocol, [{ name: "O0001.nc", path: "/NC/O0001.nc", nodeType: "file" }]);
+        const parent = { path: "/NC", nodeType: "folder" };
+        await fixture.handlers.loadRemotePathChildren(parent);
+        assert.equal(parent.children.length, 1);
+        assert.equal(parent.children[0].path, "/NC/O0001.nc");
+    });
+
+    test(`${transferProtocol} rejects OPC UA NodeIds before making a transfer request`, async () => {
+        const fixture = setup("OpcUa", transferProtocol);
+        for (const path of ["ns=2;s=Sinumerik", "i=2253", "nsu=urn:controller;s=Program"]) {
+            fixture.context.transferRemotePath.value = path;
+            await fixture.handlers.startTransfer();
+            assert.equal(fixture.handlers.isDownloadableProgramPathForProtocol(path, fixture.device), false);
+        }
+        assert.equal(fixture.calls.length, 0);
+        assert.equal(fixture.warnings.length, 3);
+    });
+}
+
+for (const editing of [false, true]) {
+    test(`OPC UA can ${editing ? "update" : "create"} without a separate transfer channel`, async () => {
+        const fixture = setup("OpcUa");
+        fixture.context.selectedTreeNodeId.value = "brand-siemens";
+        fixture.handlers.openAddDeviceDialog();
+        const form = fixture.context.deviceForm.value;
+        assert.equal(form.transferProtocol, "");
+        Object.assign(form, { id: editing ? "device" : "", name: "CNC", code: "CNC-1" });
+        await fixture.handlers.saveDevice();
+        assert.equal(fixture.warnings.length, 0);
+        assert.equal(fixture.calls[0][0], editing ? "update" : "create");
+        assert.equal(fixture.calls[0].at(-1).protocol, "OpcUa");
+        assert.equal(fixture.calls[0].at(-1).transfer, undefined);
+    });
+}
+
+test("NFS configuration is submitted on create and retains MountPoint when edited", async () => {
+    const fixture = setup("OpcUa", "NFS");
+    fixture.handlers.openAddDeviceDialog();
+    Object.assign(fixture.context.deviceForm.value, {
+        name: "CNC", code: "CNC-1", protocol: "OpcUa", port: 4840,
+        transferProtocol: "NFS", transferHost: "192.0.2.10", transferPort: 2049,
+        transferMountPoint: " /mnt/cnc ",
+    });
+    await fixture.handlers.saveDevice();
+    const payload = fixture.calls[0].at(-1);
+    assert.equal(payload.transfer?.protocol, "NFS");
+    assert.equal(payload.transfer.extendedProperties.MountPoint, "/mnt/cnc");
+    const device = fixture.handlers.mapDtoToUi({ ...payload, id: "device" });
+    fixture.handlers.editDevice(device);
+    assert.equal(fixture.context.deviceForm.value.transferMountPoint, "/mnt/cnc");
+    await fixture.handlers.saveDevice();
+    assert.equal(fixture.calls[1][0], "update");
+    assert.equal(fixture.calls[1].at(-1).transfer.extendedProperties.MountPoint, "/mnt/cnc");
 });
 
-test("FTP rejects OPC UA NodeIds before making a transfer request", async () => {
-    const fixture = setup("OpcUa", "FTP");
-    for (const path of ["ns=2;s=Sinumerik", "i=2253", "nsu=urn:controller;s=Program"]) {
-        fixture.context.transferRemotePath.value = path;
-        await fixture.handlers.startTransfer();
-        assert.equal(fixture.handlers.isDownloadableProgramPathForProtocol(path, fixture.device), false);
-    }
+test("NFS requires its mount directory before submitting a device", async () => {
+    const fixture = setup("OpcUa", "NFS");
+    fixture.handlers.openAddDeviceDialog();
+    Object.assign(fixture.context.deviceForm.value, {
+        name: "CNC", code: "CNC-1", transferProtocol: "NFS", transferHost: "192.0.2.10",
+        transferPort: 2049, transferMountPoint: "   ",
+    });
+    await fixture.handlers.saveDevice();
     assert.equal(fixture.calls.length, 0);
-    assert.equal(fixture.warnings.length, 3);
+    assert.equal(fixture.warnings.length, 1);
+    assert.match(fixture.warnings[0], /MountPoint/);
 });
 
 test("Native FOCAS keeps its single-file flow and accepts CNC memory paths", async () => {

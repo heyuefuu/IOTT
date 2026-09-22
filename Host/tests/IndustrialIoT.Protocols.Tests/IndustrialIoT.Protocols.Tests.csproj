@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../src/IndustrialIoT.Protocols.FANUC/IndustrialIoT.Protocols.FANUC.csproj" />
+    <ProjectReference Include="../../src/IndustrialIoT.Protocols.Gsk/IndustrialIoT.Protocols.Gsk.csproj" />
+    <ProjectReference Include="../../src/IndustrialIoT.Protocols.Haas/IndustrialIoT.Protocols.Haas.csproj" />
+    <ProjectReference Include="../../src/IndustrialIoT.Protocols.HncSdk/IndustrialIoT.Protocols.HncSdk.csproj" />
+    <ProjectReference Include="../../src/IndustrialIoT.Protocols.JingDiao/IndustrialIoT.Protocols.JingDiao.csproj" />
+    <ProjectReference Include="../../src/IndustrialIoT.Protocols.MTConnect/IndustrialIoT.Protocols.MTConnect.csproj" />
+    <ProjectReference Include="../../src/IndustrialIoT.Protocols.NCLinkApi/IndustrialIoT.Protocols.NCLinkApi.csproj" />
+    <ProjectReference Include="../../src/IndustrialIoT.Protocols.Modbus/IndustrialIoT.Protocols.Modbus.csproj" />
+    <ProjectReference Include="../../src/IndustrialIoT.Protocols.HuazhongRobot/IndustrialIoT.Protocols.HuazhongRobot.csproj" />
+  </ItemGroup>
+</Project>

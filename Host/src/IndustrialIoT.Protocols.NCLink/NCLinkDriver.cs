@@ -99,7 +99,7 @@ public sealed partial class NCLinkDriver : IProtocolDriver, IAddressSpaceBrowser
             // 构建连接选项
             var optionsBuilder = new MqttClientOptionsBuilder()
                 .WithTcpServer(brokerHost, brokerPort)
-                .WithClientId($"IIoT-NCLink-{Environment.MachineName}-{Guid.NewGuid():N}".Substring(0, 23))
+                .WithClientId($"NCLink-{Guid.NewGuid():N}"[..23])
                 .WithTimeout(config.ConnectTimeout);
 
             if (!string.IsNullOrEmpty(username))

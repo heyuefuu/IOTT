@@ -210,7 +210,7 @@ public sealed class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
                     kv.Key,
                     $"{kv.Key.Substring(4)} → {kv.Value}",
                     DataType.Bool,
-                    writable: kv.Value.StartsWith("UI", StringComparison.OrdinalIgnoreCase)))
+                    writable: false))
                 .ToArray();
         }
         else if (parentPath.Equals("IO", StringComparison.OrdinalIgnoreCase))

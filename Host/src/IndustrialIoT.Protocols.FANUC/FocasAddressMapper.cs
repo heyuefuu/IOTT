@@ -311,7 +311,8 @@ internal sealed partial class FocasAddressMapper
 
             // Read current byte, set/clear the target bit, write back
             byte[] data = new byte[2]; // Read 2 bytes to cover the range
-            _api.ReadPmc(_handle, pmcType, 0, data.Length, data);
+            int readResult = _api.ReadPmc(_handle, pmcType, 0, data.Length, data);
+            ThrowIfError(readResult, "ReadPmc");
 
             if (boolVal)
                 data[index / 8] |= (byte)(1 << (index % 8));
