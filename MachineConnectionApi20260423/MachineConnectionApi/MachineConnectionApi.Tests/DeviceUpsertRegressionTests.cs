@@ -8,13 +8,16 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
-internal static class DeviceUpsertRegressionTests
+internal static partial class DeviceUpsertRegressionTests
 {
     public static async Task RunAll()
     {
         RequestWithoutServerFieldsDeserializes();
         await CreateGeneratesServerFields();
         await PartialUpdatePreservesServerFields();
+        await CredentialsAreStoredAndRedacted();
+        await CredentialEditsPreserveOrReplacePasswords();
+        await UpstreamSyncSendsBothPasswords();
     }
 
     private static void RequestWithoutServerFieldsDeserializes()

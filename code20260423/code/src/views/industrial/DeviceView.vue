@@ -1259,9 +1259,9 @@ const deviceTree = [
     },
 ];
 
-// 过滤设备数据（树 + 搜索，不含分页）
+// CNC 类型过滤后再按品牌和关键词筛选，最后分页。
 const devicesFiltered = computed(() => {
-    let result = devices.value;
+    let result = devices.value.filter((device) => device.deviceType === "CNC");
 
     if (selectedTreeNodeId.value.startsWith("brand-")) {
         const brand = selectedTreeNodeId.value.replace("brand-", "");
@@ -2307,7 +2307,8 @@ const remotePathPickerLazyAddressSpace = computed(() => {
 const remotePathPickerShowCheckboxes = computed(() => {
     if (transferForm.value.direction !== "download") return false;
     const ui = devices.value.find((x) => x.id === transferForm.value.deviceId);
-    if (ui?.protocol === "FOCAS" || ui?.protocol === "NCLinkApi") return false;
+    const protocol = getDeviceTransferProtocol(ui);
+    if (protocol === "FOCAS" || protocol === "NCLinkApi") return false;
     return true;
 });
 
@@ -2348,7 +2349,7 @@ const selectedTransferDevice = computed(() =>
 
 const transferChannelLabel = computed(() => {
     const ui = selectedTransferDevice.value;
-    return ui?.transferProtocol || ui?.protocol || "未选择设备";
+    return getDeviceTransferProtocol(ui) || "未选择设备";
 });
 
 const transferChannelTagType = computed(() => {
@@ -2372,7 +2373,8 @@ const transferChannelDetail = computed(() => {
  */
 const remotePathPickerTreeKey = computed(() => {
     const id = transferForm.value.deviceId ?? "";
-    if (!remotePathPickerLazyAddressSpace.value) return `pt:${id}`;
+    const protocol = getDeviceTransferProtocol(devices.value.find((x) => x.id === id));
+    if (!remotePathPickerLazyAddressSpace.value) return `pt:${id}:${protocol}`;
     const ui = devices.value.find((x) => x.id === id);
     const hasDeviceRow = Boolean(ui);
     return `as:${id}:${hasDeviceRow ? "1" : "0"}:${devices.value.length}`;
@@ -2383,8 +2385,9 @@ const transferRemotePathRuleHint = computed(() => {
     const id = transferForm.value.deviceId;
     const ui = devices.value.find((x) => x.id === id);
     const upload = transferForm.value.direction === "upload";
+    const protocol = getDeviceTransferProtocol(ui);
     if (remotePathPickerUsesAddressSpace(ui)) {
-        if (ui?.protocol === "FOCAS") {
+        if (protocol === "FOCAS") {
             return upload
                 ? "发那科（FOCAS）：与 Swagger 一致，按节点 path 作为 parentPath 逐层懒加载；上传请选可展开目录，Variable 为叶子"
                 : "发那科（FOCAS）：单文件下载按地址空间接口返回 path（如 /CNC/...）";
@@ -2393,12 +2396,12 @@ const transferRemotePathRuleHint = computed(() => {
             ? "西门子（OpcUa）：上传请选可展开的节点；子层用上一节点的 path 作为 parentPath 递归查询"
             : "西门子（OpcUa）：下载可勾选多项后点确定（批量 ZIP），或单选 Variable；上传可多选本地文件";
     }
-    if (ui?.protocol === "NCLinkApi") {
+    if (protocol === "NCLinkApi") {
         return upload
             ? "华中 NC-Link API：设备端路径填目录或完整 key；目录已存在时可填 selftest/，后端会拼接本地文件名"
             : "华中 NC-Link API：设备端路径填文件 key，如 O0001、Otemp、selftest/O99999";
     }
-    if (ui?.protocol === "FOCAS") {
+    if (protocol === "FOCAS") {
         return upload
             ? "发那科（FOCAS）：上传请选择接口返回的目录节点"
             : "发那科（FOCAS）：下载请使用接口返回的节点 path（如 /CNC/...）";
@@ -2410,9 +2413,6 @@ function defaultRemotePathForDevice(ui: DeviceUi | undefined): string {
     if (!ui) return "";
     const u = ui.uploadPath?.trim();
     if (u) return u;
-    // FOCAS：设备端路径统一通过 AddressSpace 接口返回的 path 选择
-    if (ui.protocol === "FOCAS") return "";
-    if (ui.protocol === "OpcUa") return "";
     return "";
 }
 
@@ -2428,15 +2428,19 @@ function normalizeRemotePath(path: string): string {
 
 function getDeviceTransferRoot(ui: DeviceUi | undefined): string | undefined {
     if (!ui) return undefined;
-    if (ui.protocol === "FOCAS") return "/";
-    if (ui.protocol === "OpcUa") return "/";
-    if (ui.protocol === "NCLinkApi") return undefined;
+    if (getDeviceTransferProtocol(ui) === "NCLinkApi") return undefined;
     return "/";
 }
 
-/** 设备端路径树：发那科 / 西门子均按 AddressSpace 返回的节点 path 作为下一层 parentPath 递归浏览 */
+/** 文件操作优先使用独立传输通道，未配置时沿用主协议。 */
+function getDeviceTransferProtocol(ui: DeviceUi | undefined): string {
+    return ui?.transferProtocol || ui?.protocol || "";
+}
+
+/** 原生 OPC UA / FOCAS 按 AddressSpace 返回的 path 递归浏览。 */
 function remotePathPickerUsesAddressSpace(ui: DeviceUi | undefined): boolean {
-    return ui?.protocol === "OpcUa" || ui?.protocol === "FOCAS";
+    const protocol = getDeviceTransferProtocol(ui);
+    return protocol === "OpcUa" || protocol === "FOCAS";
 }
 
 function addressSpaceNodeIsFolder(n: AddressNode): boolean {
@@ -2614,9 +2618,9 @@ async function browseAddressSpaceForPicker(
     const primary = await machineConnectionPointsApi.browseAddressSpace(
         deviceId,
         parentPath,
-        ui?.protocol,
+        getDeviceTransferProtocol(ui),
     );
-    if (primary.length > 0 || !parent || ui?.protocol !== "OpcUa") {
+    if (primary.length > 0 || !parent || getDeviceTransferProtocol(ui) !== "OpcUa") {
         return sanitizeAddressSpaceLevelNodes(parentPath, primary);
     }
 
@@ -2626,7 +2630,7 @@ async function browseAddressSpaceForPicker(
         const retry = await machineConnectionPointsApi.browseAddressSpace(
             deviceId,
             candidate,
-            ui?.protocol,
+            getDeviceTransferProtocol(ui),
         );
         if (retry.length > 0) {
             return sanitizeAddressSpaceLevelNodes(candidate, retry);
@@ -2857,6 +2861,7 @@ function ensureFolderNode(
 
 function buildRemotePathTree(
     items: { name: string; path: string; nodeType: "folder" | "file" }[],
+    parentPath?: string,
 ): RemotePathNode[] {
     const rootNodes: RemotePathNode[] = [];
     const nodeMap = new Map<string, RemotePathNode>();
@@ -2907,7 +2912,9 @@ function buildRemotePathTree(
         }
     };
     sortNodes(rootNodes);
-    return rootNodes;
+    return parentPath
+        ? nodeMap.get(normalizeRemotePath(parentPath))?.children ?? rootNodes
+        : rootNodes;
 }
 
 function getPathDepth(path: string): number {
@@ -2984,17 +2991,26 @@ async function loadRemotePathChildren(parentNode?: RemotePathNode) {
     if (remotePathPickerUsesAddressSpace(ui)) return;
 
     if (parentNode) parentNode._loading = true;
+    else remotePathTreeData.value = [];
     try {
         const rootPath = getDeviceTransferRoot(ui);
         const targetPath = parentNode?.path ?? rootPath;
         const items = await fetchRemoteTreeItems(deviceId, targetPath);
-        const nodes = buildRemotePathTree(items);
+        const nodes = buildRemotePathTree(items, parentNode?.path);
         if (parentNode) {
             parentNode.children = nodes;
             parentNode._loaded = true;
         } else {
-            remotePathTreeData.value = nodes;
-            if (!nodes.length && ui?.protocol === "NCLinkApi") {
+            const protocol = getDeviceTransferProtocol(ui);
+            if (protocol === "FTP" || protocol === "SMB") {
+                const root = nodes.find((node) => node.path === "/") ?? createFolderNode("/");
+                if (!nodes.includes(root)) root.children = nodes;
+                root._loaded = true;
+                remotePathTreeData.value = [root];
+            } else {
+                remotePathTreeData.value = nodes;
+            }
+            if (!nodes.length && protocol === "NCLinkApi") {
                 ElMessage.info("未从设备读取到文件列表，可直接手工填写文件 key");
             }
         }
@@ -3157,10 +3173,11 @@ const startTransfer = async () => {
     }
     const ui = devices.value.find((x) => x.id === deviceId);
     let remotePath = transferRemotePath.value.trim();
-    if (ui?.protocol === "NCLinkApi") {
+    const protocol = getDeviceTransferProtocol(ui);
+    if (protocol === "NCLinkApi") {
         remotePath = normalizeNCLinkApiFilePath(remotePath);
     }
-    const isFocas = ui?.protocol === "FOCAS";
+    const isFocas = protocol === "FOCAS";
     const isBatchAddressDownload =
         !isFocas
         && transferForm.value.direction === "download"
@@ -3173,13 +3190,18 @@ const startTransfer = async () => {
         return;
     }
     if (!isBatchAddressDownload && isFocas) {
-        const addrSpace = remotePath.startsWith("/") && !remotePath.startsWith("//");
+        const addrSpace = /^\/(?!\/)|^\/\/CNC_MEM(?:\/|$)/i.test(remotePath);
         if (!addrSpace) {
             ElMessage.warning("发那科（FOCAS）请使用接口返回的 path（如 /CNC/...）");
             return;
         }
     }
-    if (!isBatchAddressDownload && ui?.protocol === "OpcUa") {
+    if (!isBatchAddressDownload && (protocol === "FTP" || protocol === "SMB")
+        && /^(?:nsu?=|[isgb]=)/i.test(remotePath)) {
+        ElMessage.warning("文件传输请使用设备文件目录中的路径");
+        return;
+    }
+    if (!isBatchAddressDownload && protocol === "OpcUa") {
         const ftpLike = remotePath.startsWith("/") && !remotePath.startsWith("//");
         const opcNodeId =
             /^i=/i.test(remotePath)
@@ -3498,12 +3520,15 @@ function isDownloadableProgramPathForProtocol(path: string, ui?: DeviceUi): bool
     const p = normalizeRemotePath(path);
     if (!p) return false;
     if (!ui) return true;
-    if (ui.protocol === "NCLinkApi") {
+    const protocol = getDeviceTransferProtocol(ui);
+    if (protocol === "NCLinkApi") {
         return !p.startsWith("/");
     }
-    if (ui.protocol === "FOCAS") {
-        // FOCAS：仅按地址空间接口返回的 path 下载（/CNC/...）。
-        return p.startsWith("/") && !p.startsWith("//");
+    if (protocol === "FOCAS") {
+        return /^\/(?!\/)|^\/\/CNC_MEM(?:\/|$)/i.test(p);
+    }
+    if (protocol === "FTP" || protocol === "SMB") {
+        return !/^(?:nsu?=|[isgb]=)/i.test(p);
     }
     return true;
 }

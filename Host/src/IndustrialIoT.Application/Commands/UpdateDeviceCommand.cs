@@ -26,6 +26,15 @@ public class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCommand, D
         if (req.Protocol.HasValue) device.Protocol = req.Protocol.Value;
 
         var config = device.ConnectionConfig;
+        var transfer = req.Transfer is null ? config.Transfer : CreateDeviceCommandHandler.MapTransferRequest(req.Transfer);
+        if (req.Transfer is { Password: null } requestedTransfer && config.Transfer is { } storedTransfer &&
+            requestedTransfer.Protocol == storedTransfer.Protocol &&
+            string.Equals(requestedTransfer.Host, storedTransfer.Host, StringComparison.OrdinalIgnoreCase) &&
+            requestedTransfer.Port == storedTransfer.Port &&
+            string.Equals(requestedTransfer.Username, storedTransfer.Username, StringComparison.Ordinal))
+        {
+            transfer = transfer! with { Password = storedTransfer.Password };
+        }
         device.ConnectionConfig = config with
         {
             Host = req.Host ?? config.Host,
@@ -35,7 +44,7 @@ public class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCommand, D
             ConnectTimeout = req.ConnectTimeoutMs.HasValue ? TimeSpan.FromMilliseconds(req.ConnectTimeoutMs.Value) : config.ConnectTimeout,
             ReadTimeout = req.ReadTimeoutMs.HasValue ? TimeSpan.FromMilliseconds(req.ReadTimeoutMs.Value) : config.ReadTimeout,
             ExtendedProperties = req.ExtendedProperties ?? config.ExtendedProperties,
-            Transfer = req.Transfer is null ? config.Transfer : CreateDeviceCommandHandler.MapTransferRequest(req.Transfer),
+            Transfer = transfer,
         };
 
         await _repo.UpdateAsync(device, ct);

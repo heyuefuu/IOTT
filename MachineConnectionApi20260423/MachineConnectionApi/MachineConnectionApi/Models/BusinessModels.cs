@@ -1,4 +1,6 @@
-﻿namespace MachineConnectionApi.Models;
+namespace MachineConnectionApi.Models;
+
+using System.Text.Json.Serialization;
 
 public sealed record SystemLogDto
 {
@@ -122,6 +124,8 @@ public sealed record MachineDeviceDto
     public required string Host { get; init; }
     public required int Port { get; init; }
     public string? Username { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Password { get; init; }
     public int ConnectTimeoutMs { get; init; } = 10000;
     public int ReadTimeoutMs { get; init; } = 5000;
     public Dictionary<string, string> ExtendedProperties { get; init; } = [];
@@ -151,6 +155,7 @@ public sealed record MachineDeviceUpsertRequest
     public string? Host { get; init; }
     public int? Port { get; init; }
     public string? Username { get; init; }
+    public string? Password { get; init; }
     public int? ConnectTimeoutMs { get; init; }
     public int? ReadTimeoutMs { get; init; }
     public Dictionary<string, string>? ExtendedProperties { get; init; }

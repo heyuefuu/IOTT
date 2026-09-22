@@ -163,6 +163,7 @@ public sealed class DeviceUpstreamSyncService : IDeviceUpstreamSyncService
             ["host"] = device.Host,
             ["port"] = device.Port,
             ["username"] = device.Username,
+            ["password"] = device.Password,
             ["connectTimeoutMs"] = device.ConnectTimeoutMs > 0 ? device.ConnectTimeoutMs : 10_000,
             ["readTimeoutMs"] = device.ReadTimeoutMs > 0 ? device.ReadTimeoutMs : 5_000,
             ["extendedProperties"] = device.ExtendedProperties ?? [],

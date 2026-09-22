@@ -41,6 +41,12 @@ public class DevicesController : IndustrialIoTProxyControllerBase
 
     private string DevicesPath => _configuration["IndustrialIoT:DevicesPath"] ?? "api/Devices";
 
+    private static MachineDeviceDto Redact(MachineDeviceDto device) => device with
+    {
+        Password = null,
+        Transfer = device.Transfer is null ? null : device.Transfer with { Password = null },
+    };
+
     /// <summary>获取设备列表，可按 type 过滤（CNC / PLC / Robot）</summary>
     [HttpGet]
     public ActionResult<IReadOnlyList<MachineDeviceDto>> List([FromQuery] string? type)
@@ -48,7 +54,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         var rows = _store.ReadAll();
         if (!string.IsNullOrWhiteSpace(type))
             rows = rows.Where(x => x.Type.Equals(type, StringComparison.OrdinalIgnoreCase)).ToList();
-        return Ok(rows.OrderByDescending(x => x.CreatedAt).ToList());
+        return Ok(rows.OrderByDescending(x => x.CreatedAt).Select(Redact).ToList());
     }
 
     /// <summary>获取单个设备</summary>
@@ -56,7 +62,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
     public ActionResult<MachineDeviceDto> GetById(string id)
     {
         var item = _store.ReadAll().FirstOrDefault(x => x.Id == id);
-        return item is null ? NotFound() : Ok(item);
+        return item is null ? NotFound() : Ok(Redact(item));
     }
 
     /// <summary>创建设备（本地保存并同步注册到上游）</summary>
@@ -81,6 +87,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
             Host = input.Host,
             Port = input.Port.Value,
             Username = input.Username,
+            Password = input.Password,
             ConnectTimeoutMs = input.ConnectTimeoutMs ?? 10000,
             ReadTimeoutMs = input.ReadTimeoutMs ?? 5000,
             ExtendedProperties = input.ExtendedProperties ?? [],
@@ -92,7 +99,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         _store.Update(rows => { rows.Add(item); return 0; });
         _activityLog.Write("operation", "创建设备",
             $"{item.Name}（{item.Type} · {item.Protocol} · {item.Host}:{item.Port}）{(sync.Success ? "已同步上游" : "上游同步失败")}");
-        return Ok(item);
+        return Ok(Redact(item));
     }
 
     /// <summary>更新设备（本地保存并同步到上游）。未提供的字段沿用现有值。</summary>
@@ -102,6 +109,16 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         var current = _store.ReadAll().FirstOrDefault(x => x.Id == id);
         if (current is null) return NotFound();
         if (input.Port is not null && input.Port is not (> 0 and <= 65535)) return BadRequest(new { error = "Port 必须是 1~65535" });
+
+        var transfer = input.Transfer ?? current.Transfer;
+        if (input.Transfer is { Password: null } requestedTransfer && current.Transfer is { } storedTransfer &&
+            string.Equals(requestedTransfer.Protocol, storedTransfer.Protocol, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(requestedTransfer.Host, storedTransfer.Host, StringComparison.OrdinalIgnoreCase) &&
+            requestedTransfer.Port == storedTransfer.Port &&
+            string.Equals(requestedTransfer.Username, storedTransfer.Username, StringComparison.Ordinal))
+        {
+            transfer = requestedTransfer with { Password = storedTransfer.Password };
+        }
 
         // Id 与 CreatedAt 始终保留服务端原值，其余字段"给了才改"
         var candidate = current with
@@ -114,10 +131,11 @@ public class DevicesController : IndustrialIoTProxyControllerBase
             Host = input.Host ?? current.Host,
             Port = input.Port ?? current.Port,
             Username = input.Username ?? current.Username,
+            Password = input.Password ?? current.Password,
             ConnectTimeoutMs = input.ConnectTimeoutMs ?? current.ConnectTimeoutMs,
             ReadTimeoutMs = input.ReadTimeoutMs ?? current.ReadTimeoutMs,
             ExtendedProperties = input.ExtendedProperties ?? current.ExtendedProperties,
-            Transfer = input.Transfer ?? current.Transfer,
+            Transfer = transfer,
         };
         var sync = await _sync.UpsertAsync(candidate, ct);
         var item = _store.Update<MachineDeviceDto?>(rows =>
@@ -140,7 +158,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
             return NotFound();
         }
         _activityLog.Write("operation", "更新设备", $"{item.Name}（{item.Host}:{item.Port}）");
-        return Ok(item);
+        return Ok(Redact(item));
     }
 
     /// <summary>删除设备（本地删除并同步删除上游记录）</summary>

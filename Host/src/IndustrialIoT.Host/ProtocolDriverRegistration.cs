@@ -57,7 +57,7 @@ public static class ProtocolDriverRegistration
         registry.Register(typeof(SiemensS7Driver), ProtocolType.SiemensS7, ["Siemens", "西门子", "S7-1200", "S7-1500", "S7-300", "S7-400", "S7-200Smart", "*"]);
         services.AddSingleton<IFocasApi, NativeFocasApi>();
         services.AddTransient<FocasDriver>();
-        registry.Register(typeof(FocasDriver), ProtocolType.FOCAS, ["FANUC", "发那科", "Makino", "牧野", "0i-MF", "0i-D", "30i", "31i", "32i"]);
+        registry.Register(typeof(FocasDriver), ProtocolType.FOCAS, ["FANUC", "发那科", "法那科", "Makino", "牧野", "0i-MF", "0i-D", "30i", "31i", "32i"]);
         services.AddTransient<FanucRobotDriver>();
         registry.Register(typeof(FanucRobotDriver), ProtocolType.FanucRobot, ["FANUC", "发那科", "Robot", "机器人", "CRX", "M-", "R-", "LR"]);
         services.AddTransient<MTConnectDriver>();
