@@ -143,7 +143,7 @@ public sealed record MachineDeviceDto
 /// 直接拿 <see cref="MachineDeviceDto"/> 收请求会因这三个 required 属性让 System.Text.Json
 /// 在进入控制器前就抛 400（"was missing required properties"），而方法体里它们又会被立即覆盖掉。
 /// Status 不接受客户端指定：新建恒为 Offline，之后由连接测试/采集服务维护。
-/// 全部可空是为了让 PUT 支持部分更新：未提供的字段沿用现有值。
+/// 可空字段让 PUT 支持部分更新：未提供的字段沿用现有值，ClearTransfer 显式清除独立通道。
 /// </summary>
 public sealed record MachineDeviceUpsertRequest
 {
@@ -160,4 +160,5 @@ public sealed record MachineDeviceUpsertRequest
     public int? ReadTimeoutMs { get; init; }
     public Dictionary<string, string>? ExtendedProperties { get; init; }
     public TransferDeviceDto? Transfer { get; init; }
+    public bool ClearTransfer { get; init; }
 }

@@ -113,7 +113,7 @@
                                 <el-descriptions :column="2" :size="'small'">
                                     <el-descriptions-item label="协议类型">{{ device.protocol }}</el-descriptions-item>
                                     <el-descriptions-item label="IP地址">{{ device.ip }}</el-descriptions-item>
-                                    <el-descriptions-item label="端口">{{ device.port }}</el-descriptions-item>
+                                    <el-descriptions-item label="端口">{{ device.protocol === 'Gskrm' ? 'SDK 管理' : device.port }}</el-descriptions-item>
                                     <el-descriptions-item label="品牌">{{ device.brand }}</el-descriptions-item>
                                     <el-descriptions-item label="最后通讯" :span="2">{{ device.lastCommTime
                                     }}</el-descriptions-item>
@@ -183,7 +183,7 @@
                     </el-select>
                 </el-form-item>
                 <el-form-item label="品牌" prop="brand" required>
-                    <el-select v-model="deviceForm.brand" placeholder="请选择品牌" style="width: 100%">
+                    <el-select v-model="deviceForm.brand" placeholder="请选择品牌" style="width: 100%" @change="onDeviceBrandChange">
                         <el-option label="马扎克（Mazak）" value="马扎克（Mazak）" />
                         <el-option label="哈斯（Haas）" value="哈斯（Haas）" />
                         <el-option label="兄弟（Brother）" value="兄弟（Brother）" />
@@ -203,12 +203,13 @@
                 <el-divider content-position="center">通信配置（协议 / 主机 / 端口）</el-divider>
 
                 <el-form-item label="协议" prop="protocol" required>
-                    <el-select v-model="deviceForm.protocol" placeholder="请选择协议类型" style="width: 100%">
+                    <el-select v-model="deviceForm.protocol" placeholder="请选择协议类型" style="width: 100%" @change="onDeviceProtocolChange">
                         <el-option label="Profibus" value="Profibus" />
                         <el-option label="Modbus TCP" value="ModbusTCP" />
                         <el-option label="NC-link" value="NCLink" />
                         <el-option label="NC-Link API Server (华中)" value="NCLinkApi" />
                         <el-option label="广数 (GSK WebServer)" value="GskWebServer" />
+                        <el-option label="广数 (GSK SDK 采集)" value="Gskrm" />
                         <el-option label="FANUC FOCAS" value="FOCAS" />
                         <el-option label="欧姆龙 FINS" value="FINS" />
                         <el-option label="松下 Mewtocol" value="Mewtocol" />
@@ -218,8 +219,8 @@
                 <el-form-item label="主机" prop="ip" required>
                     <el-input v-model="deviceForm.ip" placeholder="如 127.0.0.1" />
                 </el-form-item>
-                <el-form-item label="端口" prop="port">
-                    <el-input v-model.number="deviceForm.port" placeholder="如 FOCAS 常用 8193" />
+                <el-form-item v-if="deviceForm.protocol !== 'Gskrm'" label="端口" prop="port">
+                    <el-input v-model.number="deviceForm.port" placeholder="按现场配置填写端口" />
                 </el-form-item>
                 <el-form-item label="连接超时 ms" prop="connectTimeoutMs">
                     <el-input v-model.number="deviceForm.connectTimeoutMs" placeholder="connectTimeoutMs，默认 10000" />
@@ -231,30 +232,32 @@
                 <template v-if="deviceForm.deviceType === 'CNC'">
                     <el-divider content-position="center">程序文件传输配置</el-divider>
                     <el-form-item label="传输协议" prop="transferProtocol">
-                        <el-select v-model="deviceForm.transferProtocol" placeholder="请选择文件传输协议" style="width: 100%">
+                        <el-select v-model="deviceForm.transferProtocol" placeholder="请选择文件传输协议" style="width: 100%" @change="onTransferProtocolChange">
                             <el-option label="不单独配置（使用主协议）" value="" />
                             <el-option label="FTP" value="FTP" />
                             <el-option label="SMB" value="SMB" />
                             <el-option label="NFS" value="NFS" />
+                            <el-option label="广数 SDK 文件传输" value="GskrmFileTransfer" />
                         </el-select>
                     </el-form-item>
                     <template v-if="deviceForm.transferProtocol">
                         <el-form-item label="传输主机" prop="transferHost" required>
                             <el-input v-model="deviceForm.transferHost" placeholder="如 192.168.1.20" />
                         </el-form-item>
-                        <el-form-item label="传输端口" prop="transferPort" required>
-                            <el-input v-model.number="deviceForm.transferPort" placeholder="FTP 默认 21，SMB 默认 445，NFS 默认 2049" />
+                        <el-form-item v-if="deviceForm.transferProtocol !== 'GskrmFileTransfer'" label="传输端口" prop="transferPort" required>
+                            <el-input v-model.number="deviceForm.transferPort" placeholder="FTP 21，SMB 445，NFS 2049" />
                         </el-form-item>
+                        <el-alert v-else type="info" :closable="false" show-icon title="连接端口由广数 SDK 管理，只需填写机床 IP。" />
                         <el-form-item v-if="deviceForm.transferProtocol === 'SMB'" label="共享名" prop="transferShareName" required>
                             <el-input v-model="deviceForm.transferShareName" placeholder="如 NC_PROGRAM" />
                         </el-form-item>
                         <el-form-item v-if="deviceForm.transferProtocol === 'NFS'" label="挂载目录" prop="transferMountPoint" required>
                             <el-input v-model="deviceForm.transferMountPoint" placeholder="采集服务主机上已挂载的目录，如 Z:\ 或 /mnt/cnc" />
                         </el-form-item>
-                        <el-form-item label="传输账号" prop="transferUsername">
+                        <el-form-item v-if="deviceForm.transferProtocol !== 'GskrmFileTransfer'" label="传输账号" prop="transferUsername">
                             <el-input v-model="deviceForm.transferUsername" placeholder="可留空使用匿名/来宾" />
                         </el-form-item>
-                        <el-form-item label="传输密码" prop="transferPassword">
+                        <el-form-item v-if="deviceForm.transferProtocol !== 'GskrmFileTransfer'" label="传输密码" prop="transferPassword">
                             <el-input v-model="deviceForm.transferPassword" type="password" show-password />
                         </el-form-item>
                     </template>
@@ -338,11 +341,17 @@
                 </template>
 
                 <template v-else-if="deviceForm.protocol === 'GskWebServer'">
+                    <el-form-item label="账号（可选）" prop="username">
+                        <el-input v-model="deviceForm.username" placeholder="WebServer 开启认证时填写" />
+                    </el-form-item>
+                    <el-form-item label="密码" prop="password">
+                        <el-input v-model="deviceForm.password" type="password" show-password />
+                    </el-form-item>
                     <el-form-item label="DeviceSn（设备序列号）" prop="gskDeviceSn" required>
                         <el-input v-model="deviceForm.gskDeviceSn" placeholder="如 cnc，对应机床 swagger 路径 /api/v1/{DeviceSn}" />
                     </el-form-item>
                     <el-form-item label="协议方案 Scheme" prop="gskScheme">
-                        <el-select v-model="deviceForm.gskScheme" placeholder="默认 http" style="width: 100%">
+                        <el-select v-model="deviceForm.gskScheme" placeholder="默认 http" style="width: 100%" @change="onGskSchemeChange">
                             <el-option label="http" value="http" />
                             <el-option label="https" value="https" />
                         </el-select>
@@ -355,8 +364,10 @@
                     </el-form-item>
                 </template>
 
+                <el-alert v-else-if="deviceForm.protocol === 'Gskrm'" type="info" :closable="false" show-icon
+                    title="连接端口由广数 SDK 管理，只需填写机床 IP；传输程序文件时需单独选择“广数 SDK 文件传输”。" />
                 <el-alert v-else type="info" :closable="false" show-icon
-                    title="当前协议无需专用扩展字段，或请按现场文档自行在后端扩展；保存时仅提交通用项。" />
+                    title="当前协议无需专用表单字段；编辑同一协议时会保留已保存的扩展配置。" />
             </el-form>
             <template #footer>
                 <span class="dialog-footer">
@@ -943,6 +954,7 @@ interface DeviceUi {
     transferMountPoint: string;
     transferConnectTimeoutMs: number;
     transferReadTimeoutMs: number;
+    transferExtendedProperties?: Record<string, string | undefined>;
     /** extendedProperties（NCLink） */
     deviceGuid: string;
     nclinkBrand: string;
@@ -1072,6 +1084,7 @@ function mapDtoToUi(d: DeviceDto): DeviceUi {
         transferMountPoint: String(transfer?.extendedProperties?.MountPoint ?? ""),
         transferConnectTimeoutMs: Number(transfer?.connectTimeoutMs ?? 10000),
         transferReadTimeoutMs: Number(transfer?.readTimeoutMs ?? 5000),
+        transferExtendedProperties: transfer?.extendedProperties ?? {},
         deviceGuid: String(ext.DeviceGuid ?? ""),
         nclinkBrand: String(ext.Brand ?? ""),
         mqttBrokerHost: String(ext.MqttBrokerHost ?? ""),
@@ -1084,6 +1097,20 @@ function mapDtoToUi(d: DeviceDto): DeviceUi {
 function buildExtendedProps(form: Record<string, unknown>): Record<string, string> {
     const ext: Record<string, string> = {};
     const protocol = String(form.protocol ?? "");
+    const original = (form.extendedProperties ?? {}) as Record<string, unknown>;
+    const commonKeys = ["DeviceCode", "Code", "code", "Line", "line", "uiBrandKey"];
+    const sameProtocol = String(form.originalProtocol ?? protocol) === protocol;
+    for (const [key, value] of Object.entries(original)) {
+        if (typeof value === "string" && (sameProtocol || commonKeys.includes(key))) ext[key] = value;
+    }
+    const editableKeys: Record<string, string[]> = {
+        FOCAS: ["AxisLabels"],
+        OpcUa: ["EndpointUrl", "UseSecurity", "AutoAcceptUntrustedCerts", "RejectSHA1SignedCertificates", "SuppressNonceValidationErrors"],
+        NCLink: ["DeviceGuid", "Brand", "MqttBrokerHost", "MqttBrokerPort", "MqttUsername", "MqttPassword"],
+        NCLinkApi: ["DeviceId", "ApiBaseUrl"],
+        GskWebServer: ["DeviceSn", "Scheme", "ManagementBaseUrl", "WorkshopAuthToken", "AuthToken"],
+    };
+    for (const key of [...commonKeys, ...(editableKeys[protocol] ?? [])]) delete ext[key];
     const code = String(form.code ?? "").trim();
     if (code) {
         ext.DeviceCode = code;
@@ -1829,7 +1856,7 @@ const handleSavePointConfig = async () => {
                 collectionFrequency: Number(
                     String(row.frequency ?? "").trim() || DEFAULT_COLLECTION_FREQUENCY_MS,
                 ),
-                protocol: normalizeDatacollectionProtocol(pointDialogDeviceProtocol.value),
+                protocol: "IndustrialIoT",
             })),
             visiblePaths,
         });
@@ -2057,13 +2084,6 @@ function mapVariableNodeToRow(n: PointTreeNode): PointRow {
         desc: "",
         writable: !!n.isWritable,
     };
-}
-
-function normalizeDatacollectionProtocol(protocol: string) {
-    const v = String(protocol ?? "").trim().toLowerCase();
-    return v === "nclinkapi"
-        ? "NCLinkApi"
-        : "IndustrialIoT";
 }
 
 function normalizeDataType(dt?: string): string {
@@ -2316,7 +2336,7 @@ const remotePathPickerShowCheckboxes = computed(() => {
     if (transferForm.value.direction !== "download") return false;
     const ui = devices.value.find((x) => x.id === transferForm.value.deviceId);
     const protocol = getDeviceTransferProtocol(ui);
-    if (protocol === "FOCAS" || protocol === "NCLinkApi") return false;
+    if (protocol === "FOCAS") return false;
     return true;
 });
 
@@ -2371,6 +2391,9 @@ const transferChannelDetail = computed(() => {
     if (ui.transferProtocol === "NFS") {
         return `使用设备已保存的 NFS 挂载目录：${ui.transferMountPoint}`;
     }
+    if (ui.transferProtocol === "GskrmFileTransfer") {
+        return `使用广数 SDK 文件通道：${ui.transferHost}，连接端口由 SDK 管理`;
+    }
     if (ui.transferProtocol) {
         const auth = ui.transferUsername ? `，账号 ${ui.transferUsername}` : "";
         return `使用设备已保存的 ${ui.transferProtocol} 通道：${ui.transferHost}:${ui.transferPort}${auth}`;
@@ -2409,8 +2432,8 @@ const transferRemotePathRuleHint = computed(() => {
     }
     if (protocol === "NCLinkApi") {
         return upload
-            ? "华中 NC-Link API：设备端路径填目录或完整 key；目录已存在时可填 selftest/，后端会拼接本地文件名"
-            : "华中 NC-Link API：设备端路径填文件 key，如 O0001、Otemp、selftest/O99999";
+            ? "华中 NC-Link API：目录用 / 结尾（如 selftest/），根目录填 /；单文件也可填写完整 key"
+            : "华中 NC-Link API：可勾选文件或文件夹批量下载，也可填写单文件 key，如 selftest/O99999";
     }
     if (protocol === "FOCAS") {
         return upload
@@ -2501,7 +2524,7 @@ function normalizeAddressNodeToTreeKind(n: AddressNode): "Folder" | "Variable" {
 }
 
 function getDelimitedAddressSpaceRemainder(parentPath: string, childPath: string): string | null {
-    for (const delimiter of [".", ":"]) {
+    for (const delimiter of [".", ":", "@"]) {
         const prefix = `${parentPath}${delimiter}`;
         if (childPath.startsWith(prefix)) return childPath.slice(prefix.length);
     }
@@ -2558,9 +2581,6 @@ function isImmediateAddressSpaceChild(
     }
 
     if (p.startsWith("/")) {
-        const atRel = c.startsWith(`${p}@`) ? c.slice(p.length + 1) : "";
-        if (atRel.length > 0) return !atRel.includes("/");
-
         const prefix = p.endsWith("/") ? p : `${p}/`;
         const delimited = getDelimitedAddressSpaceRemainder(p, c);
         if (!c.startsWith(prefix)) return delimited !== null && !delimited.includes("/");
@@ -3013,7 +3033,7 @@ async function loadRemotePathChildren(parentNode?: RemotePathNode) {
             parentNode._loaded = true;
         } else {
             const protocol = getDeviceTransferProtocol(ui);
-            if (protocol === "FTP" || protocol === "SMB" || protocol === "NFS") {
+            if (["FTP", "SMB", "NFS", "NCLinkApi", "GskWebServer", "GskrmFileTransfer"].includes(protocol)) {
                 const root = nodes.find((node) => node.path === "/") ?? createFolderNode("/");
                 if (!nodes.includes(root)) root.children = nodes;
                 root._loaded = true;
@@ -3185,8 +3205,13 @@ const startTransfer = async () => {
     const ui = devices.value.find((x) => x.id === deviceId);
     let remotePath = transferRemotePath.value.trim();
     const protocol = getDeviceTransferProtocol(ui);
-    if (protocol === "NCLinkApi") {
-        remotePath = normalizeNCLinkApiFilePath(remotePath);
+    if (protocol === "NCLinkApi" && remotePath) {
+        remotePath = normalizeNCLinkApiFilePath(remotePath) || "/";
+        if (transferForm.value.direction === "upload"
+            && (transferRemotePathPickedKind.value === "folder" || transferSelectedFiles.value.length > 1)
+            && !remotePath.endsWith("/")) {
+            remotePath += "/";
+        }
     }
     const isFocas = protocol === "FOCAS";
     const isBatchAddressDownload =
@@ -3634,11 +3659,16 @@ function treeDefaultsForNewDevice(): Record<string, unknown> {
     if (nodeId === "brand-huazhong") {
         return {
             brand: brandLabel ?? "华中数控",
-            protocol: "OpcUa",
-            port: 4840,
+            protocol: "NCLinkApi",
+            port: 19001,
             nclinkBrand: "华中数控",
-            useSecurity: "false",
-            autoAcceptUntrustedCerts: "true",
+        };
+    }
+    if (nodeId === "brand-guangzhou") {
+        return {
+            brand: brandLabel ?? "广州数控",
+            protocol: "GskWebServer",
+            port: 11520,
         };
     }
     if (brandLabel) {
@@ -3697,22 +3727,39 @@ const deviceForm = ref({
     gskScheme: "http",
     gskManagementBaseUrl: "",
     gskWorkshopAuthToken: "",
+    originalProtocol: "",
+    extendedProperties: {} as Record<string, string | undefined>,
+    originalTransferProtocol: "",
+    transferExtendedProperties: {} as Record<string, string | undefined>,
 });
 
-watch(
-    () => deviceForm.value.transferProtocol,
-    (protocol) => {
-        if (protocol === "FTP" && (!deviceForm.value.transferPort || [445, 2049].includes(deviceForm.value.transferPort))) {
-            deviceForm.value.transferPort = 21;
-        }
-        if (protocol === "SMB" && (!deviceForm.value.transferPort || [21, 2049].includes(deviceForm.value.transferPort))) {
-            deviceForm.value.transferPort = 445;
-        }
-        if (protocol === "NFS" && (!deviceForm.value.transferPort || [21, 445].includes(deviceForm.value.transferPort))) {
-            deviceForm.value.transferPort = 2049;
-        }
-    },
-);
+function onDeviceProtocolChange(protocol: string) {
+    const ports: Record<string, number> = {
+        FOCAS: 8193, OpcUa: 4840, NCLink: 1883, NCLinkApi: 19001, ModbusTCP: 502,
+        GskWebServer: deviceForm.value.gskScheme === "https" ? 443 : 11520,
+    };
+    deviceForm.value.protocol = protocol;
+    deviceForm.value.port = ports[protocol] ?? 0;
+}
+
+function onDeviceBrandChange(brand: string) {
+    const protocols: Record<string, string> = {
+        huazhong: "NCLinkApi", guangzhou: "GskWebServer", fanuc: "FOCAS", siemens: "OpcUa",
+    };
+    const protocol = protocols[inferBrandKey(brand)];
+    if (protocol && protocol !== deviceForm.value.protocol) onDeviceProtocolChange(protocol);
+}
+
+function onGskSchemeChange(scheme: string) {
+    if ([11520, 443].includes(deviceForm.value.port)) {
+        deviceForm.value.port = scheme === "https" ? 443 : 11520;
+    }
+}
+
+function onTransferProtocolChange(protocol: string) {
+    const ports: Record<string, number> = { FTP: 21, SMB: 445, NFS: 2049 };
+    deviceForm.value.transferPort = ports[protocol] ?? 0;
+}
 
 // 打开新增设备弹窗
 const openAddDeviceDialog = () => {
@@ -3768,6 +3815,10 @@ const openAddDeviceDialog = () => {
         gskScheme: "http",
         gskManagementBaseUrl: "",
         gskWorkshopAuthToken: "",
+        originalProtocol: "",
+        extendedProperties: {},
+        originalTransferProtocol: "",
+        transferExtendedProperties: {},
         ...fromTree,
     } as typeof deviceForm.value;
     dialogVisible.value = true;
@@ -3819,13 +3870,17 @@ const editDevice = (device: DeviceUi) => {
         mqttBrokerHost: device.mqttBrokerHost ?? "",
         mqttBrokerPort: device.mqttBrokerPort ?? "",
         mqttUsername: device.mqttUsername ?? "",
-        mqttPassword: "",
+        mqttPassword: String(device.extendedProperties?.MqttPassword ?? ""),
         ncLinkApiDeviceId: String(device.extendedProperties?.DeviceId ?? ""),
         ncLinkApiBaseUrl: String(device.extendedProperties?.ApiBaseUrl ?? ""),
         gskDeviceSn: String(device.extendedProperties?.DeviceSn ?? ""),
         gskScheme: String(device.extendedProperties?.Scheme ?? "http"),
         gskManagementBaseUrl: String(device.extendedProperties?.ManagementBaseUrl ?? ""),
-        gskWorkshopAuthToken: String(device.extendedProperties?.WorkshopAuthToken ?? ""),
+        gskWorkshopAuthToken: String(device.extendedProperties?.WorkshopAuthToken ?? device.extendedProperties?.AuthToken ?? ""),
+        originalProtocol: device.protocol,
+        extendedProperties: { ...device.extendedProperties },
+        originalTransferProtocol: device.transferProtocol,
+        transferExtendedProperties: { ...device.transferExtendedProperties },
     };
     dialogVisible.value = true;
 };
@@ -3857,7 +3912,7 @@ const saveDevice = async () => {
         ElMessage.warning("请输入主机地址 host");
         return;
     }
-    if (!f.port || f.port <= 0) {
+    if (f.protocol !== "Gskrm" && (!Number.isInteger(f.port) || f.port <= 0 || f.port > 65535)) {
         ElMessage.warning("请输入有效端口 port");
         return;
     }
@@ -3865,7 +3920,8 @@ const saveDevice = async () => {
         ElMessage.warning("请填写文件传输主机");
         return;
     }
-    if (String(f.transferProtocol ?? "").trim() && (!f.transferPort || f.transferPort <= 0)) {
+    if (String(f.transferProtocol ?? "").trim() && f.transferProtocol !== "GskrmFileTransfer"
+        && (!Number.isInteger(f.transferPort) || f.transferPort <= 0 || f.transferPort > 65535)) {
         ElMessage.warning("请填写有效文件传输端口");
         return;
     }
@@ -3890,7 +3946,9 @@ const saveDevice = async () => {
         return;
     }
 
+    const transfer = buildProgramTransferConfig(f);
     const ext = buildExtendedProps(f as unknown as Record<string, unknown>);
+    if (!transfer && f.originalTransferProtocol) delete ext.transferDeviceId;
     const extendedProperties =
         Object.keys(ext).length > 0 ? ext : undefined;
     const connectTimeoutMs =
@@ -3903,7 +3961,6 @@ const saveDevice = async () => {
             : undefined;
     const username = String(f.username ?? "").trim() || undefined;
     const password = String(f.password ?? "").trim() || undefined;
-    const transfer = buildProgramTransferConfig(f);
     try {
         if (f.id) {
             const saved = await machineConnectionDevicesApi.update(f.id, {
@@ -3913,13 +3970,14 @@ const saveDevice = async () => {
                 model: f.model.trim(),
                 protocol: f.protocol,
                 host: f.ip.trim(),
-                port: f.port,
+                port: f.protocol === "Gskrm" ? 0 : f.port,
                 username,
                 password,
                 connectTimeoutMs,
                 readTimeoutMs,
                 extendedProperties,
                 transfer,
+                clearTransfer: !transfer,
             });
             if (saved.upstreamSynced === false)
                 ElMessage.warning(`已保存到网关，但同步采集服务失败：${saved.upstreamError ?? "上游不可用"}（可稍后点「同步到采集服务」重试）`);
@@ -3932,7 +3990,7 @@ const saveDevice = async () => {
                 model: f.model.trim(),
                 protocol: f.protocol,
                 host: f.ip.trim(),
-                port: f.port,
+                port: f.protocol === "Gskrm" ? 0 : f.port,
                 username,
                 password,
                 connectTimeoutMs,
@@ -4037,7 +4095,7 @@ const nclinkFilter = ref("");
 const nclinkProbe = ref<NCLinkProbeModel | null>(null);
 
 const nclinkDevices = computed(() =>
-    devices.value.filter((d) => (d.protocol || "").toLowerCase().includes("nclink")),
+    devices.value.filter((d) => (d.protocol || "").toLowerCase() === "nclink"),
 );
 
 const filteredNclinkItems = computed(() => {
@@ -4051,23 +4109,23 @@ const filteredNclinkItems = computed(() => {
 
 const openNclinkDialog = () => {
     nclinkDialogVisible.value = true;
-    if (!nclinkDeviceId.value && nclinkDevices.value.length) {
+    if (!nclinkDevices.value.some((device) => device.id === nclinkDeviceId.value)) {
         nclinkDeviceId.value = nclinkDevices.value[0]?.id ?? "";
     }
     if (!nclinkDevices.value.length) {
-        ElMessage.warning("当前没有 NC-Link 协议的设备（协议为 NCLink / NCLinkApi）");
+        ElMessage.warning("Probe 诊断仅支持 NCLink（MQTT）设备；NCLinkApi 请使用设备点位浏览");
     }
 };
 
 const loadNclinkDiagnostics = async () => {
-    if (!nclinkDeviceId.value) return;
+    if (!nclinkDevices.value.some((device) => device.id === nclinkDeviceId.value)) return;
     nclinkLoading.value = true;
     nclinkError.value = "";
     nclinkProbe.value = null;
     try {
         nclinkProbe.value = await machineConnectionDiagnosticsApi.nclinkProbe(nclinkDeviceId.value);
     } catch (e: unknown) {
-        nclinkError.value = getApiErrorMessage(e, "读取 Probe 模型失败：请确认设备为 NC-Link 协议且可连接");
+        nclinkError.value = getApiErrorMessage(e, "读取 Probe 模型失败：请确认 NCLink（MQTT）设备可连接");
     } finally {
         nclinkLoading.value = false;
     }
@@ -4421,10 +4479,14 @@ const testConnection = async (deviceId?: string) => {
     }
     try {
         const r = await machineConnectionDevicesApi.testConnection(id);
-        if (r.success) {
+        if (r.success && r.mode === "tcp") {
+            ElMessage.warning(`TCP 端口可达，协议尚未验证${r.errorMessage ? `：${r.errorMessage}` : ""}`);
+        } else if (r.success && r.mode === "driver") {
             ElMessage.success(
-                r.latency ? `连接成功，延迟 ${r.latency}` : "连接成功",
+                r.latency ? `协议连接成功，延迟 ${r.latency}` : "协议连接成功",
             );
+        } else if (r.success) {
+            ElMessage.warning("连接探测成功，但未返回协议验证结果");
         } else {
             ElMessage.error(r.errorMessage || "连接失败");
         }

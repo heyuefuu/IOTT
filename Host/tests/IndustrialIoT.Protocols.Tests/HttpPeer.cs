@@ -13,6 +13,8 @@ internal sealed class HttpPeer : IAsyncDisposable
     public ConcurrentDictionary<string, byte[]> Files { get; } = new();
     public ConcurrentDictionary<string, JsonNode> Values { get; } = new();
     public List<string> Requests { get; } = [];
+    public ConcurrentQueue<(string DeviceId, JsonElement Body)> DataRequests { get; } = new();
+    public bool RejectWrites { get; set; }
 
     public HttpPeer()
     {
@@ -26,6 +28,7 @@ internal sealed class HttpPeer : IAsyncDisposable
             if (deviceId == "silent") await Task.Delay(5000, request.HttpContext.RequestAborted);
             if (deviceId == "offline") return Results.Json(new { status = "FAILED", code = 1001, value = new object[0] });
             using var body = await JsonDocument.ParseAsync(request.Body);
+            DataRequests.Enqueue((deviceId, body.RootElement.Clone()));
             var operation = body.RootElement.GetProperty("operation").GetString();
             var rows = new List<object>();
             foreach (var item in body.RootElement.GetProperty("items").EnumerateArray())
@@ -35,8 +38,9 @@ internal sealed class HttpPeer : IAsyncDisposable
                 switch (operation)
                 {
                     case "set_value":
-                        Values[path] = JsonNode.Parse(item.GetProperty("value").GetRawText())!;
-                        rows.Add(new[] { true });
+                        if (!RejectWrites)
+                            Values[path] = JsonNode.Parse(item.GetProperty("value").GetRawText())!;
+                        rows.Add(new[] { !RejectWrites });
                         break;
                     case "get_keys":
                         rows.Add(Files.Keys.ToArray());

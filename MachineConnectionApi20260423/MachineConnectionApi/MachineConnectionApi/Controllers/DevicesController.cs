@@ -9,7 +9,7 @@ namespace MachineConnectionApi.Controllers;
 
 /// <summary>
 /// 设备管理 Web API：本地 devices.json 为 UI 主数据，增删改同步镜像到上游 Industrial IoT 设备库
-/// （上游按 deviceId 解析驱动，两侧必须一致）；连接测试优先走上游驱动级握手，失败回退 TCP 端口探测。
+/// （上游按 deviceId 解析驱动，两侧必须一致）；上游不可用时仅回退 TCP 端口探测，不据此标记在线。
 /// </summary>
 [ApiController]
 [Route("api/devices")]
@@ -73,7 +73,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         if (string.IsNullOrWhiteSpace(input.Type)) return BadRequest(new { error = "Type 不能为空（CNC / PLC / Robot）" });
         if (string.IsNullOrWhiteSpace(input.Protocol)) return BadRequest(new { error = "Protocol 不能为空" });
         if (string.IsNullOrWhiteSpace(input.Host)) return BadRequest(new { error = "Host 不能为空" });
-        if (input.Port is not (> 0 and <= 65535)) return BadRequest(new { error = "Port 必须是 1~65535" });
+        if (!IsValidPort(input.Port, input.Protocol)) return BadRequest(new { error = "Port 必须是 1~65535；广数 SDK 可使用 0" });
 
         var item = new MachineDeviceDto
         {
@@ -85,13 +85,13 @@ public class DevicesController : IndustrialIoTProxyControllerBase
             Protocol = input.Protocol,
             Status = "Offline",
             Host = input.Host,
-            Port = input.Port.Value,
+            Port = input.Port.GetValueOrDefault(),
             Username = input.Username,
             Password = input.Password,
             ConnectTimeoutMs = input.ConnectTimeoutMs ?? 10000,
             ReadTimeoutMs = input.ReadTimeoutMs ?? 5000,
             ExtendedProperties = input.ExtendedProperties ?? [],
-            Transfer = input.Transfer,
+            Transfer = input.ClearTransfer ? null : input.Transfer,
             CreatedAt = DateTimeOffset.Now,
         };
         var sync = await _sync.UpsertAsync(item, ct);
@@ -108,10 +108,11 @@ public class DevicesController : IndustrialIoTProxyControllerBase
     {
         var current = _store.ReadAll().FirstOrDefault(x => x.Id == id);
         if (current is null) return NotFound();
-        if (input.Port is not null && input.Port is not (> 0 and <= 65535)) return BadRequest(new { error = "Port 必须是 1~65535" });
+        if (!IsValidPort(input.Port ?? current.Port, input.Protocol ?? current.Protocol))
+            return BadRequest(new { error = "Port 必须是 1~65535；广数 SDK 可使用 0" });
 
-        var transfer = input.Transfer ?? current.Transfer;
-        if (input.Transfer is { Password: null } requestedTransfer && current.Transfer is { } storedTransfer &&
+        var transfer = input.ClearTransfer ? null : input.Transfer ?? current.Transfer;
+        if (!input.ClearTransfer && input.Transfer is { Password: null } requestedTransfer && current.Transfer is { } storedTransfer &&
             string.Equals(requestedTransfer.Protocol, storedTransfer.Protocol, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(requestedTransfer.Host, storedTransfer.Host, StringComparison.OrdinalIgnoreCase) &&
             requestedTransfer.Port == storedTransfer.Port &&
@@ -202,20 +203,27 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         var driver = await TryUpstreamDriverTestAsync(item, ct);
         if (driver is not null)
         {
-            if (driver.Success)
-                MarkOnline(id);
+            MarkDriverStatus(id, driver.Success);
             var latencyText = driver.Latency is { } latency ? $"{latency.TotalMilliseconds:N0} ms" : null;
             return Ok(new { success = driver.Success, latency = latencyText, errorMessage = driver.ErrorMessage, mode = "driver" });
         }
 
+        if (UsesSdkPort(item.Protocol))
+            return Ok(new { success = false, errorMessage = "采集服务不可用，尚未完成广数 SDK 协议验证", mode = "driver" });
+
         try
         {
             using var tcp = new System.Net.Sockets.TcpClient();
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMilliseconds(item.ConnectTimeoutMs > 0 ? item.ConnectTimeoutMs : 10000));
             var start = DateTimeOffset.Now;
-            await tcp.ConnectAsync(item.Host, item.Port, ct);
+            await tcp.ConnectAsync(item.Host, item.Port, timeout.Token);
             var elapsed = DateTimeOffset.Now - start;
-            MarkOnline(id);
-            return Ok(new { success = true, latency = $"{elapsed.TotalMilliseconds:N0} ms", mode = "tcp" });
+            return Ok(new
+            {
+                success = true, latency = $"{elapsed.TotalMilliseconds:N0} ms", mode = "tcp",
+                errorMessage = "仅 TCP 端口可达，采集服务未完成协议驱动验证",
+            });
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -227,7 +235,14 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         }
     }
 
-    private void MarkOnline(string id)
+    private static bool UsesSdkPort(string? protocol) =>
+        string.Equals(protocol, "Gskrm", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(protocol, "GskrmFileTransfer", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsValidPort(int? port, string? protocol) =>
+        port is > 0 and <= 65535 || port == 0 && UsesSdkPort(protocol);
+
+    private void MarkDriverStatus(string id, bool success)
     {
         _store.Update(rows =>
         {
@@ -236,7 +251,8 @@ public class DevicesController : IndustrialIoTProxyControllerBase
             {
                 rows[index] = rows[index] with
                 {
-                    Status = "Online", LastSeenAt = DateTimeOffset.Now,
+                    Status = success ? "Online" : "Error",
+                    LastSeenAt = success ? DateTimeOffset.Now : rows[index].LastSeenAt,
                 };
             }
             return 0;

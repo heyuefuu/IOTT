@@ -184,6 +184,10 @@ public sealed class DeviceUpstreamSyncService : IDeviceUpstreamSyncService
                 ["extendedProperties"] = transfer.ExtendedProperties,
             };
         }
+        else if (!includeId)
+        {
+            payload["clearTransfer"] = true;
+        }
         return payload;
     }
 

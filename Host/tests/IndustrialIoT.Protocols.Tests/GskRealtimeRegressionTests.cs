@@ -20,6 +20,7 @@ internal static class GskRealtimeRegressionTests
         await using var app = builder.Build();
         app.UseWebSockets();
         app.MapGet("/api/v1/cnc/mc", () => Results.Json(new { model = "fixture" }));
+        app.MapGet("/api/v1/cnc/macro-values/100", () => Results.Json(new { value = 12.5 }));
         var close = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         app.Map("/ws/cnc", async context =>
         {
@@ -42,6 +43,17 @@ internal static class GskRealtimeRegressionTests
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var first = await driver.ReadTagAsync("Realtime.State", DataType.Int32, timeout.Token);
             TestSupport.Require(first.Quality == TagQuality.Good && Equals(first.Value, 2), "Realtime frame not received");
+            var requested = await driver.ReadTagsAsync([
+                new() { Address = "/Realtime.Mode", DataType = DataType.Int32 },
+                new() { Address = "/Macro:100", DataType = DataType.Double },
+                new() { Address = "/Unknown:100", DataType = DataType.Double },
+            ], timeout.Token);
+            TestSupport.Require(requested[0].Address == "/Realtime.Mode" && Equals(requested[0].Value, 1),
+                "Realtime results must preserve the exact configured point address");
+            TestSupport.Require(requested[1].Address == "/Macro:100" && Equals(requested[1].Value, 12.5),
+                "HTTP results must preserve the exact configured point address");
+            TestSupport.Require(requested[2].Address == "/Unknown:100" && requested[2].Quality == TagQuality.Bad,
+                "Failed reads must preserve their configured point address");
             await Task.Delay(50, timeout.Token);
             var sameFrame = await driver.ReadTagAsync("Realtime.State", DataType.Int32, timeout.Token);
             TestSupport.Require(sameFrame.Timestamp == first.Timestamp, "Cached frame was assigned a new sample time");
@@ -49,8 +61,12 @@ internal static class GskRealtimeRegressionTests
             while (true)
             {
                 timeout.Token.ThrowIfCancellationRequested();
-                var value = await driver.ReadTagAsync("Realtime.State", DataType.Int32, timeout.Token);
-                if (value.Quality == TagQuality.Bad) break;
+                var value = await driver.ReadTagAsync("/Realtime.State", DataType.Int32, timeout.Token);
+                if (value.Quality == TagQuality.Bad)
+                {
+                    TestSupport.Require(value.Address == "/Realtime.State", "Disconnected realtime reads lost their configured address");
+                    break;
+                }
                 await Task.Delay(20, timeout.Token);
             }
             TestSupport.Require(await driver.PingAsync(), "HTTP peer should remain healthy after WebSocket closes");

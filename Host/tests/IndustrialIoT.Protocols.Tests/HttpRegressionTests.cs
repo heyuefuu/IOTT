@@ -37,7 +37,7 @@ internal static class HttpRegressionTests
             using var source = new MemoryStream(bytes);
             TestSupport.Require((await transfer.UploadProgramAsync(source, new()
             {
-                FileName = "O0001.nc", RemotePath = "programs", FileSize = bytes.Length,
+                FileName = "O0001.nc", RemotePath = "programs/", FileSize = bytes.Length,
             })).Success, "upload failed");
             var files = await ((IProgramFileBrowser)driver).BrowseFilesAsync();
             TestSupport.Require(files.Any(file => file.Path == "programs/O0001.nc"), "file listing failed");

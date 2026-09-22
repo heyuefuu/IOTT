@@ -100,7 +100,7 @@ public sealed class BatchProgramTransferTaskService(IServiceScopeFactory scopeFa
 
     private async Task DownloadOneAsync(BatchTransferTaskState task, TransferExecutionContext context, BatchTransferItemState item, CancellationToken ct)
     {
-        var localPath = Path.Combine(task.WorkspacePath, item.FileName);
+        var localPath = Path.Combine(task.WorkspacePath, Guid.NewGuid().ToString("N"));
         item.MarkRunning();
         await using var destination = new FileStream(localPath, FileMode.Create, FileAccess.ReadWrite);
         var result = await context.TransferDriver.DownloadProgramAsync(item.RemotePath, destination, ct: ct);
@@ -112,7 +112,10 @@ public sealed class BatchProgramTransferTaskService(IServiceScopeFactory scopeFa
     {
         item.MarkRunning();
         await using var source = new FileStream(item.LocalPath!, FileMode.Open, FileAccess.Read);
-        var metadata = new NCProgramMetadata { FileName = item.FileName, RemotePath = remotePath, FileSize = source.Length };
+        var uploadPath = context.Protocol == ProtocolType.NCLinkApi
+            ? remotePath.Trim().Replace('\\', '/').TrimEnd('/') + "/"
+            : remotePath;
+        var metadata = new NCProgramMetadata { FileName = item.FileName, RemotePath = uploadPath, FileSize = source.Length };
         var result = await context.TransferDriver.UploadProgramAsync(source, metadata, ct: ct);
         var finalRemotePath = ResolveRemoteFilePath(context.Protocol, remotePath, item.FileName);
         item.MarkFinished(result.Success, result.BytesTransferred, result.Duration, result.ErrorMessage, finalRemotePath: finalRemotePath);
@@ -125,8 +128,14 @@ public sealed class BatchProgramTransferTaskService(IServiceScopeFactory scopeFa
         if (completedFiles.Length == 0) return;
         var artifactPath = Path.Combine(task.WorkspacePath, $"{task.TaskId}.zip");
         using var archive = ZipFile.Open(artifactPath, ZipArchiveMode.Create);
+        var entryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in completedFiles)
-            archive.CreateEntryFromFile(item.LocalPath!, item.FileName);
+        {
+            var entryName = item.FileName;
+            for (var suffix = 2; !entryNames.Add(entryName); suffix++)
+                entryName = $"{Path.GetFileNameWithoutExtension(item.FileName)} ({suffix}){Path.GetExtension(item.FileName)}";
+            archive.CreateEntryFromFile(item.LocalPath!, entryName);
+        }
         task.SetArtifact(artifactPath, $"batch-{task.TaskId}.zip");
     }
 

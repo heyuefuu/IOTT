@@ -162,9 +162,11 @@ public sealed partial class NCLinkApiDriver : IProtocolDriver, IAddressSpaceBrow
         if (requests.Count == 0) return [];
 
         var items = requests
-            .Select(r => NCLinkApiAddress.Parse(r.Address).ToRequestItem() with
+            .Select(request =>
             {
-                Timeout = _defaultRequestTimeoutMs,
+                var parsed = NCLinkApiAddress.Parse(request.Address);
+                return parsed.ToRequestItem() with
+                { Timeout = parsed.TimeoutMs ?? _defaultRequestTimeoutMs };
             })
             .ToList();
 

@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../src/IndustrialIoT.Host/IndustrialIoT.Host.csproj" />
     <ProjectReference Include="../../src/IndustrialIoT.Protocols.FANUC/IndustrialIoT.Protocols.FANUC.csproj" />
     <ProjectReference Include="../../src/IndustrialIoT.Protocols.Gsk/IndustrialIoT.Protocols.Gsk.csproj" />
     <ProjectReference Include="../../src/IndustrialIoT.Protocols.Haas/IndustrialIoT.Protocols.Haas.csproj" />

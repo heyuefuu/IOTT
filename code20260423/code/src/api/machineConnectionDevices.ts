@@ -66,6 +66,8 @@ export interface UpdateDeviceRequest {
 	readTimeoutMs?: number | null
 	extendedProperties?: Record<string, string> | null
 	transfer?: TransferDeviceRequest | null
+	/** 清除显式配置的独立文件通道。 */
+	clearTransfer?: boolean
 }
 
 export interface ConnectionTestResult {

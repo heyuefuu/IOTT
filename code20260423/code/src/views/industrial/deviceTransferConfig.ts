@@ -9,6 +9,8 @@ export interface ProgramTransferFormFields {
 	transferReadTimeoutMs?: number;
 	transferShareName?: string;
 	transferMountPoint?: string;
+	originalTransferProtocol?: string;
+	transferExtendedProperties?: Record<string, string | undefined>;
 }
 
 export interface ProgramTransferConfig {
@@ -29,14 +31,21 @@ export function buildProgramTransferConfig(
 
 	const protocol = String(form.transferProtocol ?? "").trim();
 	if (!protocol) return undefined;
-	if (protocol !== "FTP" && protocol !== "SMB" && protocol !== "NFS") return undefined;
+	if (!["FTP", "SMB", "NFS", "GskrmFileTransfer"].includes(protocol)) return undefined;
 
 	const extendedProperties: Record<string, string> = {};
+	if (protocol === form.originalTransferProtocol) {
+		for (const [key, value] of Object.entries(form.transferExtendedProperties ?? {})) {
+			if (typeof value === "string") extendedProperties[key] = value;
+		}
+	}
 	if (protocol === "SMB") {
+		delete extendedProperties.ShareName;
 		const shareName = String(form.transferShareName ?? "").trim();
 		if (shareName) extendedProperties.ShareName = shareName;
 	}
 	if (protocol === "NFS") {
+		delete extendedProperties.MountPoint;
 		const mountPoint = String(form.transferMountPoint ?? "").trim();
 		if (mountPoint) extendedProperties.MountPoint = mountPoint;
 	}
@@ -44,9 +53,9 @@ export function buildProgramTransferConfig(
 	return {
 		protocol,
 		host: String(form.transferHost ?? "").trim(),
-		port: Number(form.transferPort ?? 0),
-		username: String(form.transferUsername ?? "").trim() || undefined,
-		password: String(form.transferPassword ?? "").trim() || undefined,
+		port: protocol === "GskrmFileTransfer" ? 0 : Number(form.transferPort ?? 0),
+		username: protocol === "GskrmFileTransfer" ? undefined : String(form.transferUsername ?? "").trim() || undefined,
+		password: protocol === "GskrmFileTransfer" ? undefined : String(form.transferPassword ?? "").trim() || undefined,
 		connectTimeoutMs:
 			typeof form.transferConnectTimeoutMs === "number" && form.transferConnectTimeoutMs > 0
 				? form.transferConnectTimeoutMs

@@ -26,8 +26,9 @@ public class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCommand, D
         if (req.Protocol.HasValue) device.Protocol = req.Protocol.Value;
 
         var config = device.ConnectionConfig;
-        var transfer = req.Transfer is null ? config.Transfer : CreateDeviceCommandHandler.MapTransferRequest(req.Transfer);
-        if (req.Transfer is { Password: null } requestedTransfer && config.Transfer is { } storedTransfer &&
+        var transfer = req.ClearTransfer ? null
+            : req.Transfer is null ? config.Transfer : CreateDeviceCommandHandler.MapTransferRequest(req.Transfer);
+        if (!req.ClearTransfer && req.Transfer is { Password: null } requestedTransfer && config.Transfer is { } storedTransfer &&
             requestedTransfer.Protocol == storedTransfer.Protocol &&
             string.Equals(requestedTransfer.Host, storedTransfer.Host, StringComparison.OrdinalIgnoreCase) &&
             requestedTransfer.Port == storedTransfer.Port &&

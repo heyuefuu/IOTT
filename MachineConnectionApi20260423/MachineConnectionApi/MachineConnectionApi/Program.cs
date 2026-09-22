@@ -32,14 +32,8 @@ builder.Services.Configure<InfluxDbOptions>(
     builder.Configuration.GetSection(InfluxDbOptions.SectionName));
 builder.Services.Configure<MqttOptions>(
     builder.Configuration.GetSection(MqttOptions.SectionName));
-builder.Services.Configure<NCLinkApiOptions>(
-    builder.Configuration.GetSection(NCLinkApiOptions.SectionName));
 builder.Services.AddSingleton<IInfluxTelemetryWriter, InfluxTelemetryWriter>();
 builder.Services.AddSingleton<IMqttTelemetryPublisher, MqttTelemetryPublisher>();
-builder.Services.AddSingleton<INCLinkApiClient, NCLinkApiClient>();
-builder.Services.AddSingleton<INCLinkModelProbeClient, NCLinkModelProbeClient>();
-builder.Services.AddSingleton<INCLinkMqttQueryClient, NCLinkMqttQueryClient>();
-builder.Services.AddSingleton<INCLinkDeviceResolver, NCLinkDeviceResolver>();
 builder.Services.AddSingleton<ICsConnectivityService, CsConnectivityService>();
 builder.Services.AddSingleton<ICsParallelReportService, CsParallelReportService>();
 builder.Services.AddSingleton<IVerifyAutomationService, VerifyAutomationService>();
@@ -67,17 +61,6 @@ builder.Services.AddHttpClient("IndustrialIoT", client =>
 {
     client.BaseAddress = new Uri(industrialBase);
     client.Timeout = TimeSpan.FromMinutes(5);
-});
-
-var nclinkBase = builder.Configuration["NCLinkApi:BaseUrl"] ?? "http://127.0.0.1:19001";
-if (!nclinkBase.EndsWith('/'))
-    nclinkBase += "/";
-var nclinkTimeoutSec = builder.Configuration.GetValue<int?>("NCLinkApi:TimeoutSeconds") ?? 30;
-
-builder.Services.AddHttpClient(NCLinkApiClient.HttpClientName, client =>
-{
-    client.BaseAddress = new Uri(nclinkBase);
-    client.Timeout = TimeSpan.FromSeconds(Math.Max(5, nclinkTimeoutSec));
 });
 
 builder.Services.AddHttpClient(MachineConnectionApi.Controllers.TelemetryInfluxController.InfluxHttpClientName, client =>

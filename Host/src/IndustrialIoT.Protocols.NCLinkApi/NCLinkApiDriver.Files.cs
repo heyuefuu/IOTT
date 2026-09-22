@@ -261,9 +261,10 @@ public sealed partial class NCLinkApiDriver : IProgramFileBrowser, INCProgramTra
 
     private static string BuildRemoteKey(string remotePath, string fileName)
     {
-        if (string.IsNullOrEmpty(remotePath)) return fileName;
-        var dir = remotePath.Trim('/');
-        return string.IsNullOrEmpty(dir) ? fileName : $"{dir}/{fileName}";
+        if (string.IsNullOrWhiteSpace(remotePath)) return fileName;
+        var key = remotePath.Trim().Replace('\\', '/').TrimStart('/');
+        if (key.Length == 0) return fileName;
+        return key.EndsWith('/') ? key + fileName : key;
     }
 
     private sealed record FileAttribute

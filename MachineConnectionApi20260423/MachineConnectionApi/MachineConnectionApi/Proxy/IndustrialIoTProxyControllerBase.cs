@@ -190,12 +190,7 @@ public abstract class IndustrialIoTProxyControllerBase : ControllerBase
             if (response.Headers.Location is not null)
                 Response.Headers.Location = response.Headers.Location.ToString();
 
-            if (fileResponseOnSuccess &&
-                response.IsSuccessStatusCode &&
-                string.Equals(
-                    response.Content.Headers.ContentType?.MediaType,
-                    MediaTypeNames.Application.Octet,
-                    StringComparison.OrdinalIgnoreCase))
+            if (fileResponseOnSuccess && response.IsSuccessStatusCode)
             {
                 var bytes = await response.Content.ReadAsByteArrayAsync(ct);
                 var mediaTypeOk = response.Content.Headers.ContentType?.MediaType ?? MediaTypeNames.Application.Octet;

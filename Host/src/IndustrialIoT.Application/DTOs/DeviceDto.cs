@@ -56,6 +56,7 @@ public record UpdateDeviceRequest
     public int? ReadTimeoutMs { get; init; }
     public Dictionary<string, string>? ExtendedProperties { get; init; }
     public TransferDeviceRequest? Transfer { get; init; }
+    public bool ClearTransfer { get; init; }
 }
 
 public record TransferDeviceDto

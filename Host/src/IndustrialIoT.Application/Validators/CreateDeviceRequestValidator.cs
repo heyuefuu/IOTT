@@ -13,7 +13,8 @@ public class CreateDeviceRequestValidator : AbstractValidator<CreateDeviceReques
         RuleFor(x => x.Brand).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Model).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Host).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Port).InclusiveBetween(1, 65535);
+        RuleFor(x => x.Port).Must((request, port) => IsValidPort(request.Protocol, port))
+            .WithMessage("Port must be 1~65535; GSK SDK protocols may use 0");
         RuleFor(x => x.ConnectTimeoutMs).GreaterThan(0).When(x => x.ConnectTimeoutMs.HasValue);
         RuleFor(x => x.ReadTimeoutMs).GreaterThan(0).When(x => x.ReadTimeoutMs.HasValue);
         RuleFor(x => x.Protocol).IsInEnum();
@@ -113,6 +114,9 @@ public class CreateDeviceRequestValidator : AbstractValidator<CreateDeviceReques
         catch { return false; }
     }
 
+    internal static bool IsValidPort(ProtocolType protocol, int port) =>
+        port is > 0 and <= 65535 || port == 0 && protocol is (ProtocolType.Gskrm or ProtocolType.GskrmFileTransfer);
+
     private static bool IsSerialMode(Dictionary<string, string>? properties) =>
         properties is not null &&
         properties.TryGetValue("Mode", out var mode) &&
@@ -124,7 +128,8 @@ internal sealed class TransferDeviceRequestValidator : AbstractValidator<Transfe
     public TransferDeviceRequestValidator()
     {
         RuleFor(x => x.Host).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Port).InclusiveBetween(1, 65535);
+        RuleFor(x => x.Port).Must((request, port) => CreateDeviceRequestValidator.IsValidPort(request.Protocol, port))
+            .WithMessage("Port must be 1~65535; GSK SDK protocols may use 0");
         RuleFor(x => x.ConnectTimeoutMs).GreaterThan(0).When(x => x.ConnectTimeoutMs.HasValue);
         RuleFor(x => x.ReadTimeoutMs).GreaterThan(0).When(x => x.ReadTimeoutMs.HasValue);
         RuleFor(x => x.Protocol).IsInEnum();

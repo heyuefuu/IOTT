@@ -22,6 +22,9 @@ const names = [
     "remotePathPickerShowCheckboxes",
     "BRAND_KEY_TO_FORM_LABEL", "inferBrandKey", "mapStatus", "formatSeenAt", "mapDtoToUi",
     "buildExtendedProps", "treeDefaultsForNewDevice", "openAddDeviceDialog", "editDevice", "saveDevice",
+    "onDeviceProtocolChange", "onDeviceBrandChange", "onGskSchemeChange", "onTransferProtocolChange",
+    "getDelimitedAddressSpaceRemainder", "isAddressSpaceChildPath", "isImmediateAddressSpaceChild",
+    "sanitizeAddressSpaceLevelNodes", "testConnection",
 ];
 const parsed = ts.createSourceFile("DeviceView.ts", script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 const statements = parsed.statements.filter((statement) => {
@@ -38,6 +41,8 @@ const executable = ts.transpileModule(
 function setup(protocol, transferProtocol = "", items = []) {
     const calls = [];
     const warnings = [];
+    const successes = [];
+    const connectionResult = { success: true, mode: "driver" };
     const device = { id: "device", protocol, transferProtocol };
     const record = (method, result) => async (...args) => { calls.push([method, ...args]); return result; };
     const context = vm.createContext({
@@ -48,11 +53,11 @@ function setup(protocol, transferProtocol = "", items = []) {
         deviceForm: { value: {} }, selectedTreeNodeId: { value: "" },
         dialogVisible: { value: false }, dialogTitle: { value: "" }, async loadDevices() {},
         buildProgramTransferConfig: transferModule.exports.buildProgramTransferConfig,
-        machineConnectionDevicesApi: { create: record("create", {}), update: record("update", {}) },
+        machineConnectionDevicesApi: { create: record("create", {}), update: record("update", {}), testConnection: record("testConnection", connectionResult) },
         computed: (getter) => ({ get value() { return getter(); } }),
         syncRemotePathPickerCurrentNode() {}, notifyBatchDownloadResult() {}, async loadTransferHistory() {},
         getApiErrorMessage: (error) => error.message,
-        ElMessage: { warning: (message) => warnings.push(message), error: (message) => { throw new Error(message); }, info() {}, success() {} },
+        ElMessage: { warning: (message) => warnings.push(message), error: (message) => { throw new Error(message); }, info() {}, success: (message) => successes.push(message) },
         machineConnectionPointsApi: { browseAddressSpace: () => { throw new Error("File picker used collection address space"); } },
         machineConnectionProgramTransferApi: {
             files: record("files", items), upload: record("upload", { status: "Completed" }),
@@ -61,10 +66,10 @@ function setup(protocol, transferProtocol = "", items = []) {
         },
     });
     vm.runInContext(executable, context);
-    return { context, handlers: context.handlers, calls, warnings, device };
+    return { context, handlers: context.handlers, calls, warnings, successes, connectionResult, device };
 }
 
-for (const protocol of ["OpcUa", "FOCAS"]) {
+for (const protocol of ["OpcUa", "FOCAS", "NCLinkApi", "GskWebServer", "Gskrm"]) {
     for (const transferProtocol of ["FTP", "SMB", "NFS"]) {
         test(`${protocol} + ${transferProtocol} browses files and permits batch transfers`, async () => {
             const fixture = setup(protocol, transferProtocol, [
@@ -184,3 +189,200 @@ test("Native NCLinkApi retains flat keys and its existing file endpoint", async 
     assert.equal(fixture.calls[0][0], "upload");
     assert.equal(fixture.calls[0][3], "O0001");
 });
+
+for (const [brandKey, protocol, port] of [["huazhong", "NCLinkApi", 19001], ["guangzhou", "GskWebServer", 11520]]) {
+    test(`${brandKey} creates the matching driver and port`, async () => {
+        const fixture = setup(protocol);
+        fixture.context.selectedTreeNodeId.value = `brand-${brandKey}`;
+        fixture.handlers.openAddDeviceDialog();
+        Object.assign(fixture.context.deviceForm.value, { name: "CNC", code: "CNC-1", ncLinkApiDeviceId: "SN1", gskDeviceSn: "cnc" });
+        await fixture.handlers.saveDevice();
+        assert.equal(fixture.calls[0].at(-1).protocol, protocol);
+        assert.equal(fixture.calls[0].at(-1).port, port);
+    });
+}
+
+test("User changes switch protocol ports while custom GSK ports remain intact on scheme changes", () => {
+    const { context, handlers } = setup("FOCAS");
+    handlers.openAddDeviceDialog();
+    handlers.onDeviceBrandChange("华中数控");
+    assert.equal(context.deviceForm.value.protocol, "NCLinkApi");
+    assert.equal(context.deviceForm.value.port, 19001);
+    handlers.onDeviceBrandChange("广州数控");
+    assert.equal(context.deviceForm.value.protocol, "GskWebServer");
+    assert.equal(context.deviceForm.value.port, 11520);
+    handlers.onGskSchemeChange("https");
+    assert.equal(context.deviceForm.value.port, 443);
+    context.deviceForm.value.port = 23456;
+    handlers.onGskSchemeChange("http");
+    assert.equal(context.deviceForm.value.port, 23456);
+    for (const [protocol, port] of [["NCLink", 1883], ["OpcUa", 4840], ["FOCAS", 8193], ["Gskrm", 0]]) {
+        handlers.onDeviceProtocolChange(protocol);
+        assert.equal(context.deviceForm.value.port, port);
+    }
+    for (const [protocol, port] of [["FTP", 21], ["SMB", 445], ["NFS", 2049], ["GskrmFileTransfer", 0]]) {
+        handlers.onTransferProtocolChange(protocol);
+        assert.equal(context.deviceForm.value.transferPort, port);
+    }
+});
+
+for (const [protocol, brand, original] of [
+    ["NCLinkApi", "华中数控", { DeviceId: "SN1", ApiBaseUrl: "http://127.0.0.1:19002", ApiTimeoutMs: "15000", DefaultRequestTimeoutMs: "450" }],
+    ["GskWebServer", "广州数控", { DeviceSn: "cnc", BaseUrl: "http://127.0.0.1:11521", RealtimeWebSocketBaseUrl: "ws://127.0.0.1:11522", HealthPath: "/health", AuthToken: "test-token" }],
+]) {
+    test(`${protocol} edits retain custom ports and invisible driver settings`, async () => {
+        const fixture = setup(protocol);
+        fixture.handlers.editDevice(fixture.handlers.mapDtoToUi({
+            id: "device", name: "CNC", type: "CNC", brand, model: "fixture", protocol,
+            host: "127.0.0.1", port: 23456, extendedProperties: { DeviceCode: "CNC-1", ...original },
+        }));
+        await fixture.handlers.saveDevice();
+        assert.equal(fixture.calls[0][0], "update");
+        const saved = fixture.calls[0].at(-1);
+        assert.equal(saved.port, 23456);
+        for (const [key, value] of Object.entries(original)) {
+            assert.equal(saved.extendedProperties[key === "AuthToken" ? "WorkshopAuthToken" : key], value);
+        }
+        if (protocol === "NCLinkApi") {
+            fixture.context.deviceForm.value.ncLinkApiBaseUrl = "";
+            await fixture.handlers.saveDevice();
+            assert.equal(fixture.calls[1].at(-1).extendedProperties.ApiBaseUrl, undefined);
+            assert.equal(fixture.calls[1].at(-1).extendedProperties.ApiTimeoutMs, "15000");
+        }
+        fixture.handlers.onDeviceProtocolChange("OpcUa");
+        await fixture.handlers.saveDevice();
+        const changed = fixture.calls.at(-1).at(-1).extendedProperties;
+        for (const key of Object.keys(original)) assert.equal(changed[key], undefined);
+        assert.equal(changed.DeviceCode, "CNC-1");
+    });
+}
+
+test("GSK SDK acquisition and file channels save without a user-supplied port", async () => {
+    const fixture = setup("Gskrm", "GskrmFileTransfer");
+    fixture.handlers.openAddDeviceDialog();
+    fixture.handlers.onDeviceProtocolChange("Gskrm");
+    Object.assign(fixture.context.deviceForm.value, { name: "CNC", code: "GSK-1", transferProtocol: "GskrmFileTransfer", transferHost: "192.0.2.20", transferPort: 0 });
+    await fixture.handlers.saveDevice();
+    assert.equal(fixture.warnings.length, 0);
+    assert.equal(fixture.calls[0].at(-1).port, 0);
+    assert.equal(fixture.calls[0].at(-1).transfer.port, 0);
+    assert.equal(fixture.calls[0].at(-1).transfer.protocol, "GskrmFileTransfer");
+});
+
+test("NCLink VARIABLE@ nodes survive filtering without siblings, descendants or duplicates", () => {
+    const { handlers } = setup("NCLinkApi");
+    const nodes = ["/VARIABLE@SYS", "/VARIABLE@REG_X", "/VARIABLE@SYS", "/VARIABLE",
+        "/VARIABLE2@SYS", "/VARIABLE@SYS/child", "/CHANNEL@0"].map((path) => ({ path }));
+    const filtered = handlers.sanitizeAddressSpaceLevelNodes("/VARIABLE", nodes);
+    assert.deepEqual(Array.from(filtered, (node) => node.path), ["/VARIABLE@SYS", "/VARIABLE@REG_X"]);
+});
+
+for (const mode of ["driver", "tcp", undefined]) {
+    test(`Connection feedback distinguishes ${mode ?? "unspecified"} verification`, async () => {
+        const fixture = setup("NCLinkApi");
+        fixture.connectionResult.mode = mode;
+        await fixture.handlers.testConnection("device");
+        assert.equal(fixture.successes.length, mode === "driver" ? 1 : 0);
+        assert.equal(fixture.warnings.length, mode === "driver" ? 0 : 1);
+        assert.match((fixture.successes[0] ?? fixture.warnings[0]), /协议/);
+    });
+}
+
+for (const items of [[], [{ name: "O0001.nc", path: "O0001.nc", nodeType: "file" },
+    { name: "O0002.nc", path: "jobs/O0002.nc", nodeType: "file" }]]) {
+    test(`NCLink root stays selectable with ${items.length} files and retains original keys`, async () => {
+        const fixture = setup("NCLinkApi", "", items);
+        await fixture.handlers.loadRemotePathChildren();
+        const root = fixture.context.remotePathTreeData.value[0];
+        assert.equal(root.path, "/");
+        assert.equal(root._loaded, true);
+        if (items.length) {
+            assert.equal(root.children.find((node) => node.nodeType === "file").path, "O0001.nc");
+            assert.equal(root.children.find((node) => node.path === "jobs").children[0].path, "jobs/O0002.nc");
+        }
+        fixture.context.transferRemotePath.value = root.path;
+        fixture.context.transferRemotePathPickedKind.value = "folder";
+        await fixture.handlers.startTransfer();
+        assert.equal(fixture.calls.at(-1)[3], "/");
+    });
+}
+
+for (const [path, kind, count, expected] of [
+    ["/jobs/target.nc", "none", 1, "jobs/target.nc"], ["/jobs", "folder", 1, "jobs/"],
+    ["jobs/", "none", 1, "jobs/"], ["/jobs", "none", 2, "jobs/"], ["/", "folder", 2, "/"],
+]) {
+    test(`NCLink upload preserves ${path} as a ${kind} target for ${count} files`, async () => {
+        const fixture = setup("NCLinkApi");
+        fixture.context.transferRemotePath.value = path;
+        fixture.context.transferRemotePathPickedKind.value = kind;
+        if (count === 2) fixture.context.transferSelectedFiles.value.push({ name: "O0002.nc" });
+        await fixture.handlers.startTransfer();
+        const request = fixture.calls[0];
+        assert.equal(request[0], count === 2 ? "uploadBatch" : "upload");
+        assert.equal(request[count === 2 ? 2 : 3], expected);
+    });
+}
+
+test("NCLink still rejects an empty upload target", async () => {
+    const fixture = setup("NCLinkApi");
+    fixture.context.transferRemotePath.value = "   ";
+    await fixture.handlers.startTransfer();
+    assert.equal(fixture.calls.length, 0);
+    assert.equal(fixture.warnings.length, 1);
+});
+
+test("NCLink folder selection downloads the exact flat keys as a batch", async () => {
+    const fixture = setup("NCLinkApi", "", [{ name: "O0001", path: "jobs/O0001", nodeType: "file" }]);
+    fixture.context.transferForm.value.direction = "download";
+    fixture.context.transferRemotePathPickedKind.value = "batch";
+    fixture.context.transferBatchSelections.value = [{ path: "jobs", nodeType: "folder" }];
+    assert.equal(fixture.handlers.remotePathPickerShowCheckboxes.value, true);
+    await fixture.handlers.startTransfer();
+    assert.equal(fixture.calls.at(-1)[0], "downloadBatch");
+    assert.equal(fixture.calls.at(-1)[2][0], "jobs/O0001");
+});
+
+test("Editing a transfer channel keeps hidden settings and switching protocols drops them", async () => {
+    const fixture = setup("NCLinkApi", "SMB");
+    fixture.handlers.editDevice(fixture.handlers.mapDtoToUi({
+        id: "device", name: "CNC", type: "CNC", brand: "华中数控", model: "fixture", protocol: "NCLinkApi",
+        host: "127.0.0.1", port: 19001, extendedProperties: { DeviceCode: "CNC-1", DeviceId: "SN1", transferDeviceId: "old-file-device" },
+        transfer: { protocol: "SMB", host: "192.0.2.10", port: 1445, extendedProperties: { ShareName: "NC", RootPath: "/jobs", Domain: "WORKSHOP" } },
+    }));
+    fixture.context.deviceForm.value.transferShareName = "PROGRAMS";
+    await fixture.handlers.saveDevice();
+    const transfer = fixture.calls[0].at(-1).transfer;
+    assert.equal(fixture.calls[0].at(-1).extendedProperties.transferDeviceId, "old-file-device");
+    assert.equal(fixture.calls[0].at(-1).clearTransfer, false);
+    assert.equal(transfer.port, 1445);
+    assert.equal(transfer.extendedProperties.ShareName, "PROGRAMS");
+    assert.equal(transfer.extendedProperties.RootPath, "/jobs");
+    assert.equal(transfer.extendedProperties.Domain, "WORKSHOP");
+    fixture.context.deviceForm.value.transferProtocol = "FTP";
+    fixture.handlers.onTransferProtocolChange("FTP");
+    await fixture.handlers.saveDevice();
+    const switched = fixture.calls[1].at(-1).transfer;
+    assert.equal(switched.port, 21);
+    assert.deepEqual(Object.keys(switched.extendedProperties), []);
+    fixture.context.deviceForm.value.transferProtocol = "";
+    await fixture.handlers.saveDevice();
+    assert.equal(fixture.calls[2].at(-1).transfer, undefined);
+    assert.equal(fixture.calls[2].at(-1).clearTransfer, true);
+    assert.equal(fixture.calls[2].at(-1).extendedProperties.transferDeviceId, undefined);
+    assert.equal(fixture.calls[2].at(-1).extendedProperties.DeviceId, "SN1");
+});
+
+for (const [protocol, channel] of [["GskWebServer", ""], ["Gskrm", "GskrmFileTransfer"]]) {
+    test(`${protocol} exposes an upload root for its flat program list`, async () => {
+        const fixture = setup(protocol, channel, [{ name: "O0001", path: "O0001", nodeType: "file" }]);
+        await fixture.handlers.loadRemotePathChildren();
+        const root = fixture.context.remotePathTreeData.value[0];
+        assert.equal(root.path, "/");
+        assert.equal(root.children[0].path, "O0001");
+        fixture.context.transferRemotePath.value = root.path;
+        fixture.context.transferRemotePathPickedKind.value = "folder";
+        await fixture.handlers.startTransfer();
+        assert.equal(fixture.calls.at(-1)[0], "upload");
+        assert.equal(fixture.calls.at(-1)[3], "/");
+    });
+}

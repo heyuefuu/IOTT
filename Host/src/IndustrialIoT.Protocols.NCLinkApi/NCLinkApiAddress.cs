@@ -29,11 +29,12 @@ public sealed record NCLinkApiAddress
         if (string.IsNullOrWhiteSpace(address))
             throw new ArgumentException("address required", nameof(address));
 
+        address = address.Trim();
         var qIdx = address.IndexOf('?');
         if (qIdx < 0)
-            return new NCLinkApiAddress { Path = address };
+            return new NCLinkApiAddress { Path = NormalizePath(address) };
 
-        var path = address[..qIdx];
+        var path = NormalizePath(address[..qIdx]);
         var query = HttpUtility.ParseQueryString(address[(qIdx + 1)..]);
 
         return new NCLinkApiAddress
@@ -54,6 +55,24 @@ public sealed record NCLinkApiAddress
         Key = Key,
         Timeout = TimeoutMs,
     };
+
+    private static string NormalizePath(string rawPath)
+    {
+        const string modelRoot = "/NC_LINK_ROOT";
+        var path = rawPath.Trim().Replace('\\', '/');
+        while (path.Contains("//", StringComparison.Ordinal))
+            path = path.Replace("//", "/", StringComparison.Ordinal);
+        if (!path.StartsWith('/')) path = "/" + path;
+        if (path.Equals(modelRoot, StringComparison.OrdinalIgnoreCase)) return "/";
+        if (path.StartsWith(modelRoot + "/", StringComparison.OrdinalIgnoreCase))
+            return path[modelRoot.Length..];
+        if (path.StartsWith(modelRoot + "@", StringComparison.OrdinalIgnoreCase))
+        {
+            var rootEnd = path.IndexOf('/', modelRoot.Length);
+            return rootEnd < 0 ? "/" : path[rootEnd..];
+        }
+        return path;
+    }
 
     /// <summary>index 支持 "10" 或 "0,1,2,3"。</summary>
     private static JsonNode? ParseIndex(string? raw)

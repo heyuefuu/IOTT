@@ -12,7 +12,7 @@ using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 /// <summary>
 /// 广数 GSK RM 数据采集驱动 — 适用于 GSK 980/25i/MICRO-T400 等系统。
 ///
-/// 通道：TCP，端口默认走 SDK 内部约定（可用 config.Port 覆写）。
+/// 通道由原生 SDK 按机床 IP 建立，端口由 SDK 内部管理。
 /// 命名地址写法见 <see cref="GskrmAddressMapper"/> 类顶部注释。
 ///
 /// 文件传输使用独立的 <see cref="GskrmTransferDriver"/>，两者不共享句柄。
@@ -20,7 +20,6 @@ using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 [ProtocolDriver(ProtocolType.Gskrm, "广数", "广州数控", "GSK", "MICRO-T400", "980", "25i")]
 public sealed class GskrmDriver : IProtocolDriver, IAddressSpaceBrowser
 {
-    private const int DefaultPort = 6000; // [unverified] SDK-default — revisit with real hardware
     private const int DefaultTimeoutMs = 5_000;
 
     private readonly ILogger<GskrmDriver> _logger;
@@ -56,14 +55,13 @@ public sealed class GskrmDriver : IProtocolDriver, IAddressSpaceBrowser
             SetState(ConnectionState.Connecting);
             _config = config;
 
-            var port = config.Port > 0 ? config.Port : DefaultPort;
             var timeout = config.ConnectTimeout.TotalMilliseconds > 0
                 ? (int)config.ConnectTimeout.TotalMilliseconds : DefaultTimeoutMs;
 
-            _logger.LogInformation("Connecting to GSK RM at {Host}:{Port} (timeout {Timeout}ms)...",
-                config.Host, port, timeout);
+            _logger.LogInformation("Connecting to GSK RM at {Host} using SDK-managed transport (timeout {Timeout}ms)...",
+                config.Host, timeout);
 
-            int rc = await Task.Run(() => _api.CreateInstance(config.Host, port, timeout, out _handle), ct);
+            int rc = await Task.Run(() => _api.CreateInstance(config.Host, config.Port, timeout, out _handle), ct);
             if (rc != GskrmErrorCodes.Ok || _handle <= 0)
             {
                 var msg = $"GSKRM_CreateInstance failed: {GskrmErrorCodes.Describe(rc)}";

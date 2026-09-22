@@ -22,12 +22,6 @@ public class Datacollection
     /// <summary>所属设备 Id，用于多设备隔离</summary>
     public string DeviceId { get; set; } = "";
 
-    /// <summary>
-    /// 采集协议类型。已知取值：
-    /// <list type="bullet">
-    /// <item><c>IndustrialIoT</c>（默认）— 通过上游 IndustrialIoT.Host 的 /api/data/{id}/read 读取，path 形如 OPC UA / FOCAS / Modbus 地址。</item>
-    /// <item><c>NCLinkApi</c> — 通过华中 nclink-api-server 的 /v1/{deviceId}/data/ 读取，path 以 /MACHINE/ 开头。</item>
-    /// </list>
-    /// </summary>
+    /// <summary>Collection route metadata. Legacy NCLinkApi rows also use the Host device driver.</summary>
     public string Protocol { get; set; } = "IndustrialIoT";
 }

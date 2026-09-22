@@ -3,8 +3,6 @@ using MachineConnectionApi.Entities;
 using MachineConnectionApi.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Text;
-using System.Text.Json;
 
 namespace MachineConnectionApi.Controllers;
 
@@ -18,8 +16,6 @@ public partial class DatacollectionController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly IInfluxTelemetryWriter _influxTelemetryWriter;
     private readonly IMqttTelemetryPublisher _mqttTelemetryPublisher;
-    private readonly INCLinkApiClient _ncLinkApiClient;
-    private readonly INCLinkDeviceResolver _deviceResolver;
 
     public DatacollectionController(
         MCConfigurationDbContext db,
@@ -27,8 +23,6 @@ public partial class DatacollectionController : ControllerBase
         IConfiguration configuration,
         IInfluxTelemetryWriter influxTelemetryWriter,
         IMqttTelemetryPublisher mqttTelemetryPublisher,
-        INCLinkApiClient ncLinkApiClient,
-        INCLinkDeviceResolver deviceResolver,
         ILogger<DatacollectionController> logger)
     {
         _db = db;
@@ -36,8 +30,6 @@ public partial class DatacollectionController : ControllerBase
         _configuration = configuration;
         _influxTelemetryWriter = influxTelemetryWriter;
         _mqttTelemetryPublisher = mqttTelemetryPublisher;
-        _ncLinkApiClient = ncLinkApiClient;
-        _deviceResolver = deviceResolver;
         _logger = logger;
     }
 
@@ -147,24 +139,10 @@ public partial class DatacollectionController : ControllerBase
         if (points.Count == 0)
             return BadRequest(new { error = "该设备暂无已保存采集点位，请先配置 datacollection" });
 
-        var distinctProtocols = points
-            .Select(p => NormalizeProtocol(p.Protocol))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        if (distinctProtocols.Count > 1)
-            return BadRequest(new
-            {
-                error = "同一设备的所有采集点位必须使用同一协议，请检查 datacollection.protocol",
-                protocols = distinctProtocols,
-            });
-
-        var protocol = distinctProtocols[0];
         List<DatacollectionCollectItemDto> items;
         try
         {
-            items = protocol.Equals("NCLinkApi", StringComparison.OrdinalIgnoreCase)
-                ? await ReadFromNCLinkApiAsync(await ResolveNCLinkApiDeviceIdAsync(id, ct), points, ct)
-                : await ReadFromIndustrialIoTAsync(id, points, ct);
+            items = await ReadFromIndustrialIoTAsync(id, points, ct);
         }
         catch (UpstreamReadException ex)
         {
@@ -267,7 +245,7 @@ public partial class DatacollectionController : ControllerBase
                 if (path.Length == 0 || name.Length == 0)
                     continue;
 
-                var proto = NormalizeProtocol(item.Protocol);
+                var proto = "IndustrialIoT";
 
                 var existing = await _db.Datacollections
                     .FirstOrDefaultAsync(x => x.DeviceId == deviceId && x.Path == path, ct);

@@ -24,7 +24,6 @@ using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 [ProtocolDriver(ProtocolType.GskrmFileTransfer, "广数", "广州数控", "GSK", "MICRO-T400")]
 public sealed class GskrmTransferDriver : IProtocolDriver, IAddressSpaceBrowser, IProgramFileBrowser, INCProgramTransfer
 {
-    private const int DefaultPort = 6000;   // [unverified]
     private const int DefaultTimeoutMs = 10_000;
     private const string TempTransferPrefix = "gskrm-xfer-";
 
@@ -58,11 +57,10 @@ public sealed class GskrmTransferDriver : IProtocolDriver, IAddressSpaceBrowser,
             SetState(ConnectionState.Connecting);
             _config = config;
 
-            var port = config.Port > 0 ? config.Port : DefaultPort;
             var timeout = config.ConnectTimeout.TotalMilliseconds > 0
                 ? (int)config.ConnectTimeout.TotalMilliseconds : DefaultTimeoutMs;
 
-            int rc = await Task.Run(() => _api.CreateInstance(config.Host, port, timeout, out _handle), ct);
+            int rc = await Task.Run(() => _api.CreateInstance(config.Host, config.Port, timeout, out _handle), ct);
             if (rc != GskrmErrorCodes.Ok || _handle <= 0)
             {
                 var msg = $"GSKRM_CreateInstance failed: {GskrmErrorCodes.Describe(rc)}";

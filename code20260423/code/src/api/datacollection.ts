@@ -12,7 +12,7 @@ const client = createMachineConnectionClient({
 /**
  * 采集协议类型。
  * - IndustrialIoT：默认，走上游 IndustrialIoT.Host 的 /api/data/{id}/read。
- * - NCLinkApi：华中 NC-Link，走 nclink-api-server 的 /v1/{deviceId}/data/。
+ * - NCLinkApi：兼容旧采集记录；同样按设备配置交给 IndustrialIoT.Host 驱动。
  */
 export type DatacollectionProtocol = "IndustrialIoT" | "NCLinkApi";
 
@@ -32,7 +32,7 @@ export interface DatacollectionSyncItem {
     path: string;
     datatype: string;
     collectionFrequency: number;
-    /** 未传时后端按 IndustrialIoT 处理；华中机床请传 "NCLinkApi" */
+    /** 新配置统一使用 IndustrialIoT；NCLinkApi 仅兼容旧记录。 */
     protocol?: DatacollectionProtocol;
 }
 

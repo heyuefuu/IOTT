@@ -9,6 +9,12 @@ internal static class Program
 {
     private static async Task Main(string[] args)
     {
+        await MachineConnectionApi.Tests.CncGatewayRoutingRegressionTests.RunAll();
+        if (args.Contains("--cnc-gateway"))
+        {
+            Console.WriteLine("CNC gateway routing regression tests passed.");
+            return;
+        }
         await MachineConnectionApi.Tests.AddressSpaceRegressionTests.RunAll();
         if (args.Length == 2 && args[0] == "--prosys-device")
         {

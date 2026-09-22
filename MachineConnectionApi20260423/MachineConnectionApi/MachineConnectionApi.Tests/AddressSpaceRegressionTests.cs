@@ -13,7 +13,7 @@ internal static class AddressSpaceRegressionTests
     {
         using var client = new HttpClient { BaseAddress = new Uri("http://localhost:5173/") };
         var controller = new AddressSpaceController(
-            new ClientFactory(client), new ConfigurationBuilder().Build(), null!,
+            new ClientFactory(client), new ConfigurationBuilder().Build(),
             NullLogger<AddressSpaceController>.Instance);
         var result = await controller.Browse(deviceId, "ns=3;s=85/0:Simulation", "OpcUa", CancellationToken.None);
         if (result is not ContentResult { StatusCode: 200 } content)
@@ -41,7 +41,7 @@ internal static class AddressSpaceRegressionTests
             using var handler = new BrowseHandler(nodeId);
             using var client = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
             var controller = new AddressSpaceController(
-                new ClientFactory(client), new ConfigurationBuilder().Build(), null!,
+                new ClientFactory(client), new ConfigurationBuilder().Build(),
                 NullLogger<AddressSpaceController>.Instance);
             var result = await controller.Browse("test-device", nodeId, protocol, CancellationToken.None);
             if (result is not ContentResult { StatusCode: 200 } content || content.Content != BrowseHandler.Nodes)
@@ -53,7 +53,7 @@ internal static class AddressSpaceRegressionTests
         using var fileHandler = new BrowseHandler("/CNC/Fanuc");
         using var fileClient = new HttpClient(fileHandler) { BaseAddress = new Uri("http://localhost/") };
         var fileController = new AddressSpaceController(
-            new ClientFactory(fileClient), new ConfigurationBuilder().Build(), null!,
+            new ClientFactory(fileClient), new ConfigurationBuilder().Build(),
             NullLogger<AddressSpaceController>.Instance);
         var fileResult = await fileController.Browse("test-device", "CNC\\Fanuc", "FOCAS", CancellationToken.None);
         if (fileResult is not ContentResult { StatusCode: 200 } || !fileHandler.Browsed)

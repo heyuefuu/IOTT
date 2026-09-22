@@ -18,6 +18,34 @@ internal static partial class DeviceUpsertRegressionTests
         await CredentialsAreStoredAndRedacted();
         await CredentialEditsPreserveOrReplacePasswords();
         await UpstreamSyncSendsBothPasswords();
+        await ClearTransferRemovesIndependentChannel();
+        await PartialUpdatesKeepIndependentChannel();
+        await UpstreamSyncClearsRemovedTransfer();
+        await ConnectionTestsDistinguishDriverAndTcp();
+        await SdkPortsValidateAgainstSelectedProtocol();
+    }
+
+    private static async Task SdkPortsValidateAgainstSelectedProtocol()
+    {
+        var store = new MemoryDeviceStore();
+        var controller = CreateController(store);
+        foreach (var protocol in new[] { "Gskrm", "GskrmFileTransfer" })
+        {
+            var request = new MachineDeviceUpsertRequest
+            {
+                Name = "GSK", Type = "CNC", Protocol = protocol, Host = "127.0.0.1", Port = 0,
+            };
+            var created = GetOkValue(await controller.Create(request, CancellationToken.None));
+            Expect(created.Port == 0, "SDK-managed ports must survive gateway creation");
+            var updated = GetOkValue(await controller.Update(created.Id,
+                new MachineDeviceUpsertRequest { Name = "GSK edited" }, CancellationToken.None));
+            Expect(updated.Port == 0, "An SDK edit must preserve its managed port");
+            var changed = await controller.Update(created.Id,
+                new MachineDeviceUpsertRequest { Protocol = "NCLinkApi" }, CancellationToken.None);
+            Expect(changed.Result is BadRequestObjectResult, "Changing to HTTP must require an explicit valid port");
+            var invalid = await controller.Create(request with { Protocol = "NCLinkApi" }, CancellationToken.None);
+            Expect(invalid.Result is BadRequestObjectResult, "HTTP protocols must still reject port zero");
+        }
     }
 
     private static void RequestWithoutServerFieldsDeserializes()
