@@ -1423,11 +1423,16 @@ const handlePointTreeNodeClick = async (data: PointTreeNode) => {
 
     if (!pointDialogDeviceId.value) return;
 
+    // OPC UA variables can also contain properties and component objects.
+    if (!data._loaded) {
+        await loadAddressChildren(data, { silent: true });
+    }
+    if (data.children?.length) {
+        await expandPointTreeNodes([data.id]);
+    }
+
     // Folder：懒加载左侧子节点；右侧列表递归收集该节点下**所有** Variable 叶子（含子目录）
     if (data.nodeType === "Folder") {
-        if (!data._loaded) {
-            await loadAddressChildren(data, { silent: true });
-        }
         const deviceId = pointDialogDeviceId.value;
         pointTableFlattenLoading.value = true;
         try {
@@ -1873,7 +1878,7 @@ async function loadAddressChildren(
         parent._loaded = true;
     } catch (e: unknown) {
         parent.children = [];
-        parent._loaded = true;
+        parent._loaded = false;
         // 点位加载失败时按需求静默处理，不提示 "Request failed with status code 500"
         void e;
         void _silent;
@@ -1992,6 +1997,7 @@ function mapAddressNodeToTreeNode(n: AddressNode): PointTreeNode {
             "",
         ).trim() || undefined;
     const kind = normalizeAddressNodeToTreeKind(n);
+    const canBrowse = kind === "Folder" || pointDialogDeviceProtocol.value === "OpcUa";
     return {
         id: n.path,
         label: getAddressNodeLabel(n),
@@ -2002,8 +2008,8 @@ function mapAddressNodeToTreeNode(n: AddressNode): PointTreeNode {
         isReadable: !!n.isReadable,
         isWritable: !!n.isWritable,
         sourceId: n.sourceId ?? undefined,
-        children: kind === "Folder" ? [] : undefined,
-        _loaded: kind !== "Folder",
+        children: canBrowse ? [] : undefined,
+        _loaded: !canBrowse,
     };
 }
 

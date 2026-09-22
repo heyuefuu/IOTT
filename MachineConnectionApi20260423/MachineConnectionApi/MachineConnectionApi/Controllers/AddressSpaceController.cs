@@ -50,10 +50,16 @@ public class AddressSpaceController : IndustrialIoTProxyControllerBase
         [FromQuery] string? protocol,
         CancellationToken ct)
     {
-        var normalizedParentPath = NormalizeParentPath(parentPath);
         var effectiveProtocol = !string.IsNullOrWhiteSpace(protocol)
             ? protocol
             : await TryGetDeviceProtocolAsync(deviceId, ct);
+        // OPC UA NodeIds are opaque identifiers, not filesystem paths.
+        if (string.Equals(effectiveProtocol?.Trim(), "OpcUa", StringComparison.OrdinalIgnoreCase))
+        {
+            return await ProxyTextAsync(HttpMethod.Get, BuildBrowsePath(deviceId, parentPath), null, ct);
+        }
+
+        var normalizedParentPath = NormalizeParentPath(parentPath);
         if (IsNCLinkApiProtocol(effectiveProtocol))
         {
             var ncLinkDeviceId = await TryGetNCLinkApiDeviceIdAsync(deviceId, ct) ?? deviceId;

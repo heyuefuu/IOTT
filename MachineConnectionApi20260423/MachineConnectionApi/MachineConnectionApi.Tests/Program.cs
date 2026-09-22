@@ -7,8 +7,19 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 internal static class Program
 {
-    private static async Task Main()
+    private static async Task Main(string[] args)
     {
+        await MachineConnectionApi.Tests.AddressSpaceRegressionTests.RunAll();
+        if (args.Length == 2 && args[0] == "--prosys-device")
+        {
+            await MachineConnectionApi.Tests.AddressSpaceRegressionTests.VerifySimulator(args[1]);
+            return;
+        }
+        if (args.Contains("--address-space"))
+        {
+            Console.WriteLine("Address space regression tests passed.");
+            return;
+        }
         MachineConnectionApi.Tests.ApiAuthorizationRegressionTests.RunAll();
         await MachineConnectionApi.Tests.VerifyTaskRunnerRegressionTests.DeviceSelectionIsNormalizedAndConflictsFail();
         await MachineConnectionApi.Tests.VerifyTaskRunnerRegressionTests.ConcurrentExecutionIsRejected();
