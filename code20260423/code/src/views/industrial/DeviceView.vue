@@ -39,6 +39,12 @@
                         </el-icon>
                         导出模板
                     </el-button>
+                    <el-button @click="exportAllDevices">
+                        <el-icon>
+                            <Download />
+                        </el-icon>
+                        导出设备
+                    </el-button>
                     <el-button @click="importDevices">
                         <el-icon>
                             <Upload />
@@ -62,7 +68,7 @@
                     </el-button>
                     <el-input v-model="searchKeyword" placeholder="搜索设备名称/编号/IP/协议" style="width: 300px; margin-left: auto"
                         prefix-icon="Search" />
-                    <input ref="deviceImportInputRef" type="file" accept=".csv,text/csv" hidden
+                    <input ref="deviceImportInputRef" type="file" accept=".csv,text/csv,.json,application/json" hidden
                         @change="handleDeviceImportFile" />
                 </div>
 
@@ -4150,6 +4156,17 @@ const exportDeviceTemplate = async () => {
     }
 };
 
+// 导出设备：完整配置 JSON，另一台机器「导入设备」即可恢复（保留设备 ID、传输通道与凭据）
+const exportAllDevices = async () => {
+    try {
+        const blob = await machineConnectionDevicesApi.exportDevices();
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+        downloadBlob(blob, `devices-${stamp}.json`);
+    } catch (e) {
+        ElMessage.error(getApiErrorMessage(e, "设备导出失败"));
+    }
+};
+
 // 导入设备
 const importDevices = () => {
     deviceImportInputRef.value?.click();
@@ -4163,7 +4180,7 @@ const syncUpstreamDevices = async () => {
         const report = await machineConnectionDevicesApi.syncUpstream();
         await loadDevices();
         if (report.failed === 0) {
-            ElMessage.success(`同步完成：恢复 ${report.restored ?? 0}，保留 ${report.skipped ?? 0}，新建 ${report.created}，更新 ${report.updated}，共 ${report.total} 台`);
+            ElMessage.success(`同步完成：恢复 ${report.restored ?? 0}，初始化 ${report.seeded ?? 0}，保留 ${report.skipped ?? 0}，新建 ${report.created}，更新 ${report.updated}，共 ${report.total} 台`);
         } else {
             const detail = report.errors
                 .slice(0, 5)

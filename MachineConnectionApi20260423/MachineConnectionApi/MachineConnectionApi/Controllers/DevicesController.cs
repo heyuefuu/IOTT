@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using MachineConnectionApi.Models;
 using MachineConnectionApi.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -313,6 +314,19 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         return File(Encoding.UTF8.GetBytes("\uFEFF" + csv), "text/csv", "device-import-template.csv");
     }
 
+    /// <summary>
+    /// 导出完整设备配置（含扩展属性、独立传输通道与凭据），格式同 App_Data/devices.json，
+    /// 可在另一台机器「导入设备」，或放入源码 SeedData/devices.json 随代码分发。
+    /// </summary>
+    [HttpGet("export")]
+    public IActionResult Export()
+    {
+        var devices = _store.ReadAll().Select(DeviceSnapshot.ForTransfer).ToList();
+        var json = JsonSerializer.Serialize(devices, DeviceSnapshot.JsonOptions);
+        _activityLog.Write("operation", "导出设备", $"共 {devices.Count} 台");
+        return File(Encoding.UTF8.GetBytes(json), "application/json", $"devices-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+    }
+
     [HttpPost("import")]
     [Consumes("multipart/form-data")]
     public async Task<ActionResult<DeviceImportResult>> Import(IFormFile file, CancellationToken ct)
@@ -320,11 +334,29 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         if (file.Length == 0) return BadRequest(new { error = "导入文件为空" });
         await using var stream = file.OpenReadStream();
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        var rows = ParseCsv(await reader.ReadToEndAsync(ct));
-        if (rows.Count < 2) return BadRequest(new { error = "CSV 至少需要表头和一行设备数据" });
+        var text = await reader.ReadToEndAsync(ct);
+
+        // 「导出设备」生成的 JSON 保留完整配置；CSV 模板只含基础字段
+        var isJson = file.FileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+            || text.TrimStart('\uFEFF', ' ', '\t', '\r', '\n').StartsWith('[');
+        List<MachineDeviceDto>? snapshot = null;
+        List<List<string>>? rows = null;
+        if (isJson)
+        {
+            try { snapshot = DeviceSnapshot.Parse(text.TrimStart('\uFEFF'), "导入文件"); }
+            catch (JsonException ex) { return BadRequest(new { error = ex.Message }); }
+        }
+        else
+        {
+            rows = ParseCsv(text);
+            if (rows.Count < 2) return BadRequest(new { error = "CSV 至少需要表头和一行设备数据" });
+        }
 
         using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);
-        var result = ImportRows(rows, out var imported);
+        List<MachineDeviceDto> imported;
+        var result = snapshot is not null
+            ? ImportSnapshot(snapshot, out imported)
+            : ImportRows(rows!, out imported);
 
         // 导入成功的设备逐个同步到上游；失败不影响本地导入结果，但记入 Errors 提示用户
         if (imported.Count > 0)
@@ -356,6 +388,30 @@ public class DevicesController : IndustrialIoTProxyControllerBase
 
         _activityLog.Write("operation", "批量导入设备", $"成功 {result.Success}/{result.Total}，失败 {result.Failed}");
         return Ok(result);
+    }
+
+    /// <summary>按原设备 ID 导入快照；ID 已存在的设备跳过，不覆盖本机配置。</summary>
+    private DeviceImportResult ImportSnapshot(List<MachineDeviceDto> snapshot, out List<MachineDeviceDto> imported)
+    {
+        var errors = new List<string>();
+        var added = _store.Update(devices =>
+        {
+            var existing = devices.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+            var rows = new List<MachineDeviceDto>();
+            foreach (var device in snapshot)
+            {
+                if (existing.Contains(device.Id))
+                {
+                    errors.Add($"{device.Name}: 设备 ID {device.Id} 已存在，已跳过");
+                    continue;
+                }
+                rows.Add(DeviceSnapshot.ForTransfer(device));
+            }
+            devices.AddRange(rows);
+            return rows;
+        });
+        imported = added;
+        return new DeviceImportResult(snapshot.Count, added.Count, errors.Count, errors);
     }
 
     private DeviceImportResult ImportRows(List<List<string>> rows, out List<MachineDeviceDto> imported)

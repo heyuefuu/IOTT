@@ -36,8 +36,8 @@ public sealed class DeviceUpstreamSyncHostedService : BackgroundService
                 if (report.Failed == 0)
                 {
                     _logger.LogInformation(
-                        "设备对账完成：恢复 {Restored}，保留 {Skipped}，新建 {Created}，更新 {Updated}，共 {Total}",
-                        report.Restored, report.Skipped, report.Created, report.Updated, report.Total);
+                        "设备对账完成：恢复 {Restored}，种子初始化 {Seeded}，保留 {Skipped}，新建 {Created}，更新 {Updated}，共 {Total}",
+                        report.Restored, report.Seeded, report.Skipped, report.Created, report.Updated, report.Total);
                     return;
                 }
                 _logger.LogWarning(

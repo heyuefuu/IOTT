@@ -85,8 +85,13 @@ internal static partial class DeviceUpsertRegressionTests
         Expect(handler.Methods.All(method => method == HttpMethod.Get), "A restore race must never trigger upstream writes");
     }
 
-    private static DeviceUpstreamSyncService RestoreService(HttpClient client, IDeviceStore store) => new(
-        new CredentialClientFactory(client), store, new ConfigurationBuilder().Build(),
+    // 默认指向不存在的种子文件：测试输出目录会随项目引用复制真实 SeedData，不能让它影响恢复用例
+    private static DeviceUpstreamSyncService RestoreService(HttpClient client, IDeviceStore store, string? seedPath = null) => new(
+        new CredentialClientFactory(client), store,
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["IndustrialIoT:DeviceSeedPath"] = seedPath ?? Path.Combine(Path.GetTempPath(), $"no-seed-{Guid.NewGuid():N}.json"),
+        }).Build(),
         NullLogger<DeviceUpstreamSyncService>.Instance);
 
     private sealed class RestoreHandler(string body, HttpStatusCode status = HttpStatusCode.OK, Action? onRead = null) : HttpMessageHandler

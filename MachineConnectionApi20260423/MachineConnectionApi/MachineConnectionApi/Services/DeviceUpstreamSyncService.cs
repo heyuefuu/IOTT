@@ -110,8 +110,15 @@ public sealed class DeviceUpstreamSyncService : IDeviceUpstreamSyncService
     {
         using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);
         var rows = _store.ReadAll();
+        var seeded = 0;
         if (rows.Count == 0)
-            return await RestoreEmptyRegistryAsync(ct);
+        {
+            var restoreReport = await RestoreEmptyRegistryAsync(ct);
+            // 上游确认为空（全新部署）时才用随代码分发的种子设备；上游有数据时始终以上游为准
+            if (restoreReport.Total > 0 || (seeded = SeedEmptyRegistry()) == 0)
+                return restoreReport;
+            rows = _store.ReadAll();
+        }
         var created = 0;
         var updated = 0;
         var skipped = 0;
@@ -151,6 +158,7 @@ public sealed class DeviceUpstreamSyncService : IDeviceUpstreamSyncService
         });
         return new UpstreamSyncReport
         {
+            Seeded = seeded,
             Total = rows.Count,
             Created = created,
             Updated = updated,
@@ -185,18 +193,7 @@ public sealed class DeviceUpstreamSyncService : IDeviceUpstreamSyncService
     {
         using var response = await _httpClientFactory.CreateClient("IndustrialIoT").GetAsync(DevicesPath, ct);
         response.EnsureSuccessStatusCode();
-        var devices = await response.Content.ReadFromJsonAsync<List<MachineDeviceDto>>(JsonOptions, ct)
-            ?? throw new JsonException("上游设备列表为空响应，未恢复本地设备配置。");
-        var ids = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var device in devices)
-        {
-            if (device is null || string.IsNullOrWhiteSpace(device.Id) || !ids.Add(device.Id)
-                || string.IsNullOrWhiteSpace(device.Name) || string.IsNullOrWhiteSpace(device.Type)
-                || string.IsNullOrWhiteSpace(device.Protocol) || string.IsNullOrWhiteSpace(device.Host)
-                || device.Brand is null || device.Model is null || device.Status is null
-                || device.Port < 0 || device.Port > 65535)
-                throw new JsonException("上游设备数据缺少有效字段或设备 ID 重复，未恢复本地设备配置。");
-        }
+        var devices = DeviceSnapshot.Parse(await response.Content.ReadAsStringAsync(ct), "上游设备列表");
         var restored = devices.Select(device => device with
         {
             Password = null,
@@ -214,6 +211,34 @@ public sealed class DeviceUpstreamSyncService : IDeviceUpstreamSyncService
             current.AddRange(restored);
             _logger.LogInformation("从上游恢复 {Count} 台设备到网关，保留原设备 ID，未回写上游", restored.Count);
             return new UpstreamSyncReport { Total = restored.Count, Restored = restored.Count };
+        });
+    }
+
+    /// <summary>
+    /// 源码随附的 SeedData/devices.json（格式同导出文件）写入空注册表，返回写入台数。
+    /// 文件缺失返回 0；文件损坏记错误日志后返回 0，不阻断正常对账。
+    /// </summary>
+    private int SeedEmptyRegistry()
+    {
+        var path = _configuration["IndustrialIoT:DeviceSeedPath"]
+            ?? Path.Combine(AppContext.BaseDirectory, "SeedData", "devices.json");
+        if (!File.Exists(path)) return 0;
+        List<MachineDeviceDto> seeds;
+        try
+        {
+            seeds = DeviceSnapshot.Parse(File.ReadAllText(path), $"种子设备文件 {path} ");
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            _logger.LogError(ex, "种子设备文件 {Path} 读取失败，未初始化设备", path);
+            return 0;
+        }
+        return _store.Update(current =>
+        {
+            if (current.Count != 0 || seeds.Count == 0) return 0;
+            current.AddRange(seeds.Select(DeviceSnapshot.ForTransfer));
+            _logger.LogInformation("网关与上游均无设备，已从种子文件 {Path} 初始化 {Count} 台设备", path, seeds.Count);
+            return seeds.Count;
         });
     }
 

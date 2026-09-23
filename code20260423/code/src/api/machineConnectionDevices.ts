@@ -86,6 +86,7 @@ export interface UpstreamSyncError {
 
 export interface UpstreamSyncReport {
 	restored?: number
+	seeded?: number
 	skipped?: number
 	total: number
 	created: number
@@ -157,6 +158,14 @@ export const machineConnectionDevicesApi = {
 
 	async downloadTemplate(): Promise<Blob> {
 		const res = await client.get('/api/devices/template', {
+			responseType: 'blob',
+		})
+		return res.data
+	},
+
+	/** 完整设备配置（含传输通道与凭据），可在另一台机器导入或放入源码 SeedData/devices.json */
+	async exportDevices(): Promise<Blob> {
+		const res = await client.get('/api/devices/export', {
 			responseType: 'blob',
 		})
 		return res.data

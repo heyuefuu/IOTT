@@ -21,6 +21,10 @@ internal static partial class DeviceUpsertRegressionTests
         await EmptyRegistryRestorePreservesDevicesWithoutWritingUpstream();
         await EmptyRegistryRestoreRejectsInvalidResponses();
         await EmptyRegistryRestoreKeepsConcurrentLocalChanges();
+        await SeedInitializesRegistryWhenUpstreamIsEmpty();
+        await SeedIsIgnoredWhenUpstreamHasDevices();
+        await InvalidSeedLeavesRegistryEmpty();
+        await ExportImportRoundTripKeepsFullConfiguration();
         await RestoreOverlappingCreateKeepsOneDevice();
         await RestoreOverlappingDeleteKeepsDeviceDeleted();
         await DeleteAfterRestoreSnapshotKeepsDeviceDeleted();
