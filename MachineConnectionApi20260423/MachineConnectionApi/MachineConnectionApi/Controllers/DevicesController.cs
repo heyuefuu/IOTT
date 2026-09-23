@@ -124,6 +124,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         // Id 与 CreatedAt 始终保留服务端原值，其余字段"给了才改"
         var candidate = current with
         {
+            RestoredFromUpstream = false, // An explicit user edit resumes normal sync/retry behavior.
             Name = input.Name ?? current.Name,
             Type = input.Type ?? current.Type,
             Brand = input.Brand ?? current.Brand,
@@ -183,13 +184,13 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         return NoContent();
     }
 
-    /// <summary>将本地设备注册表全量对账同步到上游（新建缺失、更新已有），返回同步报告。</summary>
+    /// <summary>本地为空时从上游恢复设备，否则对账本地设备；恢复的设备不自动回写。</summary>
     [HttpPost("sync-upstream")]
     public async Task<ActionResult<UpstreamSyncReport>> SyncUpstream(CancellationToken ct)
     {
         var report = await _sync.SyncAllAsync(ct);
         _activityLog.Write(report.Failed == 0 ? "operation" : "warning", "设备上游对账",
-            $"共 {report.Total} 台：新建 {report.Created}，更新 {report.Updated}，失败 {report.Failed}");
+            $"共 {report.Total} 台：恢复 {report.Restored}，保留 {report.Skipped}，新建 {report.Created}，更新 {report.Updated}，失败 {report.Failed}");
         return Ok(report);
     }
 

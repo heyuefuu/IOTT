@@ -85,6 +85,8 @@ export interface UpstreamSyncError {
 }
 
 export interface UpstreamSyncReport {
+	restored?: number
+	skipped?: number
 	total: number
 	created: number
 	updated: number

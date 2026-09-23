@@ -49,7 +49,7 @@
                         <el-icon>
                             <Connection />
                         </el-icon>
-                        同步到采集服务
+                        同步设备
                     </el-button>
                     <el-button @click="openNclinkDialog">
                         <el-icon>
@@ -4020,7 +4020,7 @@ const saveDevice = async () => {
                 clearTransfer: !transfer,
             });
             if (saved.upstreamSynced === false)
-                ElMessage.warning(`已保存到网关，但同步采集服务失败：${saved.upstreamError ?? "上游不可用"}（可稍后点「同步到采集服务」重试）`);
+                ElMessage.warning(`已保存到网关，但同步采集服务失败：${saved.upstreamError ?? "上游不可用"}（可稍后点「同步设备」重试）`);
             else ElMessage.success("已保存");
         } else {
             const saved = await machineConnectionDevicesApi.create({
@@ -4107,7 +4107,7 @@ const syncUpstreamDevices = async () => {
         const report = await machineConnectionDevicesApi.syncUpstream();
         await loadDevices();
         if (report.failed === 0) {
-            ElMessage.success(`同步完成：新建 ${report.created}，更新 ${report.updated}，共 ${report.total} 台`);
+            ElMessage.success(`同步完成：恢复 ${report.restored ?? 0}，保留 ${report.skipped ?? 0}，新建 ${report.created}，更新 ${report.updated}，共 ${report.total} 台`);
         } else {
             const detail = report.errors
                 .slice(0, 5)

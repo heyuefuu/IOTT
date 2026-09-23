@@ -1,7 +1,7 @@
 namespace MachineConnectionApi.Services;
 
 /// <summary>
-/// 网关启动后把本地设备注册表全量对账到上游 Industrial IoT。
+/// 网关启动后对账设备；本地列表为空时从 Industrial IoT 恢复已有设备。
 /// 上游可能晚于网关启动，因此带间隔重试；配置 IndustrialIoT:AutoSyncDevices=false 可关闭。
 /// </summary>
 public sealed class DeviceUpstreamSyncHostedService : BackgroundService
@@ -36,8 +36,8 @@ public sealed class DeviceUpstreamSyncHostedService : BackgroundService
                 if (report.Failed == 0)
                 {
                     _logger.LogInformation(
-                        "设备上游对账完成：新建 {Created}，更新 {Updated}，共 {Total}",
-                        report.Created, report.Updated, report.Total);
+                        "设备对账完成：恢复 {Restored}，保留 {Skipped}，新建 {Created}，更新 {Updated}，共 {Total}",
+                        report.Restored, report.Skipped, report.Created, report.Updated, report.Total);
                     return;
                 }
                 _logger.LogWarning(

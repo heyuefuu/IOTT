@@ -136,6 +136,8 @@ public sealed record MachineDeviceDto
     /// <summary>最近一次向上游 Industrial IoT 注册表同步是否成功（null = 尚未同步过）</summary>
     public bool? UpstreamSynced { get; init; }
     public string? UpstreamError { get; init; }
+    // Restored API snapshots omit secrets and must not be automatically written back.
+    public bool RestoredFromUpstream { get; init; }
 }
 
 /// <summary>

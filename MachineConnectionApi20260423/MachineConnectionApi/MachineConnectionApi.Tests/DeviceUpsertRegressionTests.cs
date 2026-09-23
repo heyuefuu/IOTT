@@ -18,6 +18,9 @@ internal static partial class DeviceUpsertRegressionTests
         await CredentialsAreStoredAndRedacted();
         await CredentialEditsPreserveOrReplacePasswords();
         await UpstreamSyncSendsBothPasswords();
+        await EmptyRegistryRestorePreservesDevicesWithoutWritingUpstream();
+        await EmptyRegistryRestoreRejectsInvalidResponses();
+        await EmptyRegistryRestoreKeepsConcurrentLocalChanges();
         await ClearTransferRemovesIndependentChannel();
         await PartialUpdatesKeepIndependentChannel();
         await UpstreamSyncClearsRemovedTransfer();

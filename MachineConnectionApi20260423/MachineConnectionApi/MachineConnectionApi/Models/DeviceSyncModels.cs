@@ -10,6 +10,8 @@ public sealed record UpstreamSyncError(string DeviceId, string Name, string Erro
 
 public sealed record UpstreamSyncReport
 {
+    public int Restored { get; init; }
+    public int Skipped { get; init; }
     public int Total { get; init; }
     public int Created { get; init; }
     public int Updated { get; init; }

@@ -1,6 +1,7 @@
 namespace MachineConnectionApi.Services;
 
 using System.Text;
+using System.Net.Http.Json;
 using System.Text.Json;
 using MachineConnectionApi.Models;
 
@@ -108,13 +109,33 @@ public sealed class DeviceUpstreamSyncService : IDeviceUpstreamSyncService
     public async Task<UpstreamSyncReport> SyncAllAsync(CancellationToken ct)
     {
         var rows = _store.ReadAll();
+        if (rows.Count == 0)
+            return await RestoreEmptyRegistryAsync(ct);
         var created = 0;
         var updated = 0;
+        var skipped = 0;
         var errors = new List<UpstreamSyncError>();
         var results = new Dictionary<string, UpstreamSyncResult>();
 
         for (var i = 0; i < rows.Count; i++)
         {
+            if (rows[i].RestoredFromUpstream)
+            {
+                using var probe = await _httpClientFactory.CreateClient("IndustrialIoT")
+                    .GetAsync($"{DevicesPath}/{Uri.EscapeDataString(rows[i].Id)}", ct);
+                if (probe.IsSuccessStatusCode)
+                {
+                    skipped++;
+                    results[rows[i].Id] = UpstreamSyncResult.Ok("preserved");
+                }
+                else
+                {
+                    var error = await DescribeAsync(probe, ct);
+                    results[rows[i].Id] = UpstreamSyncResult.Fail("probe", error);
+                    errors.Add(new UpstreamSyncError(rows[i].Id, rows[i].Name, error));
+                }
+                continue;
+            }
             var result = await UpsertAsync(rows[i], ct);
             results[rows[i].Id] = result;
             if (result.Success)
@@ -146,9 +167,46 @@ public sealed class DeviceUpstreamSyncService : IDeviceUpstreamSyncService
             Total = rows.Count,
             Created = created,
             Updated = updated,
+            Skipped = skipped,
             Failed = errors.Count,
             Errors = errors,
         };
+    }
+
+    private async Task<UpstreamSyncReport> RestoreEmptyRegistryAsync(CancellationToken ct)
+    {
+        using var response = await _httpClientFactory.CreateClient("IndustrialIoT").GetAsync(DevicesPath, ct);
+        response.EnsureSuccessStatusCode();
+        var devices = await response.Content.ReadFromJsonAsync<List<MachineDeviceDto>>(JsonOptions, ct)
+            ?? throw new JsonException("上游设备列表为空响应，未恢复本地设备配置。");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var device in devices)
+        {
+            if (device is null || string.IsNullOrWhiteSpace(device.Id) || !ids.Add(device.Id)
+                || string.IsNullOrWhiteSpace(device.Name) || string.IsNullOrWhiteSpace(device.Type)
+                || string.IsNullOrWhiteSpace(device.Protocol) || string.IsNullOrWhiteSpace(device.Host)
+                || device.Brand is null || device.Model is null || device.Status is null
+                || device.Port < 0 || device.Port > 65535)
+                throw new JsonException("上游设备数据缺少有效字段或设备 ID 重复，未恢复本地设备配置。");
+        }
+        var restored = devices.Select(device => device with
+        {
+            Password = null,
+            Transfer = device.Transfer is null ? null : device.Transfer with { Password = null },
+            RestoredFromUpstream = true,
+            UpstreamSynced = true,
+            UpstreamError = null,
+        }).ToList();
+        ct.ThrowIfCancellationRequested();
+        // Check emptiness again under the store lock: a user may have added a device during the GET.
+        return _store.Update(current =>
+        {
+            if (current.Count != 0)
+                return new UpstreamSyncReport { Total = current.Count, Skipped = current.Count };
+            current.AddRange(restored);
+            _logger.LogInformation("从上游恢复 {Count} 台设备到网关，保留原设备 ID，未回写上游", restored.Count);
+            return new UpstreamSyncReport { Total = restored.Count, Restored = restored.Count };
+        });
     }
 
     private static Dictionary<string, object?> BuildPayload(MachineDeviceDto device, bool includeId)
