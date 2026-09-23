@@ -528,7 +528,7 @@
                         </div>
                     </template>
                     <el-table ref="pointTableRef" v-loading="pointTableFlattenLoading" :data="filteredPointTableData"
-                        border @selection-change="handlePointSelectionChange">
+                        border row-key="id" @selection-change="handlePointSelectionChange">
                         <el-table-column type="selection" width="46" />
                         <el-table-column prop="path" label="路径" min-width="140" />
                         <el-table-column prop="displayName" label="显示名称" min-width="140" />
@@ -539,7 +539,7 @@
                         <el-table-column label="当前值" width="160" fixed="right">
                             <template #default="{ row }">
                                 <el-input v-model="row.currentValue" size="small"
-                                    :disabled="row.nodeType === 'Folder'" />
+                                    :disabled="!row.writable" />
                             </template>
                         </el-table-column>
                         <el-table-column label="采集频率" width="130" fixed="right">
@@ -553,10 +553,10 @@
                         <el-table-column label="操作" width="140" fixed="right">
                             <template #default="{ row }">
                                 <template v-if="row.nodeType === 'Variable'">
-                                    <el-button link type="primary" size="small" @click="handleReadSinglePoint(row)">
+                                    <el-button link type="primary" size="small" :disabled="!row.isReadable" @click="handleReadSinglePoint(row)">
                                         读取
                                     </el-button>
-                                    <el-button link type="warning" size="small" @click="handleWriteSinglePoint(row)">
+                                    <el-button link type="warning" size="small" :disabled="!row.writable" @click="handleWriteSinglePoint(row)">
                                         写入
                                     </el-button>
                                 </template>
@@ -1411,6 +1411,8 @@ const pointTreeData = ref<PointTreeNode[]>([
 ]);
 
 const pointTableData = ref<PointRow[]>([]);
+let pointRequestVersion = 0;
+watch([pointDialogVisible, pointDialogDeviceId], () => { pointRequestVersion += 1; }, { flush: "sync" });
 /** 父节点「展开整棵子树」到右侧表格时拉取子层地址空间，避免无反馈 */
 const pointTableFlattenLoading = ref(false);
 /** 单棵子树内最多铺平的变量行数，防止根目录全量扫爆 */
@@ -1454,7 +1456,14 @@ const filterPointTreeNode = (value: string, data: { label: string }) => {
 };
 
 const handlePointTreeNodeClick = async (data: PointTreeNode) => {
+    const requestVersion = ++pointRequestVersion;
+    const deviceId = pointDialogDeviceId.value;
+    const isCurrent = () => requestVersion === pointRequestVersion && pointDialogVisible.value
+        && deviceId === pointDialogDeviceId.value;
     selectedPointTreeNodeId.value = data.id;
+    pointTableFlattenLoading.value = false;
+    pointTableData.value = [];
+    selectedPointRows.value = [];
 
     if (!pointDialogDeviceId.value) return;
 
@@ -1462,16 +1471,19 @@ const handlePointTreeNodeClick = async (data: PointTreeNode) => {
     if (!data._loaded) {
         await loadAddressChildren(data, { silent: true });
     }
+    if (!isCurrent()) return;
     if (data.children?.length) {
         await expandPointTreeNodes([data.id]);
     }
 
+    if (!isCurrent()) return;
     // Folder：懒加载左侧子节点；右侧列表递归收集该节点下**所有** Variable 叶子（含子目录）
     if (data.nodeType === "Folder") {
         const deviceId = pointDialogDeviceId.value;
         pointTableFlattenLoading.value = true;
         try {
-            const allVars = await flattenAllDescendantVariableNodes(deviceId, data.path);
+            const allVars = await flattenAllDescendantVariableNodes(deviceId, data.path, isCurrent);
+            if (!isCurrent()) return;
             if (allVars.length >= POINT_FLATTEN_MAX_VARIABLES) {
                 ElMessage.warning(
                     `子树变量较多，已最多加载前 ${POINT_FLATTEN_MAX_VARIABLES} 条，请缩小左侧所选目录`,
@@ -1482,26 +1494,31 @@ const handlePointTreeNodeClick = async (data: PointTreeNode) => {
             pointTableData.value = allVars.map(mapVariableNodeToRow);
         } catch {
             // 用户要求：父节点批量加载异常时不弹错误提示，保持界面静默。
-            pointTableData.value = [];
+            if (isCurrent()) pointTableData.value = [];
         } finally {
-            pointTableFlattenLoading.value = false;
+            if (isCurrent()) pointTableFlattenLoading.value = false;
         }
-        await applySavedPathsToTable();
+        if (isCurrent()) await applySavedPathsToTable();
         return;
     }
 
     // Variable：表格只显示一个
+    pointTableFlattenLoading.value = false;
     pointTableData.value = [mapVariableNodeToRow(data)];
     await applySavedPathsToTable();
 };
 
 const openPointDialog = async (device: { id: string; name: string; protocol?: string }) => {
+    pointRequestVersion += 1;
     pointDialogDeviceName.value = device.name;
     pointDialogDeviceId.value = device.id;
     pointDialogDeviceProtocol.value = device.protocol ?? "";
     selectedPointTreeNodeId.value = "/";
     pointDialogVisible.value = true;
+    const openVersion = pointRequestVersion;
     savedPathsInDb.value = new Set();
+    savedPointConfigByPath.value = new Map();
+    pointTableFlattenLoading.value = false;
 
     // 打开即加载根节点
     const root = pointTreeData.value[0];
@@ -1511,10 +1528,13 @@ const openPointDialog = async (device: { id: string; name: string; protocol?: st
     pointTableData.value = [];
     selectedPointRows.value = [];
     await loadAddressChildren(root);
+    if (openVersion !== pointRequestVersion) return;
     pointExpandedKeys.value = collectFirstLevelExpandedKeys(root);
     pointTreeRenderKey.value += 1;
     await expandPointTreeNodes(pointExpandedKeys.value);
+    if (openVersion !== pointRequestVersion) return;
     await refreshSavedPathsFromDb({ silent: true });
+    if (openVersion !== pointRequestVersion) return;
     await handlePointTreeNodeClick(root);
 };
 
@@ -1536,8 +1556,9 @@ const handleManualRefresh = async (options: { silent?: boolean } = {}) => {
     const { silent = false } = options;
     const deviceId = pointDialogDeviceId.value;
     if (!deviceId) return;
+    const requestVersion = pointRequestVersion;
 
-    const targets = pointTableData.value.filter((r) => r.enabled);
+    const targets = pointTableData.value.filter((r) => r.enabled && r.isReadable);
     if (targets.length === 0) {
         if (!silent) {
             ElMessage.warning("请先选择至少一个启用点位");
@@ -1552,8 +1573,9 @@ const handleManualRefresh = async (options: { silent?: boolean } = {}) => {
                 sourceId: t.sourceId,
             })),
         });
+        if (requestVersion !== pointRequestVersion || deviceId !== pointDialogDeviceId.value) return;
         const map = new Map(resp.tags.map((t) => [normalizeTagAddress(t.address), t]));
-        for (const row of pointTableData.value) {
+        for (const row of targets) {
             const r = map.get(normalizeTagAddress(row.address));
             if (!r) continue;
             row.currentValue =
@@ -1603,8 +1625,8 @@ const exportPointAddress = async () => {
 const handleReadSinglePoint = async (row: PointRow) => {
     const deviceId = pointDialogDeviceId.value;
     if (!deviceId) return;
-    if (row.nodeType === "Folder") {
-        ElMessage.info("此为目录节点，请在左侧树中展开下级；变量节点才可读取数值。");
+    if (!row.isReadable || row.nodeType === "Folder") {
+        ElMessage.info("该点位不可读；请选择有读取权限的变量节点。");
         return;
     }
     try {
@@ -1713,7 +1735,8 @@ const handleInvertSelectPoints = () => {
 const handleBatchReadPoints = async () => {
     const deviceId = pointDialogDeviceId.value;
     if (!deviceId) return;
-    const targets = selectedPointRows.value.filter((r) => r.nodeType === "Variable");
+    const requestVersion = pointRequestVersion;
+    const targets = selectedPointRows.value.filter((r) => r.nodeType === "Variable" && r.isReadable);
     if (targets.length === 0) {
         ElMessage.warning("请先勾选至少一个变量点位（目录行不可批量读取）");
         return;
@@ -1726,8 +1749,9 @@ const handleBatchReadPoints = async () => {
                 sourceId: t.sourceId,
             })),
         });
+        if (requestVersion !== pointRequestVersion || deviceId !== pointDialogDeviceId.value) return;
         const map = new Map(resp.tags.map((t) => [normalizeTagAddress(t.address), t]));
-        for (const row of pointTableData.value) {
+        for (const row of targets) {
             const r = map.get(normalizeTagAddress(row.address));
             if (!r) continue;
             row.currentValue =
@@ -1794,7 +1818,9 @@ async function refreshSavedPathsFromDb(options: { silent?: boolean } = {}) {
     if (!deviceId) return;
     const { silent = false } = options;
     try {
+        const requestVersion = pointRequestVersion;
         const rows = await datacollectionApi.list(deviceId);
+        if (requestVersion !== pointRequestVersion || deviceId !== pointDialogDeviceId.value) return;
         savedPathsInDb.value = new Set(rows.map((r) => r.path));
         savedPointConfigByPath.value = new Map(
             rows.map((r) => [r.path, { collectionFrequency: r.collectionFrequency }]),
@@ -1814,7 +1840,9 @@ async function refreshSavedPathsFromDb(options: { silent?: boolean } = {}) {
 }
 
 async function applySavedPathsToTable() {
+    const requestVersion = pointRequestVersion;
     await nextTick();
+    if (requestVersion !== pointRequestVersion) return;
     const table = pointTableRef.value;
     if (!table) return;
     const pathSet = savedPathsInDb.value;
@@ -1898,6 +1926,7 @@ async function loadAddressChildren(
 ) {
     const deviceId = pointDialogDeviceId.value;
     if (!deviceId) return;
+    const requestVersion = pointRequestVersion;
     const { silent: _silent = false } = options;
 
     // parent.path 为 "/" 时，传 null/undefined 获取根节点
@@ -1908,10 +1937,12 @@ async function loadAddressChildren(
             parentPath,
             pointDialogDeviceProtocol.value,
         );
+        if (requestVersion !== pointRequestVersion || deviceId !== pointDialogDeviceId.value) return;
         const nodes = sanitizeAddressSpaceLevelNodes(parentPath, rawNodes);
         parent.children = nodes.map(mapAddressNodeToTreeNode);
         parent._loaded = true;
     } catch (e: unknown) {
+        if (requestVersion !== pointRequestVersion || deviceId !== pointDialogDeviceId.value) return;
         parent.children = [];
         parent._loaded = false;
         // 点位加载失败时按需求静默处理，不提示 "Request failed with status code 500"
@@ -1941,10 +1972,24 @@ async function browseAddressLevelAsPointTree(
 async function flattenAllDescendantVariableNodes(
     deviceId: string,
     folderPath: string,
+    isCurrent: () => boolean = () => true,
 ): Promise<PointTreeNode[]> {
     const variables: PointTreeNode[] = [];
     const queue: string[] = [];
-    const enqueued = new Set<string>();
+    const enqueued = new Set<string>([folderPath]);
+    const seenVariables = new Set<string>();
+    const browseVariables = pointDialogDeviceProtocol.value === "OpcUa";
+    const collect = (node: PointTreeNode) => {
+        if (node.nodeType === "Variable" && !seenVariables.has(node.path)
+            && variables.length < POINT_FLATTEN_MAX_VARIABLES) {
+            seenVariables.add(node.path);
+            variables.push(node);
+        }
+        if ((browseVariables || node.nodeType === "Folder") && !enqueued.has(node.path)) {
+            enqueued.add(node.path);
+            queue.push(node.path);
+        }
+    };
     const failedFolders: string[] = [];
     const firstParent = folderPath === "/" ? undefined : folderPath;
 
@@ -1954,19 +1999,11 @@ async function flattenAllDescendantVariableNodes(
     } catch (e: unknown) {
         throw new Error(getApiErrorMessage(e, `加载目录 ${folderPath || "/"} 失败`));
     }
-    for (const n of first) {
-        if (n.nodeType === "Variable") {
-            if (variables.length < POINT_FLATTEN_MAX_VARIABLES) {
-                variables.push(n);
-            }
-        } else {
-            queue.push(n.path);
-            enqueued.add(n.path);
-        }
-    }
+    if (!isCurrent()) return [];
+    for (const node of first) collect(node);
 
     let steps = 0;
-    while (queue.length > 0
+    while (isCurrent() && queue.length > 0
         && variables.length < POINT_FLATTEN_MAX_VARIABLES
         && steps < POINT_FLATTEN_MAX_FOLDER_STEPS) {
         const p = queue.shift()!;
@@ -1979,18 +2016,14 @@ async function flattenAllDescendantVariableNodes(
             failedFolders.push(p);
             continue;
         }
-        for (const n of level) {
-            if (n.nodeType === "Variable") {
-                if (variables.length < POINT_FLATTEN_MAX_VARIABLES) {
-                    variables.push(n);
-                }
-            } else if (!enqueued.has(n.path)) {
-                enqueued.add(n.path);
-                queue.push(n.path);
-            }
-        }
+        if (!isCurrent()) return [];
+        for (const node of level) collect(node);
     }
 
+    if (!isCurrent()) return [];
+    if (queue.length > 0 && steps >= POINT_FLATTEN_MAX_FOLDER_STEPS) {
+        ElMessage.warning("地址空间扫描已达到上限，请缩小所选目录");
+    }
     if (failedFolders.length > 0) {
         const preview = failedFolders.slice(0, 3).join("、");
         ElMessage.warning(
@@ -2062,6 +2095,9 @@ function getAddressNodeLabel(n: Pick<AddressNode, "displayName" | "path">): stri
 
 function mapVariableNodeToRow(n: PointTreeNode): PointRow {
     const dt = normalizeDataType(n.dataType);
+    const rawType = String(n.dataType ?? "").trim().split(".").pop()?.toLowerCase() ?? "";
+    const writable = !!n.isWritable && (dt !== "String"
+        || ["string", "char", "wchar", "text", "wstring"].includes(rawType));
     return {
         id: n.path,
         path: n.path,
@@ -2082,13 +2118,14 @@ function mapVariableNodeToRow(n: PointTreeNode): PointRow {
         frequency: "",
         multiplier: "1",
         desc: "",
-        writable: !!n.isWritable,
+        writable,
     };
 }
 
 function normalizeDataType(dt?: string): string {
     const v = String(dt ?? "").trim();
     if (!v) return "Float";
+    if (/\[[,\s]*\]/.test(v)) return "String";
     const noNamespace = v.includes(".") ? v.split(".").pop() ?? v : v;
     const normalized = noNamespace
         .trim()
@@ -2108,7 +2145,7 @@ function normalizeDataType(dt?: string): string {
         return "Int64";
     if (lower === "uint8" || lower === "byte" || lower === "usint")
         return "UInt16";
-    if (lower === "uint16" || lower === "word" || lower === "uint")
+    if (lower === "uint16" || lower === "word")
         return "UInt16";
     if (lower === "uint32" || lower === "dword" || lower === "udint")
         return "UInt32";
@@ -2127,7 +2164,7 @@ function normalizeDataType(dt?: string): string {
     if (lower === "single") return "Float";
     if (lower === "ushort") return "UInt16";
     if (lower === "uint") return "UInt32";
-    if (lower === "ulong") return "UInt32";
+    if (lower === "ulong" || lower === "uint64") return "String";
     if (lower === "short") return "Int16";
     if (lower === "long") return "Int64";
     if (lower === "integer") return "Int32";
@@ -2162,6 +2199,9 @@ function parseWriteValue(dataType: string, raw: string): unknown {
         const n = Number(s);
         if (!Number.isFinite(n) || !Number.isInteger(n)) {
             throw new Error("整数类型仅支持整数值");
+        }
+        if (!Number.isSafeInteger(n)) {
+            throw new Error("整数超出浏览器安全精度范围，已取消写入，避免数值失真");
         }
         return n;
     }

@@ -293,19 +293,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
             var nodeId = ParseNodeId(address);
             var readResult = await _session!.ReadValueAsync(nodeId, ct);
 
-            return new TagValue
-            {
-                Address = address,
-                DataType = dataType,
-                Value = ConvertValue(readResult.Value, dataType),
-                Quality = StatusCode.IsGood(readResult.StatusCode)
-                    ? Domain.Enums.TagQuality.Good
-                    : Domain.Enums.TagQuality.Bad,
-                Timestamp = readResult.SourceTimestamp != DateTime.MinValue
-                    ? new DateTimeOffset(readResult.SourceTimestamp, TimeSpan.Zero)
-                    : DateTimeOffset.UtcNow,
-                ErrorMessage = StatusCode.IsGood(readResult.StatusCode) ? null : readResult.StatusCode.ToString(),
-            };
+            return OpcUaValueCodec.CreateTag(address, dataType, readResult, _session.MessageContext);
         }
         catch (Exception ex)
         {
@@ -313,7 +301,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
             {
                 Address = address,
                 DataType = dataType,
-                Value = 0,
+                Value = null!,
                 Quality = Domain.Enums.TagQuality.Bad,
                 Timestamp = DateTimeOffset.UtcNow,
                 ErrorMessage = ex.Message,
@@ -350,19 +338,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
             {
                 var req = requests[i];
                 var dv = results[i];
-                tags.Add(new TagValue
-                {
-                    Address = req.Address,
-                    DataType = req.DataType,
-                    Value = ConvertValue(dv.Value, req.DataType),
-                    Quality = StatusCode.IsGood(dv.StatusCode)
-                        ? Domain.Enums.TagQuality.Good
-                        : Domain.Enums.TagQuality.Bad,
-                    Timestamp = dv.SourceTimestamp != DateTime.MinValue
-                        ? new DateTimeOffset(dv.SourceTimestamp, TimeSpan.Zero)
-                        : DateTimeOffset.UtcNow,
-                    ErrorMessage = StatusCode.IsGood(dv.StatusCode) ? null : dv.StatusCode.ToString(),
-                });
+                tags.Add(OpcUaValueCodec.CreateTag(req.Address, req.DataType, dv, _session.MessageContext));
             }
             return tags;
         }
@@ -426,7 +402,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
             var nodes = new List<AddressNode>();
             if (filteredRefs.Count > 0)
             {
-                // Batch-read DataType + AccessLevel for variable nodes
+                // Batch-read type, permissions and array rank for variable nodes
                 var variableRefs = filteredRefs
                     .Where(rd => rd.NodeClass == NodeClass.Variable)
                     .ToList();
@@ -450,6 +426,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
                             NodeId = nodeId,
                             AttributeId = Attributes.UserAccessLevel,
                         });
+                        nodesToRead.Add(new ReadValueId { NodeId = nodeId, AttributeId = Attributes.ValueRank });
                     }
 
                     var readResponse = await _session.ReadAsync(null, 0, TimestampsToReturn.Neither, nodesToRead, ct);
@@ -458,20 +435,30 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
                     for (int i = 0; i < variableRefs.Count; i++)
                     {
                         var rd = variableRefs[i];
-                        var dtResult = results[i * 2];
-                        var accessResult = results[i * 2 + 1];
+                        var dtResult = results[i * 3];
+                        var accessResult = results[i * 3 + 1];
+                        var rankResult = results[i * 3 + 2];
 
-                        var dataType = DataType.Double; // default
+                        var dataType = DataType.String; // Unknown types must not be assumed numeric.
+                        var builtInType = BuiltInType.Null;
                         if (StatusCode.IsGood(dtResult.StatusCode) && dtResult.Value is NodeId dtNodeId)
                         {
-                            dataType = MapOpcUaDataType(dtNodeId);
+                            builtInType = await ResolveBuiltInTypeAsync(dtNodeId, ct);
+                            dataType = OpcUaValueCodec.MapBuiltInType(builtInType);
                         }
+                        var scalar = StatusCode.IsGood(rankResult.StatusCode) && rankResult.Value is int rank
+                            && rank == ValueRanks.Scalar;
+                        if (!scalar)
+                            dataType = DataType.String;
 
                         bool readable = true, writable = false;
                         if (StatusCode.IsGood(accessResult.StatusCode) && accessResult.Value is byte accessLevel)
                         {
                             readable = (accessLevel & AccessLevels.CurrentRead) != 0;
-                            writable = (accessLevel & AccessLevels.CurrentWrite) != 0;
+                            writable = (accessLevel & AccessLevels.CurrentWrite) != 0 && scalar
+                                && builtInType is BuiltInType.Boolean or BuiltInType.Int16 or BuiltInType.Int32
+                                    or BuiltInType.Int64 or BuiltInType.UInt16 or BuiltInType.UInt32
+                                    or BuiltInType.Float or BuiltInType.Double or BuiltInType.String or BuiltInType.ByteString;
                         }
 
                         readResults[rd.NodeId.ToString()] = (dataType, readable, writable);
@@ -498,7 +485,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
                     else
                     {
                         var (dt, readable, writable) = readResults.GetValueOrDefault(nodeKey,
-                            (DataType.Double, true, false));
+                            (DataType.String, true, false));
                         nodes.Add(new AddressNode
                         {
                             Path = nodeKey,
@@ -623,10 +610,28 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
     private async Task<ReferenceDescriptionCollection> BrowseByReferenceTypeAsync(
         NodeId startNodeId, NodeId referenceTypeId, bool includeSubtypes, CancellationToken ct)
     {
-        var (_, _, browseRefs) = await _session!.BrowseAsync(null, null, startNodeId,
+        var (_, continuationPoint, browseRefs) = await _session!.BrowseAsync(null, null, startNodeId,
             0u, BrowseDirection.Forward, referenceTypeId,
             includeSubtypes, 0u, ct);
-        return browseRefs ?? [];
+        var references = browseRefs ?? [];
+        try
+        {
+            while (continuationPoint is { Length: > 0 })
+            {
+                var (_, nextPoint, nextRefs) = await _session.BrowseNextAsync(null, false, continuationPoint, ct);
+                continuationPoint = nextPoint;
+                if (nextRefs is not null) references.AddRange(nextRefs);
+            }
+            return references;
+        }
+        finally
+        {
+            if (continuationPoint is { Length: > 0 })
+            {
+                try { await _session.BrowseNextAsync(null, true, continuationPoint, CancellationToken.None); }
+                catch (Exception error) { _logger.LogDebug(error, "Could not release OPC UA browse continuation point"); }
+            }
+        }
     }
 
     private static OpcUaSecurityOptions ResolveSecurityOptions(DeviceConnectionConfig config)
@@ -682,48 +687,17 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
         return new NodeId(address, 2);
     }
 
-    private static object ConvertValue(object? raw, DataType target)
+    private async Task<BuiltInType> ResolveBuiltInTypeAsync(NodeId typeId, CancellationToken ct)
     {
-        if (raw is null) return 0;
-        return target switch
+        var visited = new HashSet<NodeId>();
+        while (!NodeId.IsNull(typeId) && visited.Count < 64 && visited.Add(typeId))
         {
-            DataType.Bool => Convert.ToBoolean(raw),
-            DataType.Int16 => Convert.ToInt16(raw),
-            DataType.Int32 => Convert.ToInt32(raw),
-            DataType.Int64 => Convert.ToInt64(raw),
-            DataType.UInt16 => Convert.ToUInt16(raw),
-            DataType.UInt32 => Convert.ToUInt32(raw),
-            DataType.Float => Convert.ToSingle(raw),
-            DataType.Double => Convert.ToDouble(raw),
-            DataType.String => raw.ToString() ?? "",
-            _ => raw,
-        };
-    }
-
-    /// <summary>
-    /// Map OPC UA built-in DataType NodeId to domain DataType enum.
-    /// </summary>
-    private static DataType MapOpcUaDataType(NodeId dataTypeId)
-    {
-        // OPC UA built-in type NodeIds are in namespace 0
-        if (dataTypeId.NamespaceIndex != 0 || dataTypeId.IdType != IdType.Numeric)
-            return DataType.Double;
-
-        return (uint)dataTypeId.Identifier switch
-        {
-            DataTypes.Boolean => DataType.Bool,
-            DataTypes.SByte or DataTypes.Int16 => DataType.Int16,
-            DataTypes.Byte or DataTypes.UInt16 => DataType.UInt16,
-            DataTypes.Int32 => DataType.Int32,
-            DataTypes.UInt32 => DataType.UInt32,
-            DataTypes.Int64 => DataType.Int64,
-            DataTypes.UInt64 => DataType.String,
-            DataTypes.Float => DataType.Float,
-            DataTypes.Double => DataType.Double,
-            DataTypes.ByteString => DataType.ByteArray,
-            DataTypes.String or DataTypes.LocalizedText => DataType.String,
-            _ => DataType.Double,
-        };
+            var builtIn = Opc.Ua.TypeInfo.GetBuiltInType(typeId);
+            if (builtIn != BuiltInType.Null)
+                return builtIn;
+            typeId = await _session!.NodeCache.FindSuperTypeAsync(typeId, ct);
+        }
+        return BuiltInType.Null;
     }
 
     private void OnKeepAlive(ISession session, KeepAliveEventArgs e)

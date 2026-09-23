@@ -1,5 +1,6 @@
 var checks = new (string Name, Func<Task> Run)[]
 {
+    ("OPC UA scalar, structured values and quality", OpcUaRegressionTests.RunAsync),
     ("Haas ping and macro roundtrip", HaasRegressionTests.MacroRoundtripAsync),
     ("Haas fragmented responses and CRLF", HaasRegressionTests.FragmentedResponseAsync),
     ("Haas asynchronous timeout", HaasRegressionTests.ReadTimeoutAsync),
