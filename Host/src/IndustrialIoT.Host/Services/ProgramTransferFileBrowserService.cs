@@ -4,8 +4,17 @@ using System.Text.RegularExpressions;
 using IndustrialIoT.Protocols.Abstractions;
 using IndustrialIoT.Protocols.Models;
 
+/// <summary>递归浏览节点数超过上限（如 FTP 根目录设为整个磁盘）时抛出，避免请求长时间挂起。</summary>
+public sealed class ProgramFileBrowseLimitExceededException(int limit)
+    : Exception($"目录下文件/文件夹超过 {limit} 个，已停止递归遍历；请缩小设备端存储根目录或逐层浏览")
+{
+    public int Limit { get; } = limit;
+}
+
 public sealed class ProgramTransferFileBrowserService : IProgramTransferFileBrowserService
 {
+    public const int MaxRecursiveNodes = 2000;
+
     private static readonly Regex SizePattern = new(@"\((?<size>\d+(?:\.\d+)?)(?<unit>B|KB|MB)\)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public async Task<IReadOnlyList<ProgramFileNodeDto>> BrowseAsync(
@@ -33,6 +42,8 @@ public sealed class ProgramTransferFileBrowserService : IProgramTransferFileBrow
         foreach (var node in await BrowseCurrentLevelAsync(browser, path, ct))
         {
             if (!visited.Add(node.Path)) continue;
+            if (nodes.Count >= MaxRecursiveNodes)
+                throw new ProgramFileBrowseLimitExceededException(MaxRecursiveNodes);
             nodes.Add(node);
             if (node.NodeType == ProgramFileNodeType.Directory && node.HasChildren)
                 await BrowseRecursiveAsync(browser, node.Path, nodes, visited, ct);

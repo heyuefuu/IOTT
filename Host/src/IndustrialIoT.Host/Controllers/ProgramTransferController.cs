@@ -372,12 +372,19 @@ public class ProgramTransferController : ControllerBase
 
         // 前端显式传 recursive 时优先；未传则沿用协议默认（FOCAS/FTP/SMB/NFS 递归）
         var useRecursive = recursive ?? ShouldBrowseFilesRecursively(resolution.Protocol);
-        var nodes = await _fileBrowserService.BrowseAsync(
-            browser,
-            path,
-            recursive: useRecursive,
-            ct: ct);
-        return Ok(nodes);
+        try
+        {
+            var nodes = await _fileBrowserService.BrowseAsync(
+                browser,
+                path,
+                recursive: useRecursive,
+                ct: ct);
+            return Ok(nodes);
+        }
+        catch (ProgramFileBrowseLimitExceededException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
     [HttpGet("{deviceId}/capabilities")]

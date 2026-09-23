@@ -3029,10 +3029,17 @@ function hasDeepDescendants(
     return items.some((x) => getPathDepth(x.path) > rootDepth + 1);
 }
 
+/** 真实文件系统通道：只拉当前一层，点击文件夹再拉下一层（根目录可能是整个磁盘，递归会超时） */
+const SINGLE_LEVEL_BROWSE_PROTOCOLS = ["FTP", "SMB", "NFS"];
+
 async function fetchRemoteTreeItems(
     deviceId: string,
     rootPath: string | undefined,
+    singleLevel = false,
 ): Promise<{ name: string; path: string; nodeType: "folder" | "file" }[]> {
+    if (singleLevel) {
+        return machineConnectionProgramTransferApi.files(deviceId, rootPath, false);
+    }
     const first = await machineConnectionProgramTransferApi.files(
         deviceId,
         rootPath,
@@ -3075,6 +3082,26 @@ async function fetchRemoteTreeItems(
     return [...all.values()];
 }
 
+/** 逐层浏览时，本次返回的文件夹子级尚未拉取，标记为未加载以便点击时再请求 */
+function markUnloadedFolders(
+    nodes: RemotePathNode[],
+    items: { path: string; nodeType: "folder" | "file" }[],
+) {
+    const fetchedFolders = new Set(
+        items
+            .filter((x) => x.nodeType === "folder")
+            .map((x) => normalizeTransferPathByProtocol(x.path)),
+    );
+    const walk = (list?: RemotePathNode[]) => {
+        for (const node of list ?? []) {
+            if (node.nodeType !== "folder") continue;
+            if (fetchedFolders.has(node.path)) node._loaded = false;
+            walk(node.children);
+        }
+    };
+    walk(nodes);
+}
+
 async function loadRemotePathChildren(parentNode?: RemotePathNode) {
     const deviceId = transferForm.value.deviceId;
     if (!deviceId) return;
@@ -3090,13 +3117,18 @@ async function loadRemotePathChildren(parentNode?: RemotePathNode) {
     try {
         const rootPath = getDeviceTransferRoot(ui);
         const targetPath = parentNode?.path ?? rootPath;
-        const items = await fetchRemoteTreeItems(deviceId, targetPath);
+        const protocol = getDeviceTransferProtocol(ui);
+        const singleLevel = SINGLE_LEVEL_BROWSE_PROTOCOLS.includes(protocol);
+        const items = await fetchRemoteTreeItems(deviceId, targetPath, singleLevel);
         const nodes = buildRemotePathTree(items, parentNode?.path);
+        if (singleLevel) markUnloadedFolders(nodes, items);
         if (parentNode) {
             parentNode.children = nodes;
             parentNode._loaded = true;
+            if (!remotePathExpandedKeys.value.includes(parentNode.key)) {
+                remotePathExpandedKeys.value.push(parentNode.key);
+            }
         } else {
-            const protocol = getDeviceTransferProtocol(ui);
             if (["FTP", "SMB", "NFS", "NCLinkApi", "GskWebServer", "GskrmFileTransfer"].includes(protocol)) {
                 const root = nodes.find((node) => node.path === "/") ?? createFolderNode("/");
                 if (!nodes.includes(root)) root.children = nodes;
