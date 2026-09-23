@@ -82,6 +82,11 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
+    using var scope = app.Services.CreateScope();
+    var database = scope.ServiceProvider.GetRequiredService<MCConfigurationDbContext>().Database;
+    if (database.GetDbConnection().DataSource.StartsWith("(localdb)\\", StringComparison.OrdinalIgnoreCase))
+        await database.EnsureCreatedAsync();
+
     app.UseSwagger();
     app.UseSwaggerUI();
 }

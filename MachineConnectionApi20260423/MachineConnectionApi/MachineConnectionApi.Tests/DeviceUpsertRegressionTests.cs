@@ -21,6 +21,12 @@ internal static partial class DeviceUpsertRegressionTests
         await EmptyRegistryRestorePreservesDevicesWithoutWritingUpstream();
         await EmptyRegistryRestoreRejectsInvalidResponses();
         await EmptyRegistryRestoreKeepsConcurrentLocalChanges();
+        await RestoreOverlappingCreateKeepsOneDevice();
+        await RestoreOverlappingDeleteKeepsDeviceDeleted();
+        await DeleteAfterRestoreSnapshotKeepsDeviceDeleted();
+        await RestoredProbeFailuresDoNotStopOtherDevices();
+        await RestoreCallerCancellationReleasesOperation();
+        await CanceledRestoreWaiterDoesNotBlockLaterOperations();
         await ClearTransferRemovesIndependentChannel();
         await PartialUpdatesKeepIndependentChannel();
         await UpstreamSyncClearsRemovedTransfer();
@@ -129,17 +135,27 @@ internal static partial class DeviceUpsertRegressionTests
 
     private sealed class MemoryDeviceStore(params MachineDeviceDto[] initial) : IDeviceStore
     {
+        private readonly object _gate = new();
         private readonly List<MachineDeviceDto> _items = [.. initial];
 
-        public List<MachineDeviceDto> ReadAll() => [.. _items];
+        public List<MachineDeviceDto> ReadAll()
+        {
+            lock (_gate) return [.. _items];
+        }
 
         public void WriteAll(IEnumerable<MachineDeviceDto> items)
         {
-            _items.Clear();
-            _items.AddRange(items);
+            lock (_gate)
+            {
+                _items.Clear();
+                _items.AddRange(items);
+            }
         }
 
-        public TResult Update<TResult>(Func<List<MachineDeviceDto>, TResult> update) => update(_items);
+        public TResult Update<TResult>(Func<List<MachineDeviceDto>, TResult> update)
+        {
+            lock (_gate) return update(_items);
+        }
     }
 
     private sealed class StubSyncService : IDeviceUpstreamSyncService

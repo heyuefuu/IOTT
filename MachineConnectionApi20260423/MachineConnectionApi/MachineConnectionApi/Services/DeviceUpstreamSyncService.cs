@@ -108,6 +108,7 @@ public sealed class DeviceUpstreamSyncService : IDeviceUpstreamSyncService
 
     public async Task<UpstreamSyncReport> SyncAllAsync(CancellationToken ct)
     {
+        using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);
         var rows = _store.ReadAll();
         if (rows.Count == 0)
             return await RestoreEmptyRegistryAsync(ct);
@@ -119,28 +120,14 @@ public sealed class DeviceUpstreamSyncService : IDeviceUpstreamSyncService
 
         for (var i = 0; i < rows.Count; i++)
         {
-            if (rows[i].RestoredFromUpstream)
-            {
-                using var probe = await _httpClientFactory.CreateClient("IndustrialIoT")
-                    .GetAsync($"{DevicesPath}/{Uri.EscapeDataString(rows[i].Id)}", ct);
-                if (probe.IsSuccessStatusCode)
-                {
-                    skipped++;
-                    results[rows[i].Id] = UpstreamSyncResult.Ok("preserved");
-                }
-                else
-                {
-                    var error = await DescribeAsync(probe, ct);
-                    results[rows[i].Id] = UpstreamSyncResult.Fail("probe", error);
-                    errors.Add(new UpstreamSyncError(rows[i].Id, rows[i].Name, error));
-                }
-                continue;
-            }
-            var result = await UpsertAsync(rows[i], ct);
+            var result = rows[i].RestoredFromUpstream
+                ? await ProbeRestoredAsync(rows[i], ct)
+                : await UpsertAsync(rows[i], ct);
             results[rows[i].Id] = result;
             if (result.Success)
             {
                 if (result.Action == "created") created++;
+                else if (result.Action == "preserved") skipped++;
                 else updated++;
             }
             else
@@ -171,6 +158,27 @@ public sealed class DeviceUpstreamSyncService : IDeviceUpstreamSyncService
             Failed = errors.Count,
             Errors = errors,
         };
+    }
+
+    private async Task<UpstreamSyncResult> ProbeRestoredAsync(MachineDeviceDto device, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await _httpClientFactory.CreateClient("IndustrialIoT")
+                .GetAsync($"{DevicesPath}/{Uri.EscapeDataString(device.Id)}", ct);
+            return response.IsSuccessStatusCode
+                ? UpstreamSyncResult.Ok("preserved")
+                : UpstreamSyncResult.Fail("probe", await DescribeAsync(response, ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "恢复设备 {DeviceId} 上游探测失败", device.Id);
+            return UpstreamSyncResult.Fail("probe", ex.Message);
+        }
     }
 
     private async Task<UpstreamSyncReport> RestoreEmptyRegistryAsync(CancellationToken ct)

@@ -75,6 +75,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         if (string.IsNullOrWhiteSpace(input.Host)) return BadRequest(new { error = "Host 不能为空" });
         if (!IsValidPort(input.Port, input.Protocol)) return BadRequest(new { error = "Port 必须是 1~65535；广数 SDK 可使用 0" });
 
+        using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);
         var item = new MachineDeviceDto
         {
             Id = Guid.NewGuid().ToString("N"),
@@ -106,6 +107,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
     [HttpPut("{id}")]
     public async Task<ActionResult<MachineDeviceDto>> Update(string id, [FromBody] MachineDeviceUpsertRequest input, CancellationToken ct)
     {
+        using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);
         var current = _store.ReadAll().FirstOrDefault(x => x.Id == id);
         if (current is null) return NotFound();
         if (!IsValidPort(input.Port ?? current.Port, input.Protocol ?? current.Protocol))
@@ -167,6 +169,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id, CancellationToken ct)
     {
+        using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);
         var target = _store.Update<MachineDeviceDto?>(rows =>
         {
             var index = rows.FindIndex(x => x.Id == id);
@@ -273,7 +276,10 @@ public class DevicesController : IndustrialIoTProxyControllerBase
             using var first = await client.PostAsync(path, content: null, ct);
             if (first.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                var sync = await _sync.UpsertAsync(item, ct);
+                using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);
+                var current = _store.ReadAll().FirstOrDefault(device => device.Id == item.Id);
+                if (current is null) return null;
+                var sync = await _sync.UpsertAsync(current, ct);
                 if (!sync.Success) return null;
                 using var retry = await client.PostAsync(path, content: null, ct);
                 return await ParseTestResultAsync(retry, ct);
@@ -317,6 +323,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         var rows = ParseCsv(await reader.ReadToEndAsync(ct));
         if (rows.Count < 2) return BadRequest(new { error = "CSV 至少需要表头和一行设备数据" });
 
+        using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);
         var result = ImportRows(rows, out var imported);
 
         // 导入成功的设备逐个同步到上游；失败不影响本地导入结果，但记入 Errors 提示用户

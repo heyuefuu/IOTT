@@ -1412,7 +1412,11 @@ const pointTreeData = ref<PointTreeNode[]>([
 
 const pointTableData = ref<PointRow[]>([]);
 let pointRequestVersion = 0;
-watch([pointDialogVisible, pointDialogDeviceId], () => { pointRequestVersion += 1; }, { flush: "sync" });
+let pointDialogVersion = 0;
+watch([pointDialogVisible, pointDialogDeviceId], () => {
+    pointDialogVersion += 1;
+    pointRequestVersion += 1;
+}, { flush: "sync" });
 /** 父节点「展开整棵子树」到右侧表格时拉取子层地址空间，避免无反馈 */
 const pointTableFlattenLoading = ref(false);
 /** 单棵子树内最多铺平的变量行数，防止根目录全量扫爆 */
@@ -1509,13 +1513,15 @@ const handlePointTreeNodeClick = async (data: PointTreeNode) => {
 };
 
 const openPointDialog = async (device: { id: string; name: string; protocol?: string }) => {
+    pointDialogVersion += 1;
     pointRequestVersion += 1;
     pointDialogDeviceName.value = device.name;
     pointDialogDeviceId.value = device.id;
     pointDialogDeviceProtocol.value = device.protocol ?? "";
     selectedPointTreeNodeId.value = "/";
     pointDialogVisible.value = true;
-    const openVersion = pointRequestVersion;
+    const openVersion = pointDialogVersion;
+    const openRequestVersion = pointRequestVersion;
     savedPathsInDb.value = new Set();
     savedPointConfigByPath.value = new Map();
     pointTableFlattenLoading.value = false;
@@ -1528,13 +1534,13 @@ const openPointDialog = async (device: { id: string; name: string; protocol?: st
     pointTableData.value = [];
     selectedPointRows.value = [];
     await loadAddressChildren(root);
-    if (openVersion !== pointRequestVersion) return;
+    if (openVersion !== pointDialogVersion) return;
     pointExpandedKeys.value = collectFirstLevelExpandedKeys(root);
     pointTreeRenderKey.value += 1;
     await expandPointTreeNodes(pointExpandedKeys.value);
-    if (openVersion !== pointRequestVersion) return;
+    if (openVersion !== pointDialogVersion) return;
     await refreshSavedPathsFromDb({ silent: true });
-    if (openVersion !== pointRequestVersion) return;
+    if (openVersion !== pointDialogVersion || openRequestVersion !== pointRequestVersion) return;
     await handlePointTreeNodeClick(root);
 };
 
@@ -1817,16 +1823,17 @@ async function refreshSavedPathsFromDb(options: { silent?: boolean } = {}) {
     const deviceId = pointDialogDeviceId.value;
     if (!deviceId) return;
     const { silent = false } = options;
+    const dialogVersion = pointDialogVersion;
     try {
-        const requestVersion = pointRequestVersion;
         const rows = await datacollectionApi.list(deviceId);
-        if (requestVersion !== pointRequestVersion || deviceId !== pointDialogDeviceId.value) return;
+        if (dialogVersion !== pointDialogVersion || deviceId !== pointDialogDeviceId.value) return;
         savedPathsInDb.value = new Set(rows.map((r) => r.path));
         savedPointConfigByPath.value = new Map(
             rows.map((r) => [r.path, { collectionFrequency: r.collectionFrequency }]),
         );
         await applySavedPathsToTable();
     } catch (e: unknown) {
+        if (dialogVersion !== pointDialogVersion || deviceId !== pointDialogDeviceId.value) return;
         const ax = e as { response?: { data?: { error?: string; detail?: string } } };
         const msg =
             ax.response?.data?.detail ??
@@ -1926,7 +1933,7 @@ async function loadAddressChildren(
 ) {
     const deviceId = pointDialogDeviceId.value;
     if (!deviceId) return;
-    const requestVersion = pointRequestVersion;
+    const dialogVersion = pointDialogVersion;
     const { silent: _silent = false } = options;
 
     // parent.path 为 "/" 时，传 null/undefined 获取根节点
@@ -1937,12 +1944,12 @@ async function loadAddressChildren(
             parentPath,
             pointDialogDeviceProtocol.value,
         );
-        if (requestVersion !== pointRequestVersion || deviceId !== pointDialogDeviceId.value) return;
+        if (dialogVersion !== pointDialogVersion || deviceId !== pointDialogDeviceId.value) return;
         const nodes = sanitizeAddressSpaceLevelNodes(parentPath, rawNodes);
         parent.children = nodes.map(mapAddressNodeToTreeNode);
         parent._loaded = true;
     } catch (e: unknown) {
-        if (requestVersion !== pointRequestVersion || deviceId !== pointDialogDeviceId.value) return;
+        if (dialogVersion !== pointDialogVersion || deviceId !== pointDialogDeviceId.value) return;
         parent.children = [];
         parent._loaded = false;
         // 点位加载失败时按需求静默处理，不提示 "Request failed with status code 500"
@@ -2045,7 +2052,9 @@ function collectFirstLevelExpandedKeys(root: PointTreeNode): string[] {
 }
 
 async function expandPointTreeNodes(keys: string[]) {
+    const dialogVersion = pointDialogVersion;
     await nextTick();
+    if (dialogVersion !== pointDialogVersion) return;
     const tree = pointTreeRef.value;
     if (!tree) return;
     for (const key of keys) {

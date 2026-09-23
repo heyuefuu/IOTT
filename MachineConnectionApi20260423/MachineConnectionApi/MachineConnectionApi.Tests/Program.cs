@@ -9,6 +9,18 @@ internal static class Program
 {
     private static async Task Main(string[] args)
     {
+        if (args.Contains("--device-restore"))
+        {
+            await MachineConnectionApi.Tests.DeviceUpsertRegressionTests.RunAll();
+            Console.WriteLine("Device registry regression tests passed.");
+            return;
+        }
+        if (args.Contains("--datacollection-save"))
+        {
+            await MachineConnectionApi.Tests.DatacollectionSaveRegressionTests.RunAll();
+            Console.WriteLine("Datacollection save regression tests passed.");
+            return;
+        }
         await MachineConnectionApi.Tests.CncGatewayRoutingRegressionTests.RunAll();
         if (args.Contains("--cnc-gateway"))
         {
@@ -26,6 +38,7 @@ internal static class Program
             Console.WriteLine("Address space regression tests passed.");
             return;
         }
+        await MachineConnectionApi.Tests.DatacollectionSaveRegressionTests.RunAll();
         MachineConnectionApi.Tests.ApiAuthorizationRegressionTests.RunAll();
         await MachineConnectionApi.Tests.VerifyTaskRunnerRegressionTests.DeviceSelectionIsNormalizedAndConflictsFail();
         await MachineConnectionApi.Tests.VerifyTaskRunnerRegressionTests.ConcurrentExecutionIsRejected();

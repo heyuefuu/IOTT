@@ -44,7 +44,7 @@ public sealed class DeviceUpstreamSyncHostedService : BackgroundService
                     "设备上游对账未全部成功：失败 {Failed}/{Total}（{FirstError}），稍后重试",
                     report.Failed, report.Total, report.Errors.Count > 0 ? report.Errors[0].Error : "");
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 return;
             }

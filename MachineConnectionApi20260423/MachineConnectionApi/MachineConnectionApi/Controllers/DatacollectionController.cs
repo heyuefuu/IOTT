@@ -208,9 +208,9 @@ public partial class DatacollectionController : ControllerBase
         var deviceId = request.DeviceId.Trim();
         var today = DateTime.Now.Date;
 
-        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         try
         {
+            await using var tx = await _db.Database.BeginTransactionAsync(ct);
             var visiblePathSet = new HashSet<string>(
                 (request.VisiblePaths ?? Array.Empty<string>())
                     .Select(p => (p ?? "").Trim())
@@ -281,11 +281,10 @@ public partial class DatacollectionController : ControllerBase
         }
         catch (Exception ex)
         {
-            await tx.RollbackAsync(ct);
             _logger.LogError(ex, "同步 datacollection 失败");
             return StatusCode(500, new
             {
-                error = "保存到数据库失败，请确认已创建 MachineCollection 库、表 datacollection。",
+                error = "保存点位配置失败，请检查 MachineCollection 数据库连接及 datacollection 表。",
                 detail = ex.Message,
             });
         }
