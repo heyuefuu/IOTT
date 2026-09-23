@@ -39,6 +39,7 @@ public sealed partial class CsConnectivityService
         IPEndPoint? activePort = null;   // 主动模式（PORT）客户端数据端点
         var authed = false;
         var user = "";
+        var currentDirectory = "/";
         long bytes = 0;
 
         bool HasDataChannel() => data is not null || activePort is not null;
@@ -49,11 +50,11 @@ public sealed partial class CsConnectivityService
             using (control)
             await using (var stream = control.GetStream())
             {
-                var reader = new StreamReader(stream, Encoding.ASCII);
+                var reader = new StreamReader(stream, Encoding.UTF8);
 
                 async Task Send(string s)
                 {
-                    var b = Encoding.ASCII.GetBytes(s + "\r\n");
+                    var b = Encoding.UTF8.GetBytes(s + "\r\n");
                     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                     timeoutCts.CancelAfter(FtpControlIdleTimeout);
                     await stream.WriteAsync(b, timeoutCts.Token);
@@ -76,7 +77,7 @@ public sealed partial class CsConnectivityService
                     var arg = sp < 0 ? "" : line[(sp + 1)..].Trim();
 
                     if (!authed && cmd is "PASV" or "PORT" or "LIST" or "NLST" or
-                        "STOR" or "RETR" or "DELE" or "SIZE")
+                        "STOR" or "RETR" or "DELE" or "SIZE" or "CWD" or "CDUP" or "MKD" or "RMD")
                     {
                         await Send("530 Not logged in");
                         continue;
@@ -90,6 +91,8 @@ public sealed partial class CsConnectivityService
                         return await AcceptFtpDataClientAsync(data!, controlRemoteIp, ct);
                     }
 
+                    try
+                    {
                     switch (cmd)
                     {
                         case "USER":
@@ -110,18 +113,29 @@ public sealed partial class CsConnectivityService
                             await Send("230 Login successful");
                             break;
                         case "SYST": await Send("215 UNIX Type: L8"); break;
-                        case "FEAT": await Send("211-Features\r\n PASV\r\n SIZE\r\n211 End"); break;
+                        case "FEAT": await Send("211-Features\r\n PASV\r\n SIZE\r\n UTF8\r\n211 End"); break;
                         case "OPTS": await Send("200 OK"); break;
                         case "TYPE":
                             // 存储始终按二进制；ASCII 模式不做换行转换，如实告知客户端
                             await Send(arg.StartsWith('I') ? "200 Type set to I" : "200 Type set (binary only)");
                             break;
-                        case "PWD": case "XPWD": await Send("257 \"/\" is current directory"); break;
-                        case "CWD": case "CDUP": await Send("250 OK"); break;
+                        case "PWD": case "XPWD": await Send($"257 \"{currentDirectory.Replace("\"", "\"\"")}\" is current directory"); break;
+                        case "CWD": case "CDUP":
+                            currentDirectory = ChangeFtpDirectory(runtime, cmd == "CDUP" ? ".." : arg, currentDirectory);
+                            await Send("250 Directory changed");
+                            break;
+                        case "MKD":
+                            var createdDirectory = CreateFtpDirectory(runtime, arg, currentDirectory);
+                            await Send($"257 \"{createdDirectory.Replace("\"", "\"\"")}\" created");
+                            break;
+                        case "RMD":
+                            RemoveFtpDirectory(runtime, arg, currentDirectory);
+                            await Send("250 Directory removed");
+                            break;
                         case "NOOP": await Send("200 OK"); break;
                         case "SIZE":
-                            await Send(runtime.FtpFiles.TryGetValue(NormalizeFtpName(arg), out var sized)
-                                ? $"213 {sized.LongLength}" : "550 File not found");
+                            var fileSize = GetFtpFileSize(runtime, NormalizeFtpPath(arg, currentDirectory));
+                            await Send(fileSize >= 0 ? $"213 {fileSize}" : "550 File not found");
                             break;
                         case "PORT":
                             ResetDataChannel();
@@ -147,6 +161,13 @@ public sealed partial class CsConnectivityService
                             break;
                         case "LIST": case "NLST":
                             if (!HasDataChannel()) { await Send("425 Use PASV or PORT first"); break; }
+                            var listPath = arg;
+                            if (listPath.StartsWith('-'))
+                            {
+                                var separator = listPath.IndexOf(' ');
+                                listPath = separator < 0 ? "" : listPath[(separator + 1)..];
+                            }
+                            var entries = ListFtpEntries(runtime, NormalizeFtpPath(listPath, currentDirectory));
                             await Send("150 Opening data connection");
                             try
                             {
@@ -154,11 +175,11 @@ public sealed partial class CsConnectivityService
                                 await using (var ds = dc.GetStream())
                                 {
                                     var sb = new StringBuilder();
-                                    foreach (var kv in runtime.FtpFiles)
+                                    foreach (var entry in entries)
                                         sb.Append(cmd == "NLST"
-                                            ? $"{kv.Key}\r\n"
-                                            : $"-rw-r--r-- 1 cs cs {kv.Value.Length} Jan 01 00:00 {kv.Key}\r\n");
-                                    var lb = Encoding.ASCII.GetBytes(sb.ToString());
+                                            ? $"{entry.Name}\r\n"
+                                            : $"{(entry.IsDirectory ? "drwxr-xr-x" : "-rw-r--r--")} 1 cs cs {entry.Size} {entry.ModifiedUtc.ToString("MMM dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)} {entry.Name}\r\n");
+                                    var lb = Encoding.UTF8.GetBytes(sb.ToString());
                                     await WriteFtpDataAsync(ds, lb, ct);
                                 }
                                 await Send("226 Transfer complete");
@@ -171,6 +192,8 @@ public sealed partial class CsConnectivityService
                             break;
                         case "STOR":
                             if (!HasDataChannel()) { await Send("425 Use PASV or PORT first"); break; }
+                            var uploadPath = NormalizeFtpPath(arg, currentDirectory);
+                            if (runtime.RootDirectory is not null) _ = ResolveFtpDiskPath(runtime, uploadPath);
                             if (!await _ftpUploadSlots.WaitAsync(0, ct))
                             {
                                 ResetDataChannel();
@@ -189,7 +212,7 @@ public sealed partial class CsConnectivityService
                                     await Send("552 File exceeds server size limit");
                                     break;
                                 }
-                                if (!TryStoreFtpFile(runtime, NormalizeFtpName(arg), uploaded,
+                                if (!TryStoreFtpFile(runtime, uploadPath, uploaded,
                                         out var storeError))
                                 {
                                     await Send(storeError);
@@ -210,16 +233,18 @@ public sealed partial class CsConnectivityService
                             }
                             break;
                         case "RETR":
+                        {
                             if (!HasDataChannel()) { await Send("425 Use PASV or PORT first"); break; }
-                            if (!runtime.FtpFiles.TryGetValue(NormalizeFtpName(arg), out var fd))
-                            { await Send("550 File not found"); break; }
+                            await using var download = OpenFtpDownload(runtime, NormalizeFtpPath(arg, currentDirectory));
+                            if (download is null)
+                            { ResetDataChannel(); await Send("550 File not found"); break; }
                             await Send("150 Opening data connection");
                             try
                             {
                                 using (var dc = await OpenDataAsync())
                                 await using (var ds = dc.GetStream())
                                 {
-                                    await WriteFtpDataAsync(ds, fd, ct);
+                                    await WriteFtpDataAsync(ds, download, ct);
                                 }
                                 await Send("226 Transfer complete");
                             }
@@ -229,12 +254,20 @@ public sealed partial class CsConnectivityService
                             }
                             finally { ResetDataChannel(); }
                             break;
+                        }
                         case "DELE":
-                            await Send(RemoveFtpFile(runtime, NormalizeFtpName(arg))
+                            await Send(RemoveFtpFile(runtime, NormalizeFtpPath(arg, currentDirectory))
                                 ? "250 Deleted" : "550 File not found");
                             break;
                         case "QUIT": await Send("221 Goodbye"); quit = true; break;
                         default: await Send("502 Command not implemented"); break;
+                    }
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+                    {
+                        ResetDataChannel();
+                        _logger.LogDebug(ex, "FTP {Command} failed for {Path}", cmd, arg);
+                        await Send("550 Requested file or directory is unavailable");
                     }
                 }
             }
@@ -347,6 +380,13 @@ public sealed partial class CsConnectivityService
     private bool TryStoreFtpFile(
         ServerRuntime runtime, string name, byte[] content, out string error)
     {
+        if (runtime.RootDirectory is not null)
+        {
+            StoreFtpDiskFile(runtime, name, content);
+            error = "";
+            return true;
+        }
+        name = NormalizeFtpName(name);
         if (string.IsNullOrWhiteSpace(name))
         {
             error = "553 Invalid file name";
@@ -383,6 +423,14 @@ public sealed partial class CsConnectivityService
     {
         lock (_ftpStorageGate)
         {
+            if (runtime.RootDirectory is not null)
+            {
+                var path = ResolveFtpDiskPath(runtime, name);
+                if (!File.Exists(path)) return false;
+                File.Delete(path);
+                return true;
+            }
+            name = NormalizeFtpName(name);
             if (!runtime.FtpFiles.TryRemove(name, out var removed)) return false;
             _ftpStoredBytes = Math.Max(0, _ftpStoredBytes - removed.LongLength);
             return true;

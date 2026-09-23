@@ -38,6 +38,7 @@ public sealed class BusinessApiAuthorizationFilter(IAuthService auth) : IAuthori
         ("Verify" or "VerifyTasks" or "Metrics" or "ReportTemplates" or "ConnectionVerification", _) => ["report_manage"],
         ("Cs", "ParallelTest" or "ParallelTestReport") => ["config_manage", "report_manage"],
         ("Cs", _) => ["config_manage"],
+        ("InfluxSettings", _) => ["config_manage"],
         ("Devices", "List" or "GetById") => ["device_manage", "data_read", "data_write", "report_manage"],
         ("Devices" or "Collection" or "PlcCapabilities", _) => ["device_manage"],
         ("DataReadWrite", "WriteTags") => ["data_write", "device_manage"],

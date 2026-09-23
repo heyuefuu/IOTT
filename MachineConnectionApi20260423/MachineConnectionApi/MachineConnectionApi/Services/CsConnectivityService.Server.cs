@@ -28,6 +28,7 @@ public sealed partial class CsConnectivityService
         public required TcpListener Listener { get; init; }
         public required CancellationTokenSource Cts { get; init; }
         public required SemaphoreSlim ConnectionSlots { get; init; }
+        public string? RootDirectory { get; init; }
         public ConcurrentDictionary<string, CsServerConnection> Connections { get; } = new();
         /// <summary>FtpServer 模式的内存文件区（文件名→内容）。</summary>
         public ConcurrentDictionary<string, byte[]> FtpFiles { get; } = new();
@@ -42,6 +43,15 @@ public sealed partial class CsConnectivityService
             if (string.IsNullOrWhiteSpace(server.Id)) server.Id = NewId("svc");
             if (_serverRuntimes.ContainsKey(server.Id))
                 throw new InvalidOperationException("运行中的服务端必须先停止，再修改配置");
+            try
+            {
+                server.RootDirectory = IsFtpServer(server.Type) && !string.IsNullOrWhiteSpace(server.RootDirectory)
+                    ? CsServerDirectoryBrowser.NormalizeRoot(server.RootDirectory) : null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                throw new InvalidOperationException($"本地存储目录无效：{ex.Message}", ex);
+            }
             if (_servers.TryGetValue(server.Id, out var current) &&
                 string.IsNullOrWhiteSpace(server.Password))
                 server.Password = current.Password;
@@ -79,6 +89,23 @@ public sealed partial class CsConnectivityService
             svc.MaxClients = NormalizeMaxClients(svc.MaxClients);
             if (_serverRuntimes.ContainsKey(id)) return true; // 已在运行
 
+            string? rootDirectory = null;
+            if (IsFtpServer(svc.Type) && !string.IsNullOrWhiteSpace(svc.RootDirectory))
+            {
+                try
+                {
+                    rootDirectory = CsServerDirectoryBrowser.NormalizeRoot(svc.RootDirectory);
+                    Directory.CreateDirectory(rootDirectory);
+                    CsServerDirectoryBrowser.EnsureNoLinks(rootDirectory);
+                    using var probe = new FileStream(Path.Combine(rootDirectory, FtpTemporaryPrefix + Guid.NewGuid().ToString("N")),
+                        FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+                {
+                    throw new InvalidOperationException($"FTP 本地存储目录不可用：{ex.Message}", ex);
+                }
+            }
+
             TcpListener listener;
             try
             {
@@ -97,6 +124,7 @@ public sealed partial class CsConnectivityService
                 Listener = listener,
                 Cts = new CancellationTokenSource(),
                 ConnectionSlots = new SemaphoreSlim(svc.MaxClients, svc.MaxClients),
+                RootDirectory = rootDirectory,
             };
             _serverRuntimes[id] = runtime;
             svc.Status = "运行中";

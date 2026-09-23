@@ -2,6 +2,7 @@ using MachineConnectionApi.Data;
 using MachineConnectionApi.Options;
 using MachineConnectionApi.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Events;
 
@@ -30,6 +31,9 @@ builder.Services.AddDbContext<MCConfigurationDbContext>(options =>
 
 builder.Services.Configure<InfluxDbOptions>(
     builder.Configuration.GetSection(InfluxDbOptions.SectionName));
+builder.Services.AddSingleton<InfluxSettingsStore>();
+builder.Services.AddSingleton<IPostConfigureOptions<InfluxDbOptions>>(sp => sp.GetRequiredService<InfluxSettingsStore>());
+builder.Services.AddSingleton<InfluxConnectionTester>();
 builder.Services.Configure<MqttOptions>(
     builder.Configuration.GetSection(MqttOptions.SectionName));
 builder.Services.AddSingleton<IInfluxTelemetryWriter, InfluxTelemetryWriter>();

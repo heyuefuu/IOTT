@@ -57,6 +57,9 @@
                         </el-icon>
                         NC-Link 诊断
                     </el-button>
+                    <el-button v-if="auth.hasPermission('config_manage')" @click="historyStorageSettingsVisible = true">
+                        历史库设置
+                    </el-button>
                     <el-input v-model="searchKeyword" placeholder="搜索设备名称/编号/IP/协议" style="width: 300px; margin-left: auto"
                         prefix-icon="Search" />
                     <input ref="deviceImportInputRef" type="file" accept=".csv,text/csv" hidden
@@ -90,6 +93,9 @@
                                 <el-tag size="small" :type="isCollectingDevice(device.id) ? 'success' : 'info'">
                                     {{ isCollectingDevice(device.id) ? "采集中" : "停止" }}
                                 </el-tag>
+                                <el-tooltip v-if="collectionStorageErrors[device.id]" :content="collectionStorageErrors[device.id]">
+                                    <el-tag size="small" type="danger" style="margin-left: 6px">存储异常</el-tag>
+                                </el-tooltip>
                                 <h3 class="device-name">{{ device.name }}</h3>
                                 <p class="device-code">设备编号：{{ device.code || "-" }} | {{ device.model }}</p>
                             </div>
@@ -166,6 +172,7 @@
             </div>
         </div>
 
+        <HistoryStorageSettings v-if="auth.hasPermission('config_manage')" v-model="historyStorageSettingsVisible" />
         <!-- 新增/编辑设备弹窗 -->
         <el-dialog v-model="dialogVisible" :title="dialogTitle" width="800px">
             <el-form :model="deviceForm" label-width="120px">
@@ -680,6 +687,8 @@
             </template>
         </el-dialog>
         <el-dialog v-model="collectionDialogVisible" :title="`采集数据 - ${collectionDialogDeviceName || '未选择设备'}`" width="980px">
+            <el-alert v-if="collectionStorageErrors[collectionDeviceId]" type="error" :closable="false" show-icon
+                :title="`历史数据未保存：${collectionStorageErrors[collectionDeviceId]}`" style="margin-bottom: 12px" />
             <el-table :data="collectionRows" border size="small" height="420">
                 <el-table-column prop="displayName" label="显示名称" min-width="150" />
                 <el-table-column prop="path" label="路径" min-width="220" />
@@ -892,6 +901,11 @@ import {
     type ProgramTransferResponse,
 } from "@/api/machineConnectionProgramTransfer";
 import { buildProgramTransferConfig } from "./deviceTransferConfig";
+import { useAuthStore } from "@/stores/auth";
+import HistoryStorageSettings from "./HistoryStorageSettings.vue";
+
+const auth = useAuthStore();
+const historyStorageSettingsVisible = ref(false);
 
 const machineConnectionPort =
     import.meta.env.VITE_MACHINE_CONNECTION_PORT ?? "5087";
@@ -1433,6 +1447,7 @@ const collectionDeviceId = ref("");
 const pointDialogDeviceProtocol = ref("");
 const collectionRows = ref<CollectionRow[]>([]);
 const collectionRowsByDevice = ref<Record<string, CollectionRow[]>>({});
+const collectionStorageErrors = ref<Record<string, string>>({});
 const collectionLoading = ref(false);
 const collectionTimerIdsByDevice = ref<Record<string, number[]>>({});
 const collectionRunsByDevice = new Map<string, { starting: boolean }>();
@@ -4368,6 +4383,15 @@ function upsertCollectionRowsByDevice(deviceId: string, partial: CollectionRow[]
     collectionRowsByDevice.value[deviceId] = Array.from(next.values());
 }
 
+function setCollectionStorageError(deviceId: string, message: string) {
+    const alreadyFailed = Boolean(collectionStorageErrors.value[deviceId]);
+    collectionStorageErrors.value[deviceId] = message;
+    if (!alreadyFailed) {
+        const deviceName = devices.value.find((device) => device.id === deviceId)?.name ?? deviceId;
+        ElMessage.warning(`${deviceName}：历史数据未保存，请查看“存储异常”提示。`);
+    }
+}
+
 async function runCollectionBatch(deviceId: string, points: SavedCollectionPoint[]) {
     if (points.length === 0) return;
     const resp = await machineConnectionPointsApi.readTags(deviceId, {
@@ -4417,8 +4441,16 @@ async function runCollectionBatch(deviceId: string, points: SavedCollectionPoint
                 };
             }),
         })
+        .then((result) => {
+            if (!result.skipped && result.written >= points.length) {
+                delete collectionStorageErrors.value[deviceId];
+                return;
+            }
+            setCollectionStorageError(deviceId, result.reason ||
+                `本批次 ${points.length} 条数据仅保存 ${result.written || 0} 条，请检查历史库设置`);
+        })
         .catch((e: unknown) => {
-            console.error("InfluxDB 写入失败", e);
+            setCollectionStorageError(deviceId, getApiErrorMessage(e, "历史库写入失败"));
         });
 }
 
@@ -4848,6 +4880,7 @@ const handleCurrentChange = (current: number) => {
 
     .action-bar {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         margin-bottom: 20px;
         gap: 10px;

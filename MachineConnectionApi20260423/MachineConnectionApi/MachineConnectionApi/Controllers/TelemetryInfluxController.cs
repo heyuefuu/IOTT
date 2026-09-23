@@ -162,12 +162,11 @@ public class TelemetryInfluxController : ControllerBase
         var measurement = string.IsNullOrWhiteSpace(opt.Measurement)
             ? "datapoint"
             : opt.Measurement.Trim();
-        var whereClause = BuildHistoryWhereClause(id, start, stop, path);
-        var dataSql = BuildHistoryDataSql(measurement, whereClause, page, pageSize);
-        var countSql = BuildHistoryCountSql(measurement, whereClause);
-
         try
         {
+            var whereClause = BuildHistoryWhereClause(id, start, stop, path);
+            var dataSql = BuildHistoryDataSql(measurement, whereClause, page, pageSize);
+            var countSql = BuildHistoryCountSql(measurement, whereClause);
             var rows = await QueryHistoryFromInfluxDb3Async(opt, id, dataSql, ct);
             var total = await QueryHistoryCountFromInfluxDb3Async(opt, countSql, ct);
             return Ok(new InfluxTelemetryHistoryPageResult
@@ -178,10 +177,9 @@ public class TelemetryInfluxController : ControllerBase
                 PageSize = pageSize,
             });
         }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (MissingMeasurementException)
         {
-            // 库/表尚未建立（无任何数据写入）时 InfluxDB3 返回 404，按空结果处理
-            _logger.LogWarning("Influx 历史查询返回 404，按空结果处理: deviceId={DeviceId}", id);
+            _logger.LogInformation("Influx 尚无采集表，按空结果处理: deviceId={DeviceId}", id);
             return Ok(new InfluxTelemetryHistoryPageResult
             {
                 Items = new List<InfluxTelemetryHistoryItem>(),
@@ -190,11 +188,17 @@ public class TelemetryInfluxController : ControllerBase
                 PageSize = pageSize,
             });
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Influx 历史查询失败: deviceId={DeviceId}", id);
             return StatusCode(StatusCodes.Status502BadGateway,
-                new { error = "InfluxDB 历史查询失败", detail = ex.Message });
+                new { error = "InfluxDB 历史查询失败", detail = ex is HttpRequestException httpError
+                    ? InfluxConnectionTester.DescribeFailure(httpError.StatusCode)
+                    : "历史库查询失败或超时，请检查服务状态和历史库设置。" });
         }
     }
 
@@ -231,21 +235,8 @@ public class TelemetryInfluxController : ControllerBase
     {
         var offset = (page - 1) * pageSize;
         return $@"
-SELECT
-  time,
-  device_id,
-  path,
-  point_name,
-  data_type,
-  status,
-  quality,
-  error,
-  value_s,
-  value_i,
-  value_f,
-  value_b,
-  value_present
-FROM {measurement}
+SELECT *
+FROM {InfluxSettingsStore.QuoteMeasurement(measurement)}
 WHERE {whereClause}
 ORDER BY time DESC, path ASC, point_name ASC, data_type ASC, status ASC
 LIMIT {pageSize}
@@ -256,7 +247,7 @@ OFFSET {offset}";
     {
         return $@"
 SELECT COUNT(*) AS total
-FROM {measurement}
+FROM {InfluxSettingsStore.QuoteMeasurement(measurement)}
 WHERE {whereClause}";
     }
 
@@ -268,7 +259,7 @@ WHERE {whereClause}";
     {
         using var response = await SendInfluxDb3QueryAsync(opt, sql, ct);
         var content = await response.Content.ReadAsStringAsync(ct);
-        response.EnsureSuccessStatusCode();
+        EnsureQuerySucceeded(response, content);
 
         using var doc = JsonDocument.Parse(content);
         if (doc.RootElement.ValueKind != JsonValueKind.Array)
@@ -315,7 +306,7 @@ WHERE {whereClause}";
     {
         using var response = await SendInfluxDb3QueryAsync(opt, sql, ct);
         var content = await response.Content.ReadAsStringAsync(ct);
-        response.EnsureSuccessStatusCode();
+        EnsureQuerySucceeded(response, content);
 
         using var doc = JsonDocument.Parse(content);
         if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
@@ -330,6 +321,19 @@ WHERE {whereClause}";
         if (long.TryParse(total.ToString(), out var parsed))
             return parsed;
         return 0;
+    }
+
+    private sealed class MissingMeasurementException : Exception { }
+
+    private static void EnsureQuerySucceeded(HttpResponseMessage response, string content)
+    {
+        if (!response.IsSuccessStatusCode &&
+            response.StatusCode is not (System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden) &&
+            System.Text.RegularExpressions.Regex.IsMatch(content,
+                @"\btable\b[^\r\n]{0,256}\b(not found|does not exist)\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            throw new MissingMeasurementException();
+        response.EnsureSuccessStatusCode();
     }
 
     private static string GetJsonString(JsonElement row, string key, string fallback = "")

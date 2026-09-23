@@ -62,6 +62,8 @@ public class CsServerService
     public string Name { get; set; } = "";
     /// <summary>服务类型标签：ModbusServer / OPCUAServer / MQTTBroker / RESTServer / FtpServer。</summary>
     public string Type { get; set; } = "ModbusServer";
+    /// <summary>FTP 根目录对应的本机绝对路径；留空使用临时内存存储。</summary>
+    public string? RootDirectory { get; set; }
     /// <summary>FtpServer 模式要求的登录用户名（必须非空，默认禁止匿名）。</summary>
     public string? Username { get; set; }
     /// <summary>FtpServer 模式要求的登录密码。write-only：接收前端提交，不随响应回传。</summary>
@@ -84,6 +86,9 @@ public class CsServerService
 
 /// <summary>服务端当前的一条客户端连接。</summary>
 public record CsServerConnection(string RemoteEndpoint, string ConnectedAt, long BytesReceived);
+
+public record CsServerDirectoryEntry(string Name, string Path);
+public record CsServerDirectoryListing(string? Path, string? ParentPath, IReadOnlyList<CsServerDirectoryEntry> Directories);
 
 /// <summary>客户端 TCP 探测结果。</summary>
 public record CsProbeResult(bool Success, double RttMs, string Message, string Timestamp);

@@ -49,6 +49,13 @@ export interface CsServerService {
     status: string;
     clientCount: number;
     lastAccess?: string;
+    rootDirectory?: string | null;
+}
+
+export interface CsServerDirectoryListing {
+    path: string | null;
+    parentPath: string | null;
+    directories: { name: string; path: string }[];
 }
 
 export interface CsProbeResult {
@@ -141,6 +148,10 @@ export const csApi = {
     // ---- 服务端服务（TcpListener 监听）----
     listServers: async (): Promise<CsServerService[]> =>
         (await client.get<CsServerService[]>(`${P}/servers`)).data ?? [],
+    listServerDirectories: async (path?: string): Promise<CsServerDirectoryListing> =>
+        (await client.get<CsServerDirectoryListing>(`${P}/server-directories`, {
+            params: path ? { path } : undefined,
+        })).data,
     createServer: async (s: Partial<CsServerService>): Promise<CsServerService> =>
         (await client.post<CsServerService>(`${P}/servers`, s)).data,
     updateServer: async (id: string, s: Partial<CsServerService>): Promise<CsServerService> =>

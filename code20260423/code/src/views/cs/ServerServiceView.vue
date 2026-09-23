@@ -20,6 +20,11 @@
 					<el-table-column prop="name" label="服务名称" />
 					<el-table-column prop="type" label="服务类型" width="120" />
 					<el-table-column prop="port" label="端口" width="100" />
+					<el-table-column label="本地存储目录" min-width="220" show-overflow-tooltip>
+						<template #default="scope">
+							{{ scope.row.type === 'FtpServer' ? (scope.row.rootDirectory || '临时存储') : '—' }}
+						</template>
+					</el-table-column>
 					<el-table-column prop="status" label="状态" width="100">
 						<template #default="scope">
 							<el-tag :type="getStatusType(scope.row.status)">
@@ -148,6 +153,16 @@
 							:placeholder="isEditing ? '留空保持原密码' : '必填'"
 						/>
 					</el-form-item>
+					<el-form-item label="本地存储目录" prop="rootDirectory">
+						<el-input v-model="currentService.rootDirectory" clearable placeholder="留空使用临时存储">
+							<template #append>
+								<el-button @click="openDirectoryDialog">选择目录</el-button>
+							</template>
+						</el-input>
+						<div class="type-hint">
+							目录属于运行服务器 API 的电脑，FTP 的 / 对应该目录；留空使用临时存储。
+						</div>
+					</el-form-item>
 				</template>
 				<el-form-item label="服务描述" prop="description">
 					<el-input
@@ -175,6 +190,33 @@
 						>保存</el-button
 					>
 				</span>
+			</template>
+		</el-dialog>
+
+		<el-dialog v-model="directoryDialogVisible" title="选择本地存储目录" width="680px">
+			<div class="directory-toolbar">
+				<el-button @click="loadServerDirectories()">本机磁盘</el-button>
+				<el-button :disabled="directoryLoading || !directoryListing?.path"
+					@click="loadServerDirectories(directoryListing?.parentPath)">返回上级</el-button>
+			</div>
+			<p class="directory-current-path">
+				当前目录：{{ directoryLoading ? '正在加载…' : (directoryListing?.path ?? '本机磁盘') }}
+			</p>
+			<el-alert v-if="directoryError" :title="directoryError" type="error" :closable="false" show-icon />
+			<el-table v-loading="directoryLoading" :data="directoryListing?.directories ?? []" border height="280"
+				:empty-text="directoryListing?.path ? '没有子文件夹，可选择当前目录' : '没有可用磁盘'">
+				<el-table-column prop="name" label="磁盘 / 文件夹" show-overflow-tooltip>
+					<template #default="scope">
+						<el-button type="primary" link @click="loadServerDirectories(scope.row.path)">
+							{{ scope.row.name }}
+						</el-button>
+					</template>
+				</el-table-column>
+			</el-table>
+			<template #footer>
+				<el-button @click="directoryDialogVisible = false">取消</el-button>
+				<el-button type="primary" :disabled="directoryLoading || !directoryListing?.path"
+					@click="confirmServerDirectory">使用当前目录</el-button>
 			</template>
 		</el-dialog>
 
@@ -214,13 +256,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from "vue";
+import { ref, reactive, watch, onMounted, onUnmounted } from "vue";
 import { Plus } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
 	csApi,
 	type CsServerService,
 	type CsServerConnection,
+	type CsServerDirectoryListing,
 } from "@/api/cs";
 
 // 服务列表（数据来自 MachineConnectionApi → CsConnectivityService）
@@ -241,6 +284,7 @@ onMounted(() => {
 	refreshTimer = window.setInterval(loadServers, 5000);
 });
 onUnmounted(() => {
+	directoryRequestVersion += 1;
 	if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
 });
 
@@ -264,12 +308,13 @@ const pageSize = ref(10);
 // 服务对话框
 const serviceDialogVisible = ref(false);
 const isEditing = ref(false);
-const currentService = reactive<CsServerService>({
+const currentService = reactive<CsServerService & { rootDirectory: string }>({
 	id: "",
 	name: "",
 	type: "ModbusServer",
 	username: "",
 	password: "",
+	rootDirectory: "",
 	port: 502,
 	description: "",
 	maxClients: 100,
@@ -277,6 +322,49 @@ const currentService = reactive<CsServerService>({
 	clientCount: 0,
 	lastAccess: "",
 });
+
+const directoryDialogVisible = ref(false);
+const directoryLoading = ref(false);
+const directoryListing = ref<CsServerDirectoryListing | null>(null);
+const directoryError = ref("");
+let directoryRequestVersion = 0;
+watch([directoryDialogVisible, serviceDialogVisible, () => currentService.type], () => {
+	directoryRequestVersion += 1;
+	directoryLoading.value = false;
+	directoryListing.value = null;
+	directoryError.value = "";
+	if (!serviceDialogVisible.value || currentService.type !== "FtpServer") {
+		directoryDialogVisible.value = false;
+	}
+}, { flush: "sync" });
+
+async function loadServerDirectories(path?: string | null) {
+	if (!directoryDialogVisible.value || !serviceDialogVisible.value) return;
+	const requestVersion = ++directoryRequestVersion;
+	const isCurrent = () => requestVersion === directoryRequestVersion && directoryDialogVisible.value;
+	directoryLoading.value = true;
+	directoryListing.value = null;
+	directoryError.value = "";
+	try {
+		const listing = await csApi.listServerDirectories(path?.trim() || undefined);
+		if (isCurrent()) directoryListing.value = listing;
+	} catch (e: unknown) {
+		if (isCurrent()) directoryError.value = getErr(e, "读取服务器目录失败");
+	} finally {
+		if (isCurrent()) directoryLoading.value = false;
+	}
+}
+
+const openDirectoryDialog = async () => {
+	directoryDialogVisible.value = true;
+	await loadServerDirectories(currentService.rootDirectory);
+};
+
+const confirmServerDirectory = () => {
+	if (!directoryDialogVisible.value || directoryLoading.value || !directoryListing.value?.path) return;
+	currentService.rootDirectory = directoryListing.value.path;
+	directoryDialogVisible.value = false;
+};
 
 // 获取状态类型
 const getStatusType = (status: string) => {
@@ -296,6 +384,7 @@ const getStatusType = (status: string) => {
 
 // 打开新增服务对话框
 const openAddServiceDialog = () => {
+	directoryDialogVisible.value = false;
 	isEditing.value = false;
 	Object.assign(currentService, {
 		id: "",
@@ -303,6 +392,7 @@ const openAddServiceDialog = () => {
 		type: "ModbusServer",
 		username: "",
 		password: "",
+		rootDirectory: "",
 		port: 502,
 		description: "",
 		maxClients: 100,
@@ -315,8 +405,9 @@ const openAddServiceDialog = () => {
 
 // 打开编辑服务对话框
 const openEditServiceDialog = (service: CsServerService) => {
+	directoryDialogVisible.value = false;
 	isEditing.value = true;
-	Object.assign(currentService, { ...service });
+	Object.assign(currentService, { ...service, rootDirectory: service.rootDirectory ?? "" });
 	serviceDialogVisible.value = true;
 };
 
@@ -333,12 +424,15 @@ const saveService = async () => {
 		return;
 	}
 
+	const payload = { ...currentService,
+		rootDirectory: currentService.type === "FtpServer" ? currentService.rootDirectory.trim() || null : null,
+	};
 	try {
 		if (isEditing.value) {
-			await csApi.updateServer(currentService.id, { ...currentService });
+			await csApi.updateServer(currentService.id, payload);
 			ElMessage.success("服务编辑成功");
 		} else {
-			await csApi.createServer({ ...currentService });
+			await csApi.createServer(payload);
 			ElMessage.success("服务添加成功");
 		}
 		serviceDialogVisible.value = false;
@@ -449,6 +543,16 @@ const handleCurrentChange = (current: number) => {
 
 <style lang="scss" scoped>
 .cs-server-service-view {
+	.directory-toolbar {
+		display: flex;
+		gap: 8px;
+	}
+
+	.directory-current-path {
+		margin: 12px 0;
+		word-break: break-all;
+	}
+
 	.type-hint {
 		margin-top: 4px;
 		font-size: 12px;

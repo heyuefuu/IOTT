@@ -7,11 +7,13 @@ using MachineConnectionApi.Models;
 using MachineConnectionApi.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
-internal static class CsConnectivityServiceRegressionTests
+internal static partial class CsConnectivityServiceRegressionTests
 {
     public static async Task RunAll()
     {
         ConfigurationSurvivesRestartSafely();
+        await FtpLocalFilesSurviveRestart();
+        await FtpEmptyRootKeepsMemoryBehavior();
         await AnonymousFtpServerIsRejected();
         await UnauthenticatedFtpDeleteIsRejected();
         await ParallelTestsAreRejectedWhileBusy();

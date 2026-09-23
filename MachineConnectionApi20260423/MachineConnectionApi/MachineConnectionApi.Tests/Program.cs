@@ -9,6 +9,14 @@ internal static class Program
 {
     private static async Task Main(string[] args)
     {
+        if (args.Contains("--influx-settings"))
+        {
+            await MachineConnectionApi.Tests.InfluxSettingsRegressionTests.RunAll();
+            MachineConnectionApi.Tests.ApiAuthorizationRegressionTests.RunAll();
+            MachineConnectionApi.Tests.TelemetryInfluxSqlRegressionTests.HistoryPagingUsesStableOrdering();
+            Console.WriteLine("Influx settings regression tests passed.");
+            return;
+        }
         if (args.Contains("--device-restore"))
         {
             await MachineConnectionApi.Tests.DeviceUpsertRegressionTests.RunAll();
@@ -47,6 +55,7 @@ internal static class Program
         await MachineConnectionApi.Tests.DeviceUpsertRegressionTests.RunAll();
         await MachineConnectionApi.Tests.CsConnectivityServiceRegressionTests.RunAll();
         MachineConnectionApi.Tests.TelemetryInfluxSqlRegressionTests.HistoryPagingUsesStableOrdering();
+        await MachineConnectionApi.Tests.InfluxSettingsRegressionTests.RunAll();
         await SameTargetParallelTestOpensRequestedConnections();
         await ParallelTestKeepsLongConnectionsOpen();
         await ParallelMqttTestPerformsMqttHandshake();

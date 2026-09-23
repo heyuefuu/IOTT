@@ -39,6 +39,14 @@ internal static class ApiAuthorizationRegressionTests
         Expect(403, Check<SystemUsersController>(filter, "Create", reader), "Reader user create");
         Expect(200, Check<SystemUsersController>(filter, "ListPermissions", reader), "Permission dictionary");
         Expect(401, Check<VerifyTasksController>(filter, "Create", "invalid-token"), "Invalid session");
+        var configurationManager = Login(auth, users, "configuration-manager", ["config_manage"]);
+        var deviceManager = Login(auth, users, "device-manager", ["device_manage"]);
+        foreach (var action in new[] { "Get", "Put", "Test" })
+        {
+            Expect(200, Check<InfluxSettingsController>(filter, action, configurationManager), "Configuration manager Influx settings");
+            Expect(403, Check<InfluxSettingsController>(filter, action, reader), "Reader Influx settings");
+            Expect(403, Check<InfluxSettingsController>(filter, action, deviceManager), "Device manager Influx settings");
+        }
         auth.RevokeUserSessions("reader");
         Expect(401, Check<DataReadWriteController>(filter, "ReadTags", reader), "Revoked session");
         var reporter = Login(auth, users, "reporter", ["report_manage"]);
@@ -54,6 +62,11 @@ internal static class ApiAuthorizationRegressionTests
         Expect(200, Check<VerifyTasksController>(filter, "Create", administrator), "Admin task create");
         var all = Login(auth, users, "all", ["all"]);
         Expect(200, Check<SystemUsersController>(filter, "Create", all), "All permission");
+        foreach (var action in new[] { "Get", "Put", "Test" })
+        {
+            Expect(200, Check<InfluxSettingsController>(filter, action, administrator), "Admin Influx settings");
+            Expect(200, Check<InfluxSettingsController>(filter, action, all), "All Influx settings");
+        }
     }
 
     private static void Expect(int expected, int actual, string name)

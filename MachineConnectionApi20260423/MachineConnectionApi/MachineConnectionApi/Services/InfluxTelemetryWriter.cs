@@ -31,8 +31,7 @@ public sealed class InfluxTelemetryWriter : IInfluxTelemetryWriter, IDisposable
 {
     private readonly IOptionsMonitor<InfluxDbOptions> _options;
     private readonly ILogger<InfluxTelemetryWriter> _logger;
-    private readonly object _gate = new();
-    private InfluxDBClient? _client;
+    private readonly InfluxClientPool _clients = new();
 
     public InfluxTelemetryWriter(
         IOptionsMonitor<InfluxDbOptions> options,
@@ -56,11 +55,9 @@ public sealed class InfluxTelemetryWriter : IInfluxTelemetryWriter, IDisposable
             string.IsNullOrWhiteSpace(opt.Org) ||
             string.IsNullOrWhiteSpace(opt.Bucket))
         {
-            _logger.LogWarning("InfluxDB 已启用但 Token/Org/Bucket 未配置完整，跳过写入");
-            return;
+            throw new InvalidOperationException("历史库配置不完整，请填写 Token、组织和数据库后重试。");
         }
 
-        var client = GetOrCreateClient(opt);
         var measurement = string.IsNullOrWhiteSpace(opt.Measurement)
             ? "datapoint"
             : opt.Measurement.Trim();
@@ -90,26 +87,8 @@ public sealed class InfluxTelemetryWriter : IInfluxTelemetryWriter, IDisposable
             influxPoints.Add(point);
         }
 
-        await WriteWithRetryAsync(client, influxPoints, opt, deviceId, ct);
-    }
-
-    private InfluxDBClient GetOrCreateClient(InfluxDbOptions opt)
-    {
-        lock (_gate)
-        {
-            if (_client != null)
-                return _client;
-
-            var url = string.IsNullOrWhiteSpace(opt.Url) ? "http://localhost:8086" : opt.Url.Trim();
-            var options = new InfluxDBClientOptions.Builder()
-                .Url(url)
-                .AuthenticateToken(opt.Token)
-                .TimeOut(TimeSpan.FromSeconds(Math.Max(5, opt.WriteTimeoutSeconds)))
-                .Build();
-
-            _client = new InfluxDBClient(options);
-            return _client;
-        }
+        using var lease = _clients.Rent(opt);
+        await WriteWithRetryAsync(lease.Client, influxPoints, opt, deviceId, ct);
     }
 
     private async Task WriteWithRetryAsync(
@@ -237,5 +216,5 @@ public sealed class InfluxTelemetryWriter : IInfluxTelemetryWriter, IDisposable
         }
     }
 
-    public void Dispose() => _client?.Dispose();
+    public void Dispose() => _clients.Dispose();
 }

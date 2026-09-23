@@ -78,6 +78,16 @@ public class CsController : ControllerBase
     [HttpGet("servers")]
     public IActionResult ListServers() => Ok(_service.ListServers());
 
+    [HttpGet("server-directories")]
+    public IActionResult BrowseServerDirectories([FromQuery] string? path)
+    {
+        try { return Ok(CsServerDirectoryBrowser.Browse(path)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     [HttpPost("servers")]
     public IActionResult CreateServer([FromBody] CsServerService svc)
     {

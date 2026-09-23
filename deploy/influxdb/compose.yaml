@@ -1,0 +1,47 @@
+name: iott-history
+services:
+  influxdb:
+    image: &influx-image influxdb:3-core@sha256:43991052bc05fd1ee494998de89a55699587c8c0a6591dd33f30c7246752c7f8
+    container_name: iott-influxdb3
+    restart: unless-stopped
+    depends_on:
+      influxdb-init:
+        condition: service_completed_successfully
+    command:
+      - influxdb3
+      - serve
+      - --node-id=iott-local
+      - --object-store=file
+      - --data-dir=/var/lib/influxdb3/data
+      - --admin-token-file=/run/secrets/influx-admin
+      - --disable-authz=health
+    ports:
+      - "${IOTT_INFLUX_BIND_ADDRESS:-127.0.0.1}:${IOTT_INFLUX_PORT:-8181}:8181"
+    volumes:
+      - influxdb3-data:/var/lib/influxdb3/data
+    secrets:
+      - influx-admin
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8181/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  influxdb-init:
+    image: *influx-image
+    user: root
+    network_mode: none
+    entrypoint: ["chown", "influxdb3:influxdb3", "/var/lib/influxdb3/data"]
+    volumes:
+      - influxdb3-data:/var/lib/influxdb3/data
+secrets:
+  influx-admin:
+    file: .runtime/admin-token.json
+volumes:
+  influxdb3-data:
+    name: iott-influxdb3-data
