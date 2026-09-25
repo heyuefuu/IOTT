@@ -98,9 +98,6 @@ public class AddressSpaceController : IndustrialIoTProxyControllerBase
         while (normalized.Contains("//", StringComparison.Ordinal))
             normalized = normalized.Replace("//", "/", StringComparison.Ordinal);
 
-        if (!normalized.StartsWith("/", StringComparison.Ordinal))
-            normalized = "/" + normalized;
-
         return normalized;
     }
 
@@ -169,7 +166,7 @@ public class AddressSpaceController : IndustrialIoTProxyControllerBase
             if (matched == null || string.IsNullOrWhiteSpace(matched.Path))
                 return null;
 
-            currentParent = NormalizeParentPath(matched.Path);
+            currentParent = matched.Path;
         }
 
         return currentParent;
@@ -385,6 +382,8 @@ public class AddressSpaceController : IndustrialIoTProxyControllerBase
         }
 
         var p = CollapsePathSlashes(normalizedParentPath);
+        if (!p.StartsWith('/'))
+            p = "/" + p;
         if (string.Equals(c, p, StringComparison.Ordinal))
             return false;
 

@@ -28,26 +28,6 @@
 						</el-option>
 					</el-select>
 				</el-form-item>
-				<el-form-item label="地址类型" prop="addressType">
-					<el-select
-						v-model="form.addressType"
-						placeholder="请选择地址类型"
-					>
-						<el-option label="线圈 (Coil)" value="coil" />
-						<el-option
-							label="离散输入 (Discrete Input)"
-							value="input"
-						/>
-						<el-option
-							label="保持寄存器 (Holding Register)"
-							value="holding"
-						/>
-						<el-option
-							label="输入寄存器 (Input Register)"
-							value="inputRegister"
-						/>
-					</el-select>
-				</el-form-item>
 				<el-form-item>
 					<el-button
 						type="primary"
@@ -55,19 +35,27 @@
 						:loading="loading"
 					>
 						<el-icon><Refresh /></el-icon>
-						加载地址空间
+						浏览设备地址
 					</el-button>
 					<el-button
 						type="success"
-						@click="scanAddressSpace"
-						:loading="scanning"
+						@click="$router.push('/plc/rw')"
 					>
-						<el-icon><Search /></el-icon>
-						扫描地址
+						<el-icon><View /></el-icon>
+						按地址读写
 					</el-button>
 				</el-form-item>
 			</el-form>
 		</el-card>
+
+		<el-alert
+			v-if="browseNotice"
+			class="address-space-card"
+			:title="browseNotice"
+			:type="browseNoticeType"
+			:closable="false"
+			show-icon
+		/>
 
 		<!-- 地址空间树 -->
 		<el-card class="address-space-card" v-if="addressSpace.length > 0">
@@ -97,11 +85,14 @@
 
 			<!-- 地址树 -->
 			<el-tree
+				:key="addressSpaceVersion"
 				v-model:expanded-keys="expandedKeys"
 				:data="addressSpace"
 				:props="addressTreeProps"
 				show-checkbox
 				node-key="address"
+				lazy
+				:load="loadAddressChildren"
 				@node-click="handleNodeClick"
 				@check-change="handleCheckChange"
 			>
@@ -218,29 +209,64 @@
 		<el-card class="address-search-card">
 			<template #header>
 				<div class="card-header">
-					<span>地址搜索</span>
+					<span>地址查询</span>
 				</div>
 			</template>
 			<el-form :model="searchForm" label-width="120px">
-				<el-form-item label="搜索地址" prop="searchAddress">
+				<p>目录搜索只筛选已加载节点；按地址读取会请求设备，不代表发现了点位名称或类型。</p>
+				<el-form-item label="地址/名称" prop="searchAddress">
 					<el-input
 						v-model="searchForm.searchAddress"
-						placeholder="请输入地址或名称"
+						placeholder="目录搜索可用名称，直接读取请输入完整地址"
 						prefix-icon="Search"
 					/>
 				</el-form-item>
+				<el-form-item label="读取数据类型" prop="dataType">
+					<el-select v-model="searchForm.dataType" placeholder="直接读取时必须指定类型" clearable>
+						<el-option v-for="dataType in directReadDataTypes" :key="dataType" :label="dataType" :value="dataType" />
+					</el-select>
+				</el-form-item>
 				<el-form-item>
-					<el-button type="primary" @click="searchAddress">
+					<el-button
+						type="primary"
+						@click="searchAddress"
+						:disabled="addressSpace.length === 0 || loading"
+					>
 						<el-icon><Search /></el-icon>
-						搜索
+						搜索已加载目录
+					</el-button>
+					<el-button type="success" @click="readExactAddress" :loading="directRead.loading">
+						<el-icon><View /></el-icon>
+						按地址读取
 					</el-button>
 					<el-button @click="resetSearch"> 重置 </el-button>
 				</el-form-item>
 			</el-form>
 
+			<el-alert
+				v-if="directRead.error"
+				:title="directRead.error"
+				type="error"
+				:closable="false"
+				show-icon
+			/>
+			<el-descriptions
+				v-if="directRead.result"
+				title="按地址读取结果（非目录发现）"
+				:column="2"
+				border
+				class="search-results"
+			>
+				<el-descriptions-item label="地址">{{ directRead.result.address }}</el-descriptions-item>
+				<el-descriptions-item label="读取类型">{{ directRead.result.dataType }}</el-descriptions-item>
+				<el-descriptions-item label="值">{{ directRead.error ? "读取未成功" : (directRead.result.value ?? "无返回值") }}</el-descriptions-item>
+				<el-descriptions-item label="质量">{{ directRead.result.quality }}</el-descriptions-item>
+				<el-descriptions-item label="读取时间">{{ directRead.result.timestamp }}</el-descriptions-item>
+			</el-descriptions>
+
 			<!-- 搜索结果 -->
 			<div class="search-results" v-if="searchResults.length > 0">
-				<h4>搜索结果</h4>
+				<h4>已加载目录中的匹配节点</h4>
 				<el-table :data="searchResults" style="width: 100%" border>
 					<el-table-column prop="address" label="地址" width="180" />
 					<el-table-column prop="name" label="名称" />
@@ -268,7 +294,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, onMounted, watch } from "vue";
 import {
 	Refresh,
 	Search,
@@ -279,11 +305,13 @@ import {
 	Folder,
 	DataLine,
 } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, type LoadFunction } from "element-plus";
 import { machineConnectionDevicesApi } from "@/api/machineConnectionDevices";
 import {
 	machineConnectionPointsApi,
 	type AddressNode,
+	type DataTypeApi,
+	type ReadTagResult,
 } from "@/api/machineConnectionPoints";
 
 // PLC设备类型定义
@@ -307,12 +335,12 @@ interface AddressItem {
 	dataType?: string;
 	timestamp?: string;
 	children?: AddressItem[];
+	isLeaf?: boolean;
 }
 
 // 表单数据
 const form = reactive({
 	deviceId: "",
-	addressType: "coil",
 });
 
 // 写入表单
@@ -323,7 +351,12 @@ const writeForm = reactive({
 // 搜索表单
 const searchForm = reactive({
 	searchAddress: "",
+	dataType: "" as DataTypeApi | "",
 });
+const directReadDataTypes: DataTypeApi[] = [
+	"Bool", "Int8", "UInt8", "Int16", "UInt16", "Int32", "UInt32",
+	"Int64", "UInt64", "Float", "Double", "String", "ByteArray",
+];
 
 // 设备列表（来自后端 /api/devices?type=PLC）
 const devices = ref<PLCDevice[]>([]);
@@ -348,7 +381,8 @@ function mapNode(n: AddressNode): AddressItem {
 		name: n.displayName,
 		type: n.nodeType === "Folder" ? "folder" : "point",
 		dataType: n.dataType ?? undefined,
-		children: n.children ? n.children.map(mapNode) : undefined,
+		children: n.children ? n.children.map(mapNode) : [],
+		isLeaf: n.nodeType !== "Folder",
 	};
 }
 
@@ -370,23 +404,44 @@ const loadDevices = async () => {
 
 // 地址空间
 const addressSpace = ref<AddressItem[]>([]);
+const browseNotice = ref("");
+const browseNoticeType = ref<"info" | "warning" | "error">("info");
+const addressSpaceVersion = ref(0);
 const expandedKeys = ref<string[]>([]);
 const selectedAddress = ref<AddressItem | null>(null);
 const selectedAddresses = ref<string[]>([]);
 
 // 加载状态
 const loading = ref(false);
-const scanning = ref(false);
 const readingValue = ref(false);
 const writingValue = ref(false);
 
 // 搜索结果
 const searchResults = ref<AddressItem[]>([]);
+const directRead = reactive({
+	loading: false,
+	version: 0,
+	error: "",
+	result: null as ReadTagResult | null,
+});
+const clearExactAddressRead = () => {
+	directRead.version += 1;
+	directRead.loading = false;
+	directRead.error = "";
+	directRead.result = null;
+	searchResults.value = [];
+};
+watch(
+	[() => form.deviceId, () => searchForm.searchAddress, () => searchForm.dataType],
+	clearExactAddressRead,
+	{ flush: "sync" },
+);
 
 // 地址树属性
 const addressTreeProps = {
 	children: "children",
 	label: "name",
+	isLeaf: "isLeaf",
 };
 
 // 初始化
@@ -401,6 +456,11 @@ onMounted(async () => {
 
 // 处理设备变更
 const handleDeviceChange = () => {
+	clearExactAddressRead();
+	addressSpaceVersion.value += 1;
+	loading.value = false;
+	browseNotice.value = "";
+	browseNoticeType.value = "info";
 	addressSpace.value = [];
 	expandedKeys.value = [];
 	selectedAddress.value = null;
@@ -410,38 +470,76 @@ const handleDeviceChange = () => {
 
 // 加载地址空间 = 真实浏览后端地址空间
 const loadAddressSpace = async () => {
-	if (!form.deviceId) return;
+	const deviceId = form.deviceId;
+	if (!deviceId) return false;
 
+	handleDeviceChange();
+	const requestVersion = addressSpaceVersion.value;
 	loading.value = true;
 	try {
 		const nodes = await machineConnectionPointsApi.browseAddressSpace(
-			form.deviceId,
+			deviceId,
+			undefined,
+			devices.value.find((device) => device.id === deviceId)?.protocol,
 		);
+		if (requestVersion !== addressSpaceVersion.value || deviceId !== form.deviceId) {
+			return false;
+		}
 		addressSpace.value = nodes.map(mapNode);
+		if (nodes.length === 0) {
+			browseNotice.value = "设备未返回可浏览的地址目录，未生成任何预设点位。";
+		}
 		expandedKeys.value = addressSpace.value
 			.filter((n) => n.type === "folder")
 			.map((n) => n.address);
+		return true;
 	} catch (e: unknown) {
-		ElMessage.error(getErr(e, "加载地址空间失败"));
+		if (requestVersion === addressSpaceVersion.value) {
+			const response = (e as { response?: { data?: { code?: string } } })?.response;
+			browseNotice.value = getErr(e, "加载地址空间失败");
+			browseNoticeType.value = response?.data?.code === "ADDRESS_SPACE_BROWSING_NOT_SUPPORTED"
+				? "warning" : "error";
+			if (browseNoticeType.value === "error") ElMessage.error(browseNotice.value);
+		}
+		return false;
 	} finally {
-		loading.value = false;
+		if (requestVersion === addressSpaceVersion.value) loading.value = false;
 	}
 };
 
-// 扫描地址空间 = 重新浏览
-const scanAddressSpace = async () => {
-	if (!form.deviceId) return;
-
-	scanning.value = true;
+// 展开节点 = 按目录懒加载子地址
+const loadAddressChildren: LoadFunction = async (node, resolve, reject) => {
+	if (node.level === 0) {
+		resolve(addressSpace.value);
+		return;
+	}
+	const data = node.data as AddressItem | undefined;
+	if (!data || data.type !== "folder") {
+		resolve([]);
+		return;
+	}
+	const deviceId = form.deviceId;
+	const requestVersion = addressSpaceVersion.value;
 	try {
-		await loadAddressSpace();
-		ElMessage.success("地址扫描完成");
-	} finally {
-		scanning.value = false;
+		const nodes = await machineConnectionPointsApi.browseAddressSpace(
+			deviceId,
+			data.address,
+			devices.value.find((device) => device.id === deviceId)?.protocol,
+		);
+		if (requestVersion !== addressSpaceVersion.value || deviceId !== form.deviceId) {
+			reject();
+			return;
+		}
+		data.children = nodes.map(mapNode);
+		resolve(data.children);
+	} catch (e: unknown) {
+		if (requestVersion === addressSpaceVersion.value) {
+			ElMessage.error(getErr(e, "加载子地址失败"));
+		}
+		reject();
 	}
 };
 
-// 处理节点点击
 const handleNodeClick = (data: AddressItem) => {
 	if (data.type !== "folder") {
 		selectAddress(data);
@@ -526,8 +624,45 @@ const writeAddressValue = async () => {
 	}
 };
 
+const readExactAddress = async () => {
+	if (directRead.loading) return;
+	const deviceId = form.deviceId;
+	const address = searchForm.searchAddress.trim();
+	const dataType = searchForm.dataType;
+	if (!deviceId || !address || !dataType) {
+		ElMessage.warning("请先选择设备，并输入完整地址及读取数据类型。");
+		return;
+	}
+	clearExactAddressRead();
+	const requestVersion = directRead.version;
+	directRead.loading = true;
+	try {
+		const response = await machineConnectionPointsApi.readTags(deviceId, {
+			tags: [{ address, dataType }],
+		});
+		if (requestVersion !== directRead.version) return;
+		const tag = response.tags[0];
+		if (!tag) throw new Error("设备未返回该地址的读取结果。");
+		directRead.result = tag;
+		if (tag.quality !== "Good" || tag.errorMessage) {
+			directRead.error = tag.errorMessage || `读取质量为 ${tag.quality}，未确认有效值。`;
+		}
+	} catch (error: unknown) {
+		if (requestVersion === directRead.version) {
+			directRead.error = getErr(error, "读取地址失败");
+		}
+	} finally {
+		if (requestVersion === directRead.version) directRead.loading = false;
+	}
+};
+
 // 搜索地址 = 在已加载地址树内前端过滤
 const searchAddress = () => {
+	clearExactAddressRead();
+	if (addressSpace.value.length === 0) {
+		ElMessage.info("没有已加载的地址目录，请指定数据类型后使用按地址读取。");
+		return;
+	}
 	const q = searchForm.searchAddress.trim().toLowerCase();
 	if (!q) return;
 
@@ -545,12 +680,14 @@ const searchAddress = () => {
 			it.address.toLowerCase().includes(q) ||
 			it.name.toLowerCase().includes(q),
 	);
-	if (searchResults.value.length === 0) ElMessage.info("未找到匹配地址");
+	if (searchResults.value.length === 0) ElMessage.info("已加载目录中没有匹配节点；这不代表该地址不可读取。");
 };
 
 // 重置搜索
 const resetSearch = () => {
 	searchForm.searchAddress = "";
+	searchForm.dataType = "";
+	clearExactAddressRead();
 	searchResults.value = [];
 };
 

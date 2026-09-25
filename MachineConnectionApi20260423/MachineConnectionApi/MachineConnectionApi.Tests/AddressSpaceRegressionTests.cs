@@ -50,7 +50,7 @@ internal static class AddressSpaceRegressionTests
                 throw new Exception("OPC UA browse was not forwarded.");
         }
 
-        using var fileHandler = new BrowseHandler("/CNC/Fanuc");
+        using var fileHandler = new BrowseHandler("CNC/Fanuc");
         using var fileClient = new HttpClient(fileHandler) { BaseAddress = new Uri("http://localhost/") };
         var fileController = new AddressSpaceController(
             new ClientFactory(fileClient), new ConfigurationBuilder().Build(),
@@ -58,6 +58,47 @@ internal static class AddressSpaceRegressionTests
         var fileResult = await fileController.Browse("test-device", "CNC\\Fanuc", "FOCAS", CancellationToken.None);
         if (fileResult is not ContentResult { StatusCode: 200 } || !fileHandler.Browsed)
             throw new Exception("Filesystem-style protocol path normalization regressed.");
+
+        foreach (var parentPath in new[] { "IO/DI", "IO\\DI", "IO//DI" })
+            await VerifyBrowse(parentPath, "EstunRobot", "IO/DI",
+                "[{\"path\":\"DI0\",\"nodeType\":\"Variable\"}]", ["DI0"]);
+        await VerifyBrowse("IO/SDI", "FanucRobot", "IO/SDI",
+            "[{\"path\":\"SDI1\",\"nodeType\":\"Variable\"}]", ["SDI1"]);
+
+        const string flatCncNodes = """
+            [
+                {"path":"/CNC","nodeType":"Folder"},
+                {"path":"/CNC/Axis","nodeType":"Folder"},
+                {"path":"/CNC/Axis/X","nodeType":"Variable"},
+                {"path":"/CNC/Status","nodeType":"Folder"},
+                {"path":"/CNC/Status/Mode","nodeType":"Variable"},
+                {"path":"/Programs","nodeType":"Folder"}
+            ]
+            """;
+        foreach (var parentPath in new[] { "CNC", "/CNC" })
+            await VerifyBrowse(parentPath, "FOCAS", parentPath, flatCncNodes,
+                ["/CNC/Axis", "/CNC/Status"]);
+    }
+
+    private static async Task VerifyBrowse(
+        string parentPath, string protocol, string expectedPath,
+        string responseBody, string[] expectedChildren)
+    {
+        using var handler = new BrowseHandler(expectedPath, responseBody);
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
+        var controller = new AddressSpaceController(
+            new ClientFactory(client), new ConfigurationBuilder().Build(),
+            NullLogger<AddressSpaceController>.Instance);
+        var result = await controller.Browse("test-device", parentPath, protocol, CancellationToken.None);
+        if (result is not ContentResult { StatusCode: 200 } content)
+            throw new Exception($"Browse failed for {protocol} path {parentPath}.");
+        if (handler.RequestCount != 1)
+            throw new Exception($"Browse made {handler.RequestCount} requests for {parentPath}; expected one.");
+        using var document = System.Text.Json.JsonDocument.Parse(content.Content!);
+        var children = document.RootElement.EnumerateArray()
+            .Select(node => node.GetProperty("path").GetString()).ToArray();
+        if (!children.SequenceEqual(expectedChildren))
+            throw new Exception($"Browse returned unexpected children for {parentPath}: {content.Content}");
     }
 
     private sealed class ClientFactory(HttpClient client) : IHttpClientFactory
@@ -65,13 +106,15 @@ internal static class AddressSpaceRegressionTests
         public HttpClient CreateClient(string name) => client;
     }
 
-    private sealed class BrowseHandler(string expectedNodeId) : HttpMessageHandler
+    private sealed class BrowseHandler(string expectedNodeId, string? responseBody = null) : HttpMessageHandler
     {
         public const string Nodes = "[{\"path\":\"ns=3;i=1001\",\"nodeType\":\"Variable\"}]";
         public bool Browsed { get; private set; }
+        public int RequestCount { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
+            RequestCount++;
             if (request.RequestUri!.AbsolutePath.StartsWith("/api/Devices/", StringComparison.OrdinalIgnoreCase))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
@@ -83,7 +126,7 @@ internal static class AddressSpaceRegressionTests
             var matches = query["parentPath"].ToString() == expectedNodeId;
             return Task.FromResult(new HttpResponseMessage(matches ? HttpStatusCode.OK : HttpStatusCode.BadGateway)
             {
-                Content = new StringContent(matches ? Nodes : "BadNodeIdUnknown")
+                Content = new StringContent(matches ? responseBody ?? Nodes : "BadNodeIdUnknown")
             });
         }
     }

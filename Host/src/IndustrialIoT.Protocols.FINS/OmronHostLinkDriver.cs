@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 
 [ProtocolDriver(ProtocolType.OmronHostLink, "Omron", "欧姆龙", "CJ2M", "CP1W", "CP1H", "CP1E-N")]
-public sealed class OmronHostLinkDriver : IProtocolDriver, IAddressSpaceBrowser
+public sealed class OmronHostLinkDriver : IProtocolDriver
 {
     private static readonly Regex AddressRegex = new(
         @"^(?<area>DM|CIO|WR|HR|AR|D|C|W|H|A)(?<word>\d+)(?:\.(?<bit>\d+))?$",
@@ -31,7 +31,7 @@ public sealed class OmronHostLinkDriver : IProtocolDriver, IAddressSpaceBrowser
     public OmronHostLinkDriver(ILogger<OmronHostLinkDriver> logger) => _logger = logger;
     public ProtocolType Protocol => ProtocolType.OmronHostLink;
     public ConnectionState State => _state;
-    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.Browse | DriverCapabilities.BatchRead;
+    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.BatchRead;
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
 
     public async Task<ConnectionResult> ConnectAsync(DeviceConnectionConfig config, CancellationToken ct = default)
@@ -189,41 +189,6 @@ public sealed class OmronHostLinkDriver : IProtocolDriver, IAddressSpaceBrowser
         finally { _semaphore.Release(); }
     }
 
-    public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
-    {
-        IReadOnlyList<AddressNode> nodes;
-        if (string.IsNullOrEmpty(parentPath))
-        {
-            nodes = FinsProtocol.MemoryAreas.Keys.Select(MakeFolderNode).ToArray();
-        }
-        else
-        {
-            var area = parentPath.ToUpperInvariant();
-            if (!FinsProtocol.MemoryAreas.TryGetValue(area, out var info))
-            {
-                nodes = Array.Empty<AddressNode>();
-            }
-            else
-            {
-                var list = new List<AddressNode>(info.MaxAddress + 1);
-                for (int i = 0; i <= info.MaxAddress; i++) list.Add(MakeVariableNode(area, i));
-                nodes = list;
-            }
-        }
-        return Task.FromResult(nodes);
-    }
-
-    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("Path,DisplayName,DataType,Readable,Writable");
-        foreach (var (area, info) in FinsProtocol.MemoryAreas)
-            for (int i = 0; i <= info.MaxAddress; i++)
-                sb.AppendLine($"{area}{i},{area}{i},{DataType.UInt16},True,True");
-        Stream stream = new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
-        return Task.FromResult(stream);
-    }
-
     public async ValueTask DisposeAsync() { await DisconnectAsync(); _semaphore.Dispose(); GC.SuppressFinalize(this); }
 
     private static string MapAddress(string address, DataType dataType)
@@ -256,8 +221,6 @@ public sealed class OmronHostLinkDriver : IProtocolDriver, IAddressSpaceBrowser
     private void CleanupClient() { try { _client?.Dispose(); } catch { } _client = null; }
     private static string? Get(DeviceConnectionConfig config, string key) => config.ExtendedProperties.TryGetValue(key, out var v) ? v : null;
 
-    private static AddressNode MakeFolderNode(string area) => new() { Path = area, DisplayName = area, NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = true };
-    private static AddressNode MakeVariableNode(string area, int index) => new() { Path = $"{area}{index}", DisplayName = $"{area}{index}", NodeType = AddressNodeType.Variable, DataType = DataType.UInt16, IsReadable = true, IsWritable = true };
 
     private static TagValue ToTagValue<T>(string address, DataType dataType, OperateResult<T> result) => result.IsSuccess
         ? new() { Address = address, DataType = dataType, Value = result.Content is byte[] bytes ? bytes.ToArray() : result.Content!, Quality = TagQuality.Good, Timestamp = DateTimeOffset.UtcNow }

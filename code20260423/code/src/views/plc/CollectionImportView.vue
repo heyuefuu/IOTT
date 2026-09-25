@@ -24,13 +24,24 @@
 
 				<!-- 文件导入 -->
 				<div v-if="importMethod === 'file'" class="file-import-section">
+					<el-form :inline="true" style="margin-bottom: 12px">
+						<el-form-item label="文件类型">
+							<el-radio-group v-model="fileType">
+								<el-radio-button label="standard">采集配置</el-radio-button>
+								<el-radio-button label="tia">TIA 符号表</el-radio-button>
+							</el-radio-group>
+						</el-form-item>
+					</el-form>
+
 					<el-upload
+						ref="uploadRef"
 						class="upload-demo"
 						action=""
 						:auto-upload="false"
 						:on-change="handleFileChange"
+						:on-remove="handleFileRemove"
 						:show-file-list="true"
-						accept=".json,.csv"
+						:accept="fileType === 'tia' ? '.csv' : '.json,.csv'"
 						drag
 					>
 						<el-icon class="el-icon--upload"><Upload /></el-icon>
@@ -39,7 +50,9 @@
 						</div>
 						<template #tip>
 							<div class="el-upload__tip">
-								支持上传 .json 或 .csv 格式的采集配置文件
+								{{ fileType === "tia"
+									? "TIA 符号表仅支持 .csv，需包含 Name、Data Type、Address"
+									: "支持上传 .json 或 .csv 格式的采集配置文件" }}
 							</div>
 						</template>
 					</el-upload>
@@ -52,11 +65,32 @@
 							style="margin: 10px 0"
 						/>
 					</div>
-					<el-form :model="manualConfig" label-width="120px">
-						<el-form-item label="目标设备ID" required>
+					<el-form :model="fileConfig" label-width="120px">
+						<el-form-item label="目标设备" required>
+							<el-select
+								v-model="fileConfig.deviceId"
+								placeholder="请选择已注册的 PLC 设备"
+								filterable :loading="devicesLoading" style="width: 100%"
+								@visible-change="(visible: boolean) => visible && loadDevices()"
+							>
+								<el-option v-for="device in devices" :key="device.id" :value="device.id"
+									:label="`${device.name} (${device.protocol} · ${device.host}:${device.port}) [${device.id}]`" />
+							</el-select>
+						</el-form-item>
+						<el-form-item v-if="fileType === 'tia'" label="采集频率" required>
+							<el-input-number
+								v-model="fileConfig.frequency"
+								:min="100"
+								:max="60000"
+								:step="100"
+								style="width: 200px"
+							/>
+							<span style="margin-left: 10px">ms</span>
+						</el-form-item>
+						<el-form-item v-if="fileType === 'tia'" label="分组名称">
 							<el-input
-								v-model="manualConfig.deviceId"
-								placeholder="请输入后端设备ID"
+								v-model="fileConfig.groupName"
+								placeholder="默认 TIA Import"
 							/>
 						</el-form-item>
 					</el-form>
@@ -71,11 +105,16 @@
 								placeholder="请输入配置名称"
 							/>
 						</el-form-item>
-						<el-form-item label="设备ID" required>
-							<el-input
+						<el-form-item label="目标设备" required>
+							<el-select
 								v-model="manualConfig.deviceId"
-								placeholder="请输入设备ID"
-							/>
+								placeholder="请选择已注册的 PLC 设备"
+								filterable :loading="devicesLoading" style="width: 100%"
+								@visible-change="(visible: boolean) => visible && loadDevices()"
+							>
+								<el-option v-for="device in devices" :key="device.id" :value="device.id"
+									:label="`${device.name} (${device.protocol} · ${device.host}:${device.port}) [${device.id}]`" />
+							</el-select>
 						</el-form-item>
 						<el-form-item label="采集地址" required>
 							<el-input
@@ -88,10 +127,10 @@
 								v-model="manualConfig.dataType"
 								placeholder="请选择数据类型"
 							>
-								<el-option label="布尔值" value="bool" />
-								<el-option label="整数" value="int" />
-								<el-option label="浮点数" value="float" />
-								<el-option label="字符串" value="string" />
+								<el-option label="布尔值（Bool）" value="Bool" />
+								<el-option label="整数（Int32）" value="Int32" />
+								<el-option label="浮点数（Float）" value="Float" />
+								<el-option label="字符串（String）" value="String" />
 							</el-select>
 						</el-form-item>
 						<el-form-item label="采集频率" required>
@@ -138,6 +177,7 @@
 					<el-table-column prop="address" label="采集地址" />
 					<el-table-column prop="dataType" label="数据类型" />
 					<el-table-column prop="frequency" label="采集频率(ms)" />
+					<el-table-column prop="groupName" label="分组" />
 				</el-table>
 			</div>
 			<template #footer>
@@ -152,18 +192,40 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, reactive, watch, onMounted } from "vue";
 import { Upload, View, Check } from "@element-plus/icons-vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import {
+	ElMessage,
+	ElMessageBox,
+	type UploadFile,
+	type UploadInstance,
+} from "element-plus";
 import {
 	machineConnectionCollectionApi,
 	type CollectionDataType,
 } from "@/api/machineConnectionCollection";
+import { machineConnectionDevicesApi, type DeviceDto } from "@/api/machineConnectionDevices";
+import {
+	parseTiaSymbolTableCsv,
+	readImportFileText,
+	toCollectionImportCsvFile,
+} from "@/utils/tiaSymbolTable";
 
 const importMethod = ref("file");
 const uploadedFile = ref<File | null>(null);
 const previewDialogVisible = ref(false);
 const previewConfigData = ref<any[]>([]);
+const fileType = ref<"standard" | "tia">("standard");
+const uploadRef = ref<UploadInstance>();
+
+const clearUploadedFile = () => {
+	uploadedFile.value = null;
+	uploadRef.value?.clearFiles();
+};
+
+watch(fileType, clearUploadedFile);
+
+const fileConfig = reactive({ deviceId: "", frequency: 1000, groupName: "" });
 
 const manualConfig = reactive({
 	name: "",
@@ -172,6 +234,34 @@ const manualConfig = reactive({
 	dataType: "Int32",
 	frequency: 1000,
 });
+
+const devices = ref<DeviceDto[]>([]);
+const devicesLoading = ref(false);
+const getImportError = (error: unknown, fallback: string): string => {
+	const requestError = error as {
+		response?: { data?: string | { error?: string; detail?: string } };
+		message?: string;
+	} | null;
+	const data = requestError?.response?.data;
+	if (typeof data === "string" && data.trim()) return data;
+	return data && typeof data === "object"
+		? data.error || data.detail || requestError?.message || fallback
+		: requestError?.message || fallback;
+};
+
+const loadDevices = async () => {
+	if (devicesLoading.value) return;
+	devicesLoading.value = true;
+	try {
+		devices.value = await machineConnectionDevicesApi.list("PLC");
+	} catch (error) {
+		ElMessage.error(getImportError(error, "加载 PLC 设备列表失败，请重新展开下拉框重试"));
+	} finally {
+		devicesLoading.value = false;
+	}
+};
+
+onMounted(loadDevices);
 
 const normalizeDataType = (value: string): CollectionDataType => {
 	switch (value.toLowerCase()) {
@@ -184,21 +274,64 @@ const normalizeDataType = (value: string): CollectionDataType => {
 	}
 };
 
-const handleFileChange = (file: any) => {
-	uploadedFile.value = file.raw;
+const handleFileChange = (file: UploadFile) => {
+	const rawFile = file.raw;
+	if (!rawFile) return;
+
+	const extension = /\.[^.]+$/.exec(rawFile.name)?.[0]?.toLowerCase() ?? "";
+	const supportedExtensions = fileType.value === "tia" ? [".csv"] : [".json", ".csv"];
+	if (!supportedExtensions.includes(extension)) {
+		ElMessage.error(fileType.value === "tia" ? "TIA 符号表仅支持 .csv 文件" : "仅支持 .json 或 .csv 文件");
+		clearUploadedFile();
+		return;
+	}
+
+	uploadedFile.value = rawFile;
+};
+
+const handleFileRemove = (_file: UploadFile, remainingFiles: UploadFile[]) => {
+	uploadedFile.value = remainingFiles[remainingFiles.length - 1]?.raw ?? null;
+};
+
+const parseTiaFile = async (file: File) => {
+	if (!Number.isInteger(fileConfig.frequency) || fileConfig.frequency < 100 || fileConfig.frequency > 60000) {
+		throw new Error("采集频率应为 100–60000 ms 的整数");
+	}
+	const rows = parseTiaSymbolTableCsv(await readImportFileText(file), {
+		defaultIntervalMs: fileConfig.frequency,
+		defaultGroupName: fileConfig.groupName.trim() || "TIA Import",
+	});
+	if (rows.length === 0) {
+		throw new Error("TIA 符号表没有可导入的变量");
+	}
+	return rows;
 };
 
 const previewFile = async (file: File) => {
-	const text = await file.text();
+	if (fileType.value === "tia") {
+		const rows = (await parseTiaFile(file)).slice(0, 20);
+		previewConfigData.value = rows.map((row) => ({
+			name: row.displayName,
+			deviceId: fileConfig.deviceId,
+			address: row.address,
+			dataType: row.dataType,
+			frequency: row.intervalMs,
+			groupName: row.groupName,
+		}));
+		return;
+	}
+
+	const text = await readImportFileText(file);
 	const rows = text.split(/\r?\n/).filter(Boolean).slice(0, 20);
 	previewConfigData.value = rows.slice(1).map((line, index) => {
 		const [address, dataType, groupName, intervalMs, displayName] = line.split(",");
 		return {
 			name: displayName || groupName || `第 ${index + 1} 行`,
-			deviceId: manualConfig.deviceId || "请在设备ID中填写目标设备",
+			deviceId: fileConfig.deviceId || "请先选择目标设备",
 			address: address || "",
 			dataType: dataType || "",
 			frequency: Number(intervalMs || 0),
+			groupName: groupName || "",
 		};
 	});
 };
@@ -209,7 +342,12 @@ const previewConfig = async () => {
 			ElMessage.warning("请先选择文件");
 			return;
 		}
-		await previewFile(uploadedFile.value);
+		try {
+			await previewFile(uploadedFile.value);
+		} catch (error) {
+			ElMessage.error(error instanceof Error ? error.message : "文件解析失败");
+			return;
+		}
 	} else {
 		previewConfigData.value = [{ ...manualConfig }];
 	}
@@ -235,13 +373,26 @@ const importManualConfig = async () => {
 	});
 };
 
+const getImportFile = async (file: File) => {
+	if (fileType.value === "standard") {
+		return new File([await readImportFileText(file)], file.name, {
+			type: file.name.toLowerCase().endsWith(".json") ? "application/json" : "text/csv",
+		});
+	}
+
+	const rows = await parseTiaFile(file);
+	const baseName = file.name.replace(/\.[^.]+$/, "");
+	return toCollectionImportCsvFile(rows, `${baseName}-collection.csv`);
+};
+
 const importConfig = () => {
 	if (importMethod.value === "file" && !uploadedFile.value) {
 		ElMessage.warning("请先选择文件");
 		return;
 	}
-	if (importMethod.value === "file" && !manualConfig.deviceId) {
-		ElMessage.warning("文件导入前请在手动输入区域填写目标设备ID");
+	if (importMethod.value === "file" && fileType.value === "tia" &&
+		(!Number.isInteger(fileConfig.frequency) || fileConfig.frequency < 100 || fileConfig.frequency > 60000)) {
+		ElMessage.warning("请填写有效的采集频率");
 		return;
 	}
 	if (importMethod.value === "manual" && (!manualConfig.name || !manualConfig.deviceId || !manualConfig.address)) {
@@ -249,34 +400,42 @@ const importConfig = () => {
 		return;
 	}
 
-	ElMessageBox.confirm("确定要导入配置吗？", "确认", {
+	const deviceId = importMethod.value === "file" ? fileConfig.deviceId : manualConfig.deviceId;
+	if (!devices.value.some((device) => device.id === deviceId)) {
+		ElMessage.warning("请从列表选择已注册的 PLC 设备，不要填写设备名称或编号");
+		return;
+	}
+
+	return ElMessageBox.confirm("确定要导入配置吗？", "确认", {
 		confirmButtonText: "确定",
 		cancelButtonText: "取消",
 		type: "warning",
 	}).then(async () => {
 		try {
 			if (importMethod.value === "file" && uploadedFile.value) {
+				const importFile = await getImportFile(uploadedFile.value);
 				const result = await machineConnectionCollectionApi.importTags(
-					manualConfig.deviceId,
-					uploadedFile.value,
+					fileConfig.deviceId,
+					importFile,
 				);
 				ElMessage.success(`导入完成：成功 ${result.successCount} 条，失败 ${result.errorCount} 条`);
-				uploadedFile.value = null;
+				clearUploadedFile();
+				Object.assign(fileConfig, { deviceId: "", frequency: 1000, groupName: "" });
 			} else {
 				await importManualConfig();
 				ElMessage.success("配置导入成功");
+				Object.assign(manualConfig, {
+					name: "",
+					deviceId: "",
+					address: "",
+					dataType: "Int32",
+					frequency: 1000,
+				});
 			}
-			Object.assign(manualConfig, {
-				name: "",
-				deviceId: "",
-				address: "",
-				dataType: "Int32",
-				frequency: 1000,
-			});
 		} catch (error) {
-			ElMessage.error(error instanceof Error ? error.message : "配置导入失败");
+			ElMessage.error(getImportError(error, "配置导入失败"));
 		}
-	});
+	}).catch(() => {});
 };
 </script>
 

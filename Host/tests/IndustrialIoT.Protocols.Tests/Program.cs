@@ -1,5 +1,10 @@
 var checks = new (string Name, Func<Task> Run)[]
 {
+    ("Collection config rejects missing and deleted devices", CollectionConfigRegressionTests.RejectMissingDevicesAsync),
+    ("Collection config preserves registered device profiles", CollectionConfigRegressionTests.CreateForRegisteredDeviceAsync),
+    ("PLC address browsing rejects synthetic directories", PlcAddressSpaceRegressionTests.RunAsync),
+    ("Siemens S7 scalar widths and byte order", SiemensS7RegressionTests.ScalarWidthsAsync),
+    ("Siemens S7 TIA addresses and exact integer transport", SiemensS7RegressionTests.AddressAndTransportAsync),
     ("OPC UA scalar, structured values and quality", OpcUaRegressionTests.RunAsync),
     ("Haas ping and macro roundtrip", HaasRegressionTests.MacroRoundtripAsync),
     ("Haas fragmented responses and CRLF", HaasRegressionTests.FragmentedResponseAsync),
@@ -17,6 +22,15 @@ var checks = new (string Name, Func<Task> Run)[]
     ("Huazhong robot health address", ModbusRegressionTests.RobotHealthAddressAsync),
     ("HNC and JingDiao IPC directory errors", SdkDirectoryRegressionTests.RunAsync),
 };
+if (args.Contains("--collection-config"))
+    checks = checks.Where(check => check.Name.StartsWith("Collection config", StringComparison.Ordinal)).ToArray();
+if (args.Contains("--siemens-s7"))
+    checks = checks.Where(check => check.Name.StartsWith("Siemens S7", StringComparison.Ordinal)).ToArray();
+if (args.Contains("--plc-browse"))
+    checks = checks.Where(check => check.Name.StartsWith("PLC address browsing", StringComparison.Ordinal)
+        || check.Name.StartsWith("Siemens S7", StringComparison.Ordinal)
+        || check.Name.StartsWith("OPC UA", StringComparison.Ordinal)
+        || check.Name.StartsWith("Modbus and Profibus", StringComparison.Ordinal)).ToArray();
 var failures = 0;
 foreach (var check in checks)
 {

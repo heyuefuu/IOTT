@@ -11,7 +11,13 @@ using Microsoft.AspNetCore.Mvc;
 public class CollectionConfigController : ControllerBase
 {
     private readonly ICollectionProfileRepository _repo;
-    public CollectionConfigController(ICollectionProfileRepository repo) => _repo = repo;
+    private readonly IDeviceRepository _deviceRepo;
+
+    public CollectionConfigController(ICollectionProfileRepository repo, IDeviceRepository deviceRepo)
+    {
+        _repo = repo;
+        _deviceRepo = deviceRepo;
+    }
 
     /// <summary>获取设备的所有采集配置</summary>
     [HttpGet("{deviceId}")]
@@ -38,6 +44,14 @@ public class CollectionConfigController : ControllerBase
         [FromBody] CreateCollectionProfileRequest request,
         CancellationToken ct = default)
     {
+        var device = await _deviceRepo.GetByIdAsync(deviceId, ct);
+        if (device is null)
+            return NotFound(new
+            {
+                code = "DEVICE_NOT_FOUND",
+                error = $"设备 {deviceId} 不存在，请从已注册设备中选择。",
+            });
+
         var profile = new CollectionProfile
         {
             DeviceId = deviceId,

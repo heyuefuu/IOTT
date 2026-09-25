@@ -27,7 +27,7 @@ using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 /// OPC UA / PROFINET 路径。
 /// </summary>
 [ProtocolDriver(ProtocolType.Profibus, "Profibus", "Profibus-DP", "DP")]
-public sealed class ProfibusDriver : IProtocolDriver, IAddressSpaceBrowser
+public sealed class ProfibusDriver : IProtocolDriver
 {
     private readonly ModbusTcpDriver _inner;
     private readonly ILogger<ProfibusDriver> _logger;
@@ -63,12 +63,6 @@ public sealed class ProfibusDriver : IProtocolDriver, IAddressSpaceBrowser
 
     public Task<WriteResult> WriteTagAsync(string address, DataType dataType, object value, CancellationToken ct = default)
         => _inner.WriteTagAsync(address, dataType, value, ct);
-
-    public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
-        => _inner.BrowseAsync(parentPath, ct);
-
-    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
-        => _inner.ExportAddressSpaceAsync(format, ct);
 
     public async ValueTask DisposeAsync()
     {

@@ -152,11 +152,20 @@ public class DataReadWriteController : ControllerBase
             return dataType switch
             {
                 DataType.Bool => element.GetBoolean(),
+                DataType.Int8 => element.ValueKind == JsonValueKind.String
+                    ? sbyte.Parse(element.GetString()!, System.Globalization.CultureInfo.InvariantCulture)
+                    : element.GetSByte(),
+                DataType.UInt8 => element.ValueKind == JsonValueKind.String
+                    ? byte.Parse(element.GetString()!, System.Globalization.CultureInfo.InvariantCulture)
+                    : element.GetByte(),
                 DataType.Int16 => element.GetInt16(),
                 DataType.Int32 => element.GetInt32(),
                 DataType.Int64 => element.GetInt64(),
                 DataType.UInt16 => element.GetUInt16(),
                 DataType.UInt32 => element.GetUInt32(),
+                DataType.UInt64 => element.ValueKind == JsonValueKind.String
+                    ? ulong.Parse(element.GetString()!, System.Globalization.CultureInfo.InvariantCulture)
+                    : element.GetUInt64(),
                 DataType.Float => element.GetSingle(),
                 DataType.Double => element.GetDouble(),
                 DataType.String => element.ValueKind == JsonValueKind.String ? element.GetString() ?? string.Empty : element.ToString(),

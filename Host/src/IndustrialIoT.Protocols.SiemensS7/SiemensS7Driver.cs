@@ -1,6 +1,5 @@
 namespace IndustrialIoT.Protocols.SiemensS7;
 
-using System.Text;
 using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Domain.ValueObjects;
 using IndustrialIoT.Protocols.Abstractions;
@@ -10,7 +9,7 @@ using Microsoft.Extensions.Logging;
 using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 
 [ProtocolDriver(ProtocolType.SiemensS7, "Siemens", "西门子", "S7-1200", "S7-1500", "S7-300", "S7-400", "S7-200Smart")]
-public sealed class SiemensS7Driver(ILogger<SiemensS7Driver> logger) : IProtocolDriver, IAddressSpaceBrowser
+public sealed class SiemensS7Driver(ILogger<SiemensS7Driver> logger) : IProtocolDriver
 {
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private S7TcpClient? _client;
@@ -19,7 +18,7 @@ public sealed class SiemensS7Driver(ILogger<SiemensS7Driver> logger) : IProtocol
 
     public ProtocolType Protocol => ProtocolType.SiemensS7;
     public ConnectionState State => _state;
-    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.Browse | DriverCapabilities.BatchRead;
+    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.BatchRead;
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
 
     public async Task<ConnectionResult> ConnectAsync(DeviceConnectionConfig config, CancellationToken ct = default)
@@ -119,22 +118,6 @@ public sealed class SiemensS7Driver(ILogger<SiemensS7Driver> logger) : IProtocol
         finally { _semaphore.Release(); }
     }
 
-    public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
-    {
-        IReadOnlyList<AddressNode> nodes = string.IsNullOrWhiteSpace(parentPath)
-            ? [Folder("I", "输入区"), Folder("Q", "输出区"), Folder("M", "标志位区"), Folder("DB1", "数据块 DB1")]
-            : BuildAreaNodes(parentPath);
-        return Task.FromResult(nodes);
-    }
-
-    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
-    {
-        var lines = new List<string> { "Path,DisplayName,DataType,Readable,Writable" };
-        foreach (var area in new[] { "I", "Q", "M", "DB1" })
-            lines.AddRange(BuildAreaNodes(area).Select(x => $"{x.Path},{x.DisplayName},{x.DataType},True,{x.IsWritable}"));
-        return Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(string.Join(Environment.NewLine, lines))));
-    }
-
     public async ValueTask DisposeAsync()
     {
         await DisconnectAsync();
@@ -190,35 +173,13 @@ public sealed class SiemensS7Driver(ILogger<SiemensS7Driver> logger) : IProtocol
     private static ushort GetUShort(DeviceConnectionConfig config, string key, ushort fallback) =>
         config.ExtendedProperties.TryGetValue(key, out var raw) && ushort.TryParse(raw, out var value) ? value : fallback;
 
-    private static AddressNode Folder(string path, string displayName) => new()
-    {
-        Path = path,
-        DisplayName = displayName,
-        NodeType = AddressNodeType.Folder,
-        IsReadable = false,
-        IsWritable = false,
-    };
-
-    private static IReadOnlyList<AddressNode> BuildAreaNodes(string parentPath)
-    {
-        var prefix = parentPath.Trim().ToUpperInvariant();
-        if (prefix is not ("I" or "Q" or "M" or "DB1")) return [];
-        return Enumerable.Range(0, 64).Select(i => new AddressNode
-        {
-            Path = prefix == "DB1" ? $"DB1.{i}" : $"{prefix}{i}",
-            DisplayName = prefix == "DB1" ? $"DB1.{i}" : $"{prefix}{i}",
-            NodeType = AddressNodeType.Variable,
-            DataType = DataType.Int16,
-            IsReadable = true,
-            IsWritable = prefix is "Q" or "M" or "DB1",
-        }).ToArray();
-    }
-
     private static TagValue GoodTag(string address, DataType dataType, object value) => new()
     {
         Address = address,
         DataType = dataType,
-        Value = value,
+        Value = dataType == DataType.UInt64
+            ? Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty
+            : value,
         Quality = TagQuality.Good,
         Timestamp = DateTimeOffset.UtcNow,
     };

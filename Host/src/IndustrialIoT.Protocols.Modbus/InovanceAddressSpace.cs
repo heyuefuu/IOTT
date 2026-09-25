@@ -2,59 +2,57 @@ namespace IndustrialIoT.Protocols.Inovance;
 
 using System.Text.RegularExpressions;
 using HslCommunication.Profinet.Inovance;
-using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Domain.ValueObjects;
-using IndustrialIoT.Protocols.Models;
 
 public static class InovanceAddressSpace
 {
-    private sealed record Area(string Root, string DisplayName, DataType DataType, bool Writable, Func<IEnumerable<string>> Paths, Func<string, string?> Normalize);
+    private sealed record Area(Func<string, string?> Normalize);
     private static readonly Regex StationRegex = new(@"^(?:(?<station>s=\d+);)?(?<core>.+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Dictionary<InovanceSeries, Area[]> Areas = new()
     {
         [InovanceSeries.AM] =
         [
-            BitArea("Q", "Q", true, 8191, 7, "Q", "QX"),
-            BitArea("IX", "IX", false, 8191, 7, "IX", "I"),
-            BitArea("MX", "MX", true, 1000, 10, "MX"),
-            ScalarArea("MW", "MW", DataType.UInt16, true, 65535),
-            ScalarArea("MD", "MD", DataType.UInt32, true, 32767),
-            ScalarArea("MB", "MB", DataType.ByteArray, true, 65534, step: 2),
-            ScalarArea("SM", "SM", DataType.UInt16, false, 65535),
-            ScalarArea("SD", "SD", DataType.UInt16, true, 65535),
+            BitArea("Q", "Q", "QX"),
+            BitArea("IX", "IX", "I"),
+            BitArea("MX", "MX"),
+            ScalarArea("MW"),
+            ScalarArea("MD"),
+            ScalarArea("MB"),
+            ScalarArea("SM"),
+            ScalarArea("SD"),
         ],
         [InovanceSeries.H3U] =
         [
-            SegmentedArea("M", DataType.Bool, true, (0, 7679), (8000, 8511)),
-            ScalarArea("SM", "SM", DataType.Bool, false, 1023),
-            ScalarArea("S", "S", DataType.Bool, true, 4095),
-            ScalarArea("T", "T", DataType.UInt16, true, 511),
-            ScalarArea("C", "C", DataType.UInt16, true, 255),
-            PointArea("X", DataType.Bool, false, 255, octal: true),
-            PointArea("Y", DataType.Bool, true, 255, octal: true),
-            ScalarArea("D", "D", DataType.UInt16, true, 8511),
-            ScalarArea("SD", "SD", DataType.UInt16, false, 1023),
-            ScalarArea("R", "R", DataType.UInt16, true, 32767),
+            ScalarArea("M"),
+            ScalarArea("SM"),
+            ScalarArea("S"),
+            ScalarArea("T"),
+            ScalarArea("C"),
+            PointArea("X", octal: true),
+            PointArea("Y", octal: true),
+            ScalarArea("D"),
+            ScalarArea("SD"),
+            ScalarArea("R"),
         ],
         [InovanceSeries.H5U] =
         [
-            SegmentedArea("M", DataType.Bool, true, (0, 7679), (8000, 8511)),
-            ScalarArea("B", "B", DataType.Bool, true, 255),
-            ScalarArea("S", "S", DataType.Bool, true, 4095),
-            PointArea("X", DataType.Bool, false, 255, octal: true),
-            PointArea("Y", DataType.Bool, true, 255, octal: true),
-            ScalarArea("D", "D", DataType.UInt16, true, 8511),
-            ScalarArea("R", "R", DataType.UInt16, true, 32767),
+            ScalarArea("M"),
+            ScalarArea("B"),
+            ScalarArea("S"),
+            PointArea("X", octal: true),
+            PointArea("Y", octal: true),
+            ScalarArea("D"),
+            ScalarArea("R"),
         ],
         [InovanceSeries.Easy] =
         [
-            SegmentedArea("M", DataType.Bool, true, (0, 7679), (8000, 8511)),
-            ScalarArea("B", "B", DataType.Bool, true, 255),
-            ScalarArea("S", "S", DataType.Bool, true, 4095),
-            PointArea("X", DataType.Bool, false, 255, octal: true),
-            PointArea("Y", DataType.Bool, true, 255, octal: true),
-            ScalarArea("D", "D", DataType.UInt16, true, 8511),
-            ScalarArea("R", "R", DataType.UInt16, true, 32767),
+            ScalarArea("M"),
+            ScalarArea("B"),
+            ScalarArea("S"),
+            PointArea("X", octal: true),
+            PointArea("Y", octal: true),
+            ScalarArea("D"),
+            ScalarArea("R"),
         ],
     };
 
@@ -109,24 +107,11 @@ public static class InovanceAddressSpace
         return null;
     }
 
-    public static IReadOnlyList<AddressNode> Browse(InovanceSeries? series, string? parentPath)
-    {
-        var areas = GetAreas(RequireSeries(series));
-        if (string.IsNullOrWhiteSpace(parentPath)) return areas.Select(area => MakeFolder(area.Root, area.DisplayName)).ToArray();
-        var area = areas.FirstOrDefault(item => string.Equals(item.Root, parentPath.Trim(), StringComparison.OrdinalIgnoreCase));
-        return area is null ? [] : area.Paths().Select(path => MakeVariable(path, area.DataType, area.Writable)).ToArray();
-    }
-
-    public static IEnumerable<(string Path, DataType DataType, bool Writable)> Export(InovanceSeries? series) =>
-        GetAreas(RequireSeries(series)).SelectMany(area => area.Paths().Select(path => (path, area.DataType, area.Writable)));
-
-    private static InovanceSeries RequireSeries(InovanceSeries? series) => series ?? throw new InvalidOperationException("Inovance Series is required for browse/export.");
     private static Area[] GetAreas(InovanceSeries series) => Areas.TryGetValue(series, out var areas) ? areas : Areas[InovanceSeries.H3U];
     private static bool IsSupportedByHsl(InovanceSeries series, string address) => new byte[] { 1, 2, 3, 4, 5, 6, 15, 16 }.Any(code => InovanceHelper.PraseInovanceAddress(series, address, code).IsSuccess);
-    private static Area ScalarArea(string root, string displayName, DataType dataType, bool writable, int max, bool octal = false, int step = 1) => new(root, displayName, dataType, writable, () => Range(0, max, octal, step).Select(i => root + i), raw => NormalizeScalar(raw, root, octal));
-    private static Area SegmentedArea(string root, DataType dataType, bool writable, params (int Start, int End)[] segments) => new(root, root, dataType, writable, () => segments.SelectMany(segment => Range(segment.Start, segment.End, false).Select(i => root + i)), raw => NormalizeScalar(raw, root, false));
-    private static Area PointArea(string root, DataType dataType, bool writable, int max, bool octal = false) => new(root, root, dataType, writable, () => Range(0, max, octal).Select(i => root + i), raw => NormalizePoint(raw, root, octal));
-    private static Area BitArea(string root, string displayName, bool writable, int maxWord, int maxBit, params string[] aliases) => new(root, displayName, DataType.Bool, writable, () => Enumerable.Range(0, maxWord + 1).SelectMany(word => Enumerable.Range(0, maxBit + 1).Select(bit => $"{root}{word}.{bit}")), raw => NormalizeBit(raw, root, aliases));
+    private static Area ScalarArea(string root, bool octal = false) => new(raw => NormalizeScalar(raw, root, octal));
+    private static Area PointArea(string root, bool octal = false) => new(raw => NormalizePoint(raw, root, octal));
+    private static Area BitArea(string root, params string[] aliases) => new(raw => NormalizeBit(raw, root, aliases));
     private static string? NormalizeScalar(string raw, string root, bool octal)
     {
         var pattern = octal ? $@"^{root}(?<index>[0-7]+)$" : $@"^{root}(?<index>\d+)$";
@@ -151,11 +136,4 @@ public static class InovanceAddressSpace
         return null;
     }
 
-    private static IEnumerable<string> Range(int start, int end, bool octal, int step = 1)
-    {
-        for (int i = start; i <= end; i += step) yield return octal ? Convert.ToString(i, 8)! : i.ToString();
-    }
-
-    private static AddressNode MakeFolder(string path, string displayName) => new() { Path = path, DisplayName = displayName, NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = false };
-    private static AddressNode MakeVariable(string path, DataType dataType, bool writable) => new() { Path = path, DisplayName = path, NodeType = AddressNodeType.Variable, DataType = dataType, IsReadable = true, IsWritable = writable };
 }

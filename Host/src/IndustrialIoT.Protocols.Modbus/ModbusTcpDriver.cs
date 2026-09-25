@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 using static IndustrialIoT.Protocols.Modbus.ModbusAddressParser;
 
 [ProtocolDriver(ProtocolType.ModbusTCP, "Inovance", "汇川", "广数", "广州数控", "GSK", "MICRO-T400")]
-public sealed class ModbusTcpDriver : IProtocolDriver, IAddressSpaceBrowser
+public sealed class ModbusTcpDriver : IProtocolDriver
 {
     private readonly ILogger<ModbusTcpDriver> _logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
@@ -27,7 +27,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IAddressSpaceBrowser
 
     public DriverCapabilities Capabilities =>
         DriverCapabilities.Read | DriverCapabilities.Write |
-        DriverCapabilities.Browse | DriverCapabilities.BatchRead;
+        DriverCapabilities.BatchRead;
 
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
 
@@ -266,58 +266,6 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IAddressSpaceBrowser
         }
     }
 
-    // ───────────────────────── Browse ─────────────────────────
-
-    public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
-    {
-        IReadOnlyList<AddressNode> nodes;
-
-        if (string.IsNullOrEmpty(parentPath))
-        {
-            // Top-level folders for Inovance PLC register regions
-            nodes =
-            [
-                MakeFolder("HR", "保持寄存器 (Holding Registers)"),
-                MakeFolder("IR", "输入寄存器 (Input Registers)"),
-                MakeFolder("C",  "线圈 (Coils)"),
-                MakeFolder("DI", "离散输入 (Discrete Inputs)"),
-            ];
-        }
-        else
-        {
-            nodes = parentPath.ToUpperInvariant() switch
-            {
-                "HR" => GenerateRegisterNodes("HR", "保持寄存器", DataType.Int16, 0, 999, writable: true),
-                "IR" => GenerateRegisterNodes("IR", "输入寄存器", DataType.Int16, 0, 999, writable: false),
-                "C"  => GenerateRegisterNodes("C",  "线圈",       DataType.Bool,  0, 999, writable: true),
-                "DI" => GenerateRegisterNodes("DI", "离散输入",   DataType.Bool,  0, 999, writable: false),
-                _ => []
-            };
-        }
-
-        return Task.FromResult(nodes);
-    }
-
-    public async Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("Path,DisplayName,DataType,Readable,Writable");
-
-        var folders = await BrowseAsync(null, ct);
-        foreach (var folder in folders)
-        {
-            var children = await BrowseAsync(folder.Path, ct);
-            foreach (var node in children)
-            {
-                sb.AppendLine(
-                    $"{node.Path},{node.DisplayName},{node.DataType},{node.IsReadable},{node.IsWritable}");
-            }
-        }
-
-        Stream stream = new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
-        return stream;
-    }
-
     // ───────────────────────── Dispose ─────────────────────────
 
     public async ValueTask DisposeAsync()
@@ -530,34 +478,4 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IAddressSpaceBrowser
         }
     }
 
-    // ─────────── Browse helpers ───────────
-
-    private static AddressNode MakeFolder(string path, string displayName) =>
-        new()
-        {
-            Path = path,
-            DisplayName = displayName,
-            NodeType = AddressNodeType.Folder,
-            IsReadable = false,
-            IsWritable = false
-        };
-
-    private static IReadOnlyList<AddressNode> GenerateRegisterNodes(
-        string prefix, string label, DataType dataType, int from, int to, bool writable)
-    {
-        var list = new List<AddressNode>(to - from + 1);
-        for (int i = from; i <= to; i++)
-        {
-            list.Add(new()
-            {
-                Path = $"{prefix}{i}",
-                DisplayName = $"{prefix}{i} {label}",
-                NodeType = AddressNodeType.Variable,
-                DataType = dataType,
-                IsReadable = true,
-                IsWritable = writable
-            });
-        }
-        return list;
-    }
 }

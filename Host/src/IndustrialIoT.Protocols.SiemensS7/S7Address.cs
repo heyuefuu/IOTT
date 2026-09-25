@@ -26,7 +26,9 @@ public sealed record S7Address
         if (string.IsNullOrWhiteSpace(address))
             throw new FormatException("S7 address cannot be empty.");
 
-        var normalized = address.Trim().ToUpperInvariant();
+        var normalized = address.Trim().TrimStart('%').ToUpperInvariant();
+        if (normalized.Length == 0)
+            throw new FormatException("S7 address cannot be empty.");
         return normalized switch
         {
             var value when value.StartsWith("DB", StringComparison.Ordinal) => ParseDb(value, length),

@@ -17,11 +17,14 @@ export interface AddressNode {
 
 export type DataTypeApi =
     | "Bool"
+    | "Int8"
+    | "UInt8"
     | "Int16"
     | "Int32"
     | "Int64"
     | "UInt16"
     | "UInt32"
+    | "UInt64"
     | "Float"
     | "Double"
     | "String"
@@ -161,4 +164,3 @@ function extractFileName(contentDisposition?: string): string | null {
     const match = /filename\s*=\s*("?)([^";]+)\1/i.exec(contentDisposition);
     return match?.[2]?.trim() ?? null;
 }
-

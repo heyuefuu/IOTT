@@ -15,7 +15,7 @@ using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 using static IndustrialIoT.Protocols.Modbus.ModbusAddressParser;
 
 [ProtocolDriver(ProtocolType.ModbusRTU, "ModbusRTU", "Modbus RTU", "PLC")]
-public sealed class ModbusRtuDriver : IProtocolDriver, IAddressSpaceBrowser
+public sealed class ModbusRtuDriver : IProtocolDriver
 {
     private const ushort DefaultStringLength = 16;
     private readonly ILogger<ModbusRtuDriver> _logger;
@@ -26,7 +26,7 @@ public sealed class ModbusRtuDriver : IProtocolDriver, IAddressSpaceBrowser
     public ModbusRtuDriver(ILogger<ModbusRtuDriver> logger) => _logger = logger;
     public ProtocolType Protocol => ProtocolType.ModbusRTU;
     public ConnectionState State => _state;
-    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.Browse | DriverCapabilities.BatchRead;
+    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.BatchRead;
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
 
     public async Task<ConnectionResult> ConnectAsync(DeviceConnectionConfig config, CancellationToken ct = default)
@@ -109,22 +109,6 @@ public sealed class ModbusRtuDriver : IProtocolDriver, IAddressSpaceBrowser
         finally { _semaphore.Release(); }
     }
 
-    public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
-    {
-        IReadOnlyList<AddressNode> nodes = string.IsNullOrEmpty(parentPath) ? [Folder("HR", "保持寄存器"), Folder("IR", "输入寄存器"), Folder("C", "线圈"), Folder("DI", "离散输入")] :
-            parentPath.ToUpperInvariant() switch { "HR" => Vars("HR", DataType.Int16, true), "IR" => Vars("IR", DataType.Int16, false), "C" => Vars("C", DataType.Bool, true), "DI" => Vars("DI", DataType.Bool, false), _ => [] };
-        return Task.FromResult(nodes);
-    }
-
-    public async Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
-    {
-        var sb = new StringBuilder("Path,DisplayName,DataType,Readable,Writable\n");
-        foreach (var folder in await BrowseAsync(null, ct))
-            foreach (var node in await BrowseAsync(folder.Path, ct))
-                sb.AppendLine($"{node.Path},{node.DisplayName},{node.DataType},{node.IsReadable},{node.IsWritable}");
-        return new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
-    }
-
     public async ValueTask DisposeAsync() { await DisconnectAsync(); _semaphore.Dispose(); GC.SuppressFinalize(this); }
 
     private async Task<TagValue> ReadParsed(string original, ParsedAddress parsed, DataType dataType)
@@ -159,6 +143,4 @@ public sealed class ModbusRtuDriver : IProtocolDriver, IAddressSpaceBrowser
     private static TagValue ToTagValue<T>(string address, DataType dataType, OperateResult<T> result) => result.IsSuccess ? new() { Address = address, DataType = dataType, Value = result.Content is byte[] bytes ? bytes.ToArray() : result.Content!, Quality = TagQuality.Good, Timestamp = DateTimeOffset.UtcNow } : BadTag(address, dataType, result.Message);
     private static TagValue ToTagValue<T>(string address, DataType dataType, OperateResult<T> result, Func<T, object> projector) => result.IsSuccess ? new() { Address = address, DataType = dataType, Value = projector(result.Content), Quality = TagQuality.Good, Timestamp = DateTimeOffset.UtcNow } : BadTag(address, dataType, result.Message);
     private static TagValue BadTag(string address, DataType dataType, string? error) => new() { Address = address, DataType = dataType, Value = dataType == DataType.String ? string.Empty : dataType == DataType.ByteArray ? Array.Empty<byte>() : dataType == DataType.Bool ? false : 0, Quality = TagQuality.Bad, Timestamp = DateTimeOffset.UtcNow, ErrorMessage = error };
-    private static AddressNode Folder(string path, string name) => new() { Path = path, DisplayName = name, NodeType = AddressNodeType.Folder };
-    private static IReadOnlyList<AddressNode> Vars(string prefix, DataType type, bool writable) => Enumerable.Range(0, 1000).Select(i => new AddressNode { Path = $"{prefix}{i}", DisplayName = $"{prefix}{i}", NodeType = AddressNodeType.Variable, DataType = type, IsReadable = true, IsWritable = writable }).ToArray();
 }

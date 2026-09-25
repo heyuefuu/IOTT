@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 
 [ProtocolDriver(ProtocolType.FINS, "Omron", "欧姆龙", "CJ2M", "CP1W", "CP1H", "CP1E-N")]
-public sealed class FinsDriver : IProtocolDriver, IAddressSpaceBrowser
+public sealed class FinsDriver : IProtocolDriver
 {
     private static readonly Regex AddressRegex = new(
         @"^(?<area>DM|CIO|WR|HR|AR)(?<word>\d+)(?:\.(?<bit>\d+))?$",
@@ -32,7 +32,7 @@ public sealed class FinsDriver : IProtocolDriver, IAddressSpaceBrowser
 
     public DriverCapabilities Capabilities =>
         DriverCapabilities.Read | DriverCapabilities.Write |
-        DriverCapabilities.Browse | DriverCapabilities.BatchRead;
+        DriverCapabilities.BatchRead;
 
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
 
@@ -198,52 +198,6 @@ public sealed class FinsDriver : IProtocolDriver, IAddressSpaceBrowser
         {
             _semaphore.Release();
         }
-    }
-
-    public Task<IReadOnlyList<AddressNode>> BrowseAsync(
-        string? parentPath = null, CancellationToken ct = default)
-    {
-        IReadOnlyList<AddressNode> nodes;
-
-        if (string.IsNullOrEmpty(parentPath))
-        {
-            nodes = GetRootNodes();
-        }
-        else
-        {
-            var area = parentPath.ToUpperInvariant();
-            if (!FinsProtocol.MemoryAreas.TryGetValue(area, out var info))
-            {
-                nodes = Array.Empty<AddressNode>();
-            }
-            else
-            {
-                var list = new List<AddressNode>(info.MaxAddress + 1);
-                for (int i = 0; i <= info.MaxAddress; i++)
-                {
-                    list.Add(MakeAddressNode(area, i));
-                }
-                nodes = list;
-            }
-        }
-
-        return Task.FromResult(nodes);
-    }
-
-    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("Path,DisplayName,DataType,Readable,Writable");
-        foreach (var (area, info) in FinsProtocol.MemoryAreas)
-        {
-            for (int i = 0; i <= info.MaxAddress; i++)
-            {
-                sb.AppendLine($"{area}{i},{area}{i},{DataType.UInt16},True,True");
-            }
-        }
-
-        Stream stream = new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
-        return Task.FromResult(stream);
     }
 
     public async ValueTask DisposeAsync()
@@ -414,41 +368,4 @@ public sealed class FinsDriver : IProtocolDriver, IAddressSpaceBrowser
         _ => 0,
     };
 
-    private static AddressNode MakeAddressNode(string area, int address) => new()
-    {
-        Path = $"{area}{address}",
-        DisplayName = $"{area}{address}",
-        NodeType = AddressNodeType.Variable,
-        DataType = DataType.UInt16,
-        IsReadable = true,
-        IsWritable = true,
-    };
-
-    private static IReadOnlyList<AddressNode> GetRootNodes() =>
-        FinsProtocol.MemoryAreas.Keys.Select(MakeFolderNode).ToArray();
-
-    private static AddressNode MakeFolderNode(string area) => new()
-    {
-        Path = area,
-        DisplayName = GetAreaDisplayName(area),
-        NodeType = AddressNodeType.Folder,
-        IsReadable = true,
-        IsWritable = true,
-    };
-
-    private static string GetAreaDisplayName(string area) => area switch
-    {
-        "CIO" => "CIO - I/O区 (0-6143)",
-        "DM" => "DM - 数据存储区 (0-32767)",
-        "WR" => "WR - 内部辅助区 (0-511)",
-        "HR" => "HR - 保持区 (0-511)",
-        "AR" => "AR - 辅助区 (0-959)",
-        "E" => "E - EM扩展存储区",
-        "TIM" => "TIM - 定时器",
-        "CNT" => "CNT - 计数器",
-        "IR" => "IR - 索引寄存器",
-        "DR" => "DR - 数据寄存器",
-        "CF" => "CF - 脉冲标志区",
-        _ => area,
-    };
 }

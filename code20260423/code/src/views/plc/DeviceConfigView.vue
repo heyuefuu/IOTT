@@ -1,6 +1,9 @@
 <template>
 	<div class="plc-device-config-view">
 		<h2 class="page-title">PLC设备管理</h2>
+		<el-alert v-if="capabilitiesError" title="协议列表加载失败，暂用内置协议。可重试加载完整能力矩阵。" type="warning" :closable="false">
+			<el-button link :loading="loadingCapabilities" @click="loadCapabilities">重试加载</el-button>
+		</el-alert>
 
 		<div class="device-layout">
 			<el-card class="tree-panel" shadow="never">
@@ -113,14 +116,33 @@
 				<el-form-item label="协议类型" prop="protocol" required>
 					<el-select
 						v-model="currentDevice.protocol"
+						:loading="loadingCapabilities"
 						placeholder="请选择协议类型"
 						@change="handleProtocolChange"
 					>
-						<el-option label="Modbus TCP" value="ModbusTCP" />
-						<el-option label="西门子S7" value="SiemensS7" />
-						<el-option label="汇川 以太网(Inovance)" value="Inovance" />
-						<el-option label="汇川 串口(InovanceSerial)" value="InovanceSerial" />
-						<el-option label="汇川 串口透传TCP(InovanceSerialOverTcp)" value="InovanceSerialOverTcp" />
+						<el-option-group
+							v-for="capability in protocolGroups"
+							:key="capability.brand"
+							:label="capability.brand"
+						>
+							<el-option
+								v-for="option in capability.protocols"
+								:key="option.value"
+								:label="option.value"
+								:value="option.value"
+							/>
+						</el-option-group>
+					</el-select>
+				</el-form-item>
+				<el-form-item label="设备品牌" prop="brand" required>
+					<el-select v-model="currentDevice.brand" filterable :allow-create="isGenericProtocol" default-first-option>
+						<el-option v-for="brand in brandOptions" :key="brand" :label="brand" :value="brand" />
+					</el-select>
+				</el-form-item>
+				<el-form-item v-if="currentDevice.protocol === 'OmronHostLink'" label="连接方式">
+					<el-select v-model="currentDevice.hostLinkMode" @change="ensureSerialHost">
+						<el-option label="TCP" value="Tcp" />
+						<el-option label="串口" value="Serial" />
 					</el-select>
 				</el-form-item>
 				<el-form-item label="设备型号" prop="model" required>
@@ -138,43 +160,40 @@
 						style="width: 200px"
 					/>
 				</el-form-item>
-				<!-- 汇川专属：Series 是后端硬性必填（缺失或认不出都会连接失败），故做成固定下拉而非自由输入 -->
+				<template v-if="isSerialConnection">
+					<el-form-item label="串口号" prop="portName" required>
+						<el-input v-model="currentDevice.portName" placeholder="如 COM3" style="width: 200px" />
+						<span class="field-hint">串口位于采集服务所在主机，不是浏览器本机</span>
+					</el-form-item>
+					<el-form-item label="波特率" prop="baudRate">
+						<el-select v-model="currentDevice.baudRate" style="width: 200px">
+							<el-option v-for="baudRate in BAUD_RATES" :key="baudRate" :label="String(baudRate)" :value="baudRate" />
+						</el-select>
+					</el-form-item>
+					<el-form-item label="数据位/停止位">
+						<el-input-number v-model="currentDevice.dataBits" :min="5" :max="8" :step="1" style="width: 110px" />
+						<el-select v-model="currentDevice.stopBits" style="width: 130px; margin-left: 8px">
+							<el-option label="1 位" value="One" />
+							<el-option label="1.5 位" value="OnePointFive" />
+							<el-option label="2 位" value="Two" />
+						</el-select>
+					</el-form-item>
+					<el-form-item label="校验位" prop="parity">
+						<el-select v-model="currentDevice.parity" style="width: 200px">
+							<el-option label="无校验 None" value="None" />
+							<el-option label="奇校验 Odd" value="Odd" />
+							<el-option label="偶校验 Even" value="Even" />
+							<el-option label="Mark" value="Mark" />
+							<el-option label="Space" value="Space" />
+						</el-select>
+					</el-form-item>
+				</template>
 				<template v-if="isInovance">
 					<el-form-item label="PLC系列" prop="series" required>
 						<el-select v-model="currentDevice.series" placeholder="请选择汇川 PLC 系列" style="width: 260px">
 							<el-option v-for="s in INOVANCE_SERIES" :key="s.value" :label="s.label" :value="s.value" />
 						</el-select>
 					</el-form-item>
-
-					<template v-if="isInovanceSerial">
-						<el-form-item label="串口号" prop="portName" required>
-							<el-input v-model="currentDevice.portName" placeholder="如 COM3" style="width: 200px" />
-							<span class="field-hint">串口位于采集服务所在主机，不是浏览器本机</span>
-						</el-form-item>
-						<el-form-item label="波特率" prop="baudRate">
-							<el-select v-model="currentDevice.baudRate" style="width: 200px">
-								<el-option v-for="b in BAUD_RATES" :key="b" :label="String(b)" :value="b" />
-							</el-select>
-						</el-form-item>
-						<el-form-item label="数据位/停止位">
-							<el-input-number v-model="currentDevice.dataBits" :min="5" :max="8" :step="1"
-								style="width: 110px" />
-							<el-select v-model="currentDevice.stopBits" style="width: 130px; margin-left: 8px">
-								<el-option label="1 位" value="One" />
-								<el-option label="1.5 位" value="OnePointFive" />
-								<el-option label="2 位" value="Two" />
-							</el-select>
-						</el-form-item>
-						<el-form-item label="校验位" prop="parity">
-							<el-select v-model="currentDevice.parity" style="width: 200px">
-								<el-option label="无校验 None" value="None" />
-								<el-option label="奇校验 Odd" value="Odd" />
-								<el-option label="偶校验 Even" value="Even" />
-								<el-option label="Mark" value="Mark" />
-								<el-option label="Space" value="Space" />
-							</el-select>
-						</el-form-item>
-					</template>
 
 					<el-form-item label="字节序" prop="dataFormat">
 						<el-select v-model="currentDevice.dataFormat" style="width: 200px">
@@ -277,6 +296,7 @@
 
 		<!-- 协议能力矩阵（来自后端 /api/plc/capabilities 静态清单） -->
 		<el-dialog v-model="capabilitiesDialogVisible" title="PLC 协议能力矩阵" width="860px">
+			<el-alert v-if="capabilitiesError" title="能力矩阵加载失败，设备表单仍可使用内置协议。" type="warning" :closable="false" />
 			<el-table v-loading="loadingCapabilities" :data="capabilities" border>
 				<el-table-column prop="brand" label="品牌" width="90" />
 				<el-table-column label="支持型号" min-width="150">
@@ -310,6 +330,7 @@
 				</el-table-column>
 			</el-table>
 			<template #footer>
+				<el-button v-if="capabilitiesError" :loading="loadingCapabilities" @click="loadCapabilities">重试加载</el-button>
 				<el-button @click="capabilitiesDialogVisible = false">关闭</el-button>
 			</template>
 		</el-dialog>
@@ -334,18 +355,67 @@ import {
 const capabilitiesDialogVisible = ref(false);
 const loadingCapabilities = ref(false);
 const capabilities = ref<PlcProtocolCapability[]>([]);
+const capabilitiesError = ref(false);
+const FALLBACK_CAPABILITIES = [
+	{ brand: "汇川", protocols: ["Inovance", "InovanceSerial", "InovanceSerialOverTcp"] },
+	{ brand: "欧姆龙", protocols: ["FINS", "OmronHostLink"] },
+	{ brand: "松下", protocols: ["Mewtocol", "MewtocolSerial"] },
+	{ brand: "西门子", protocols: ["SiemensS7", "OpcUa"] },
+];
+const COMMON_PROTOCOLS = ["ModbusTCP", "ModbusRTU"];
+const SERIAL_PROTOCOLS = ["Serial", "ModbusRTU", "InovanceSerial", "MewtocolSerial"];
+const availableCapabilities = computed(() =>
+	capabilities.value.length ? capabilities.value : FALLBACK_CAPABILITIES,
+);
 
-const openCapabilitiesDialog = async () => {
-	capabilitiesDialogVisible.value = true;
-	if (capabilities.value.length) return;
+const loadCapabilities = async () => {
+	if (capabilities.value.length || loadingCapabilities.value) return;
 	loadingCapabilities.value = true;
 	try {
-		capabilities.value = await machineConnectionDiagnosticsApi.plcCapabilities();
+		const loaded = await machineConnectionDiagnosticsApi.plcCapabilities();
+		if (!loaded.length) throw new Error("协议列表为空");
+		capabilities.value = loaded;
+		capabilitiesError.value = false;
 	} catch (e: unknown) {
+		capabilitiesError.value = true;
 		ElMessage.error(getErr(e, "加载协议能力矩阵失败"));
 	} finally {
 		loadingCapabilities.value = false;
 	}
+};
+
+const protocolOptions = computed(() => {
+	const brandsByProtocol = new Map<string, Set<string>>(
+		COMMON_PROTOCOLS.map((protocol) => [protocol, new Set<string>()]),
+	);
+	for (const capability of availableCapabilities.value) {
+		for (const protocol of capability.protocols) {
+			const brands = brandsByProtocol.get(protocol) ?? new Set<string>();
+			brands.add(capability.brand);
+			brandsByProtocol.set(protocol, brands);
+		}
+	}
+	return Array.from(brandsByProtocol, ([value, brands]) => ({
+		value,
+		brands: [...brands],
+		label: `${COMMON_PROTOCOLS.includes(value) ? "通用协议" : [...brands].join(" / ")} ${value}`,
+	}));
+});
+
+const protocolGroups = computed(() => {
+	const groups = new Map<string, typeof protocolOptions.value>();
+	for (const option of protocolOptions.value) {
+		const brand = COMMON_PROTOCOLS.includes(option.value) ? "通用协议" : option.brands.join(" / ");
+		const options = groups.get(brand) ?? [];
+		options.push(option);
+		groups.set(brand, options);
+	}
+	return Array.from(groups, ([brand, protocols]) => ({ brand, protocols }));
+});
+
+const openCapabilitiesDialog = () => {
+	capabilitiesDialogVisible.value = true;
+	void loadCapabilities();
 };
 
 // PLC设备类型定义
@@ -356,11 +426,14 @@ interface PLCDevice {
 	ip: string;
 	port: number;
 	protocol: string;
+	brand: string;
 	model?: string;
 	station?: number;
 	description?: string;
 	status: string;
-	/** 以下均为汇川专属，落到 extendedProperties（键名大小写必须与驱动一致） */
+	extendedProperties?: Record<string, string>;
+	originalProtocol?: string;
+	hostLinkMode?: "Tcp" | "Serial";
 	series?: string;
 	dataFormat?: string;
 	addressStartWithZero?: boolean;
@@ -382,6 +455,15 @@ const INOVANCE_SERIES = [
 
 const BAUD_RATES = [9600, 19200, 38400, 57600, 115200] as const;
 const DATA_FORMATS = ["ABCD", "BADC", "CDAB", "DCBA"] as const;
+
+function serialDefaults(protocol: string) {
+	return {
+		baudRate: 9600,
+		dataBits: protocol === "OmronHostLink" ? 7 : 8,
+		stopBits: protocol === "OmronHostLink" ? "Two" : "One",
+		parity: protocol === "OmronHostLink" ? "Even" : protocol === "MewtocolSerial" ? "Odd" : "None",
+	};
+}
 
 interface AddressExample {
 	example: string;
@@ -482,6 +564,8 @@ function extProp(d: DeviceDto, key: string): string | undefined {
 // 后端 DeviceDto → 页面 PLCDevice（站号/编号/描述存于 extendedProperties）
 function mapToPlc(d: DeviceDto): PLCDevice {
 	const station = extProp(d, "station");
+	const serial = serialDefaults(d.protocol);
+	const mode = extProp(d, "Mode")?.trim().toLowerCase();
 	return {
 		id: d.id,
 		deviceCode: extProp(d, "deviceCode") ?? d.model ?? "",
@@ -489,19 +573,23 @@ function mapToPlc(d: DeviceDto): PLCDevice {
 		ip: d.host,
 		port: d.port,
 		protocol: d.protocol,
+		brand: d.brand || protocolOptions.value.find((option) => option.value === d.protocol)?.brands[0] || "PLC",
 		model: d.model,
 		station: station ? Number(station) : undefined,
 		description: extProp(d, "description") ?? "",
 		status: d.status,
+		extendedProperties: { ...d.extendedProperties },
+		originalProtocol: d.protocol,
+		hostLinkMode: mode === "serial" || (!mode && extProp(d, "PortName")?.trim()) ? "Serial" : "Tcp",
 		series: extProp(d, "Series") ?? "",
 		dataFormat: extProp(d, "DataFormat") ?? "CDAB",
 		addressStartWithZero: extProp(d, "AddressStartWithZero") === "true",
 		isStringReverse: extProp(d, "IsStringReverse") === "true",
 		portName: extProp(d, "PortName") ?? "",
-		baudRate: Number(extProp(d, "BaudRate") ?? 9600) || 9600,
-		dataBits: Number(extProp(d, "DataBits") ?? 8) || 8,
-		stopBits: extProp(d, "StopBits") ?? "One",
-		parity: extProp(d, "Parity") ?? "None",
+		baudRate: Number(extProp(d, "BaudRate") ?? serial.baudRate) || serial.baudRate,
+		dataBits: Number(extProp(d, "DataBits") ?? serial.dataBits) || serial.dataBits,
+		stopBits: extProp(d, "StopBits") ?? serial.stopBits,
+		parity: extProp(d, "Parity") ?? serial.parity,
 	};
 }
 
@@ -521,32 +609,29 @@ const treeKeyword = ref("");
 const selectedTreeNodeId = ref("all");
 const treeRef = ref();
 
-const deviceTree = [
+const deviceTree = computed(() => [
 	{
 		id: "all",
 		label: "全部设备",
-		children: [
-			{ id: "protocol-ModbusTCP", label: "Modbus TCP" },
-			{ id: "protocol-SiemensS7", label: "西门子S7" },
-			{ id: "protocol-Inovance", label: "汇川 以太网(Inovance)" },
-			{ id: "protocol-InovanceSerial", label: "汇川 串口(InovanceSerial)" },
-			{ id: "protocol-InovanceSerialOverTcp", label: "汇川 串口透传TCP" },
-		],
+		children: protocolOptions.value.map((option) => ({
+			id: `protocol-${option.value}`,
+			label: option.label,
+		})),
 	},
-];
+]);
 
 const handleTreeNodeClick = (data: { id: string }) => {
 	selectedTreeNodeId.value = data.id;
 	currentPage.value = 1;
 };
 
-watch(treeKeyword, (value) => {
+watch([treeKeyword, deviceTree], ([value]) => {
 	treeRef.value?.filter(value);
-});
+}, { flush: "post" });
 
 const filterTreeNode = (value: string, data: { label: string }) => {
 	if (!value) return true;
-	return data.label.includes(value);
+	return data.label.toLowerCase().includes(value.trim().toLowerCase());
 };
 
 // 分页
@@ -566,10 +651,14 @@ function blankDevice(): PLCDevice {
 		ip: "",
 		port: 502,
 		protocol: "ModbusTCP",
+		brand: "PLC",
 		model: "",
 		station: 1,
 		description: "",
 		status: "离线",
+		extendedProperties: {},
+		originalProtocol: "",
+		hostLinkMode: "Tcp",
 		series: "",
 		dataFormat: "CDAB",
 		addressStartWithZero: false,
@@ -585,7 +674,17 @@ function blankDevice(): PLCDevice {
 const currentDevice = reactive<PLCDevice>(blankDevice());
 
 const isInovance = computed(() => currentDevice.protocol.startsWith("Inovance"));
-const isInovanceSerial = computed(() => currentDevice.protocol === "InovanceSerial");
+const isGenericProtocol = computed(() => COMMON_PROTOCOLS.includes(currentDevice.protocol));
+const isSerialConnection = computed(() =>
+	SERIAL_PROTOCOLS.includes(currentDevice.protocol) ||
+	(currentDevice.protocol === "OmronHostLink" && currentDevice.hostLinkMode === "Serial"),
+);
+const brandOptions = computed(() => {
+	const brands = isGenericProtocol.value
+		? ["PLC", ...availableCapabilities.value.map((capability) => capability.brand)]
+		: protocolOptions.value.find((option) => option.value === currentDevice.protocol)?.brands ?? [];
+	return [...new Set([...brands, currentDevice.brand].filter(Boolean))];
+});
 const currentSeriesLabel = computed(
 	() => INOVANCE_SERIES.find((s) => s.value === currentDevice.series)?.label ?? "汇川",
 );
@@ -594,10 +693,20 @@ const seriesAddressExamples = computed(
 );
 
 /** 串口变体不使用 IP，但后端 Host 恒为必填校验项，补个占位免得卡在无关报错上 */
-const handleProtocolChange = (protocol: string) => {
-	if (protocol === "InovanceSerial" && !currentDevice.ip) {
+const ensureSerialHost = () => {
+	if (isSerialConnection.value && !currentDevice.ip) {
 		currentDevice.ip = "127.0.0.1";
 	}
+};
+
+const handleProtocolChange = (protocol: string) => {
+	const brands = protocolOptions.value.find((option) => option.value === protocol)?.brands ?? [];
+	if (!COMMON_PROTOCOLS.includes(protocol) && !brands.includes(currentDevice.brand)) {
+		currentDevice.brand = brands[0] ?? currentDevice.brand;
+	}
+	Object.assign(currentDevice, serialDefaults(protocol));
+	currentDevice.hostLinkMode = "Tcp";
+	ensureSerialHost();
 };
 
 // 连接测试
@@ -668,6 +777,7 @@ const openAddDeviceDialog = () => {
 	isEditing.value = false;
 	Object.assign(currentDevice, blankDevice());
 	deviceDialogVisible.value = true;
+	void loadCapabilities();
 };
 
 // 打开编辑设备对话框
@@ -675,12 +785,18 @@ const openEditDeviceDialog = (device: PLCDevice) => {
 	isEditing.value = true;
 	Object.assign(currentDevice, { ...device });
 	deviceDialogVisible.value = true;
+	void loadCapabilities();
 };
 
 // 保存设备 = 真实创建/更新（站号/编号/描述存 extendedProperties）
 const saveDevice = async () => {
+	ensureSerialHost();
 	if (!currentDevice.deviceCode || !currentDevice.name || !currentDevice.ip || !currentDevice.port || !currentDevice.protocol) {
 		ElMessage.warning("请填写必填字段");
+		return;
+	}
+	if (!currentDevice.brand.trim()) {
+		ElMessage.warning("请选择设备品牌");
 		return;
 	}
 	// 后端 Model 是 NotEmpty 硬校验，留空会导致设备存进网关但同步上游失败，界面看着有、实际不可用
@@ -694,13 +810,22 @@ const saveDevice = async () => {
 		ElMessage.warning("汇川设备必须选择 PLC 系列");
 		return;
 	}
-	if (isInovanceSerial.value && !currentDevice.portName?.trim()) {
-		ElMessage.warning("汇川串口设备必须填写串口号（如 COM3）");
+	if (isSerialConnection.value && !currentDevice.portName?.trim()) {
+		ElMessage.warning("串口设备必须填写串口号（如 COM3）");
 		return;
 	}
 
 	// 键名大小写必须与驱动内 Get(config, "...") 完全一致，否则会被静默忽略
-	const ext: Record<string, string> = {};
+	const ext: Record<string, string> = currentDevice.protocol === currentDevice.originalProtocol
+		? { ...currentDevice.extendedProperties }
+		: {};
+	const replacedProperties = new Set([
+		"station", "devicecode", "description", "portname", "baudrate", "databits", "stopbits", "parity", "mode",
+		...(isInovance.value ? ["series", "dataformat", "addressstartwithzero", "isstringreverse"] : []),
+	]);
+	for (const key of Object.keys(ext)) {
+		if (replacedProperties.has(key.toLowerCase())) delete ext[key];
+	}
 	if (currentDevice.station != null) ext.Station = String(currentDevice.station);
 	if (currentDevice.deviceCode) ext.deviceCode = currentDevice.deviceCode;
 	if (currentDevice.description) ext.description = currentDevice.description;
@@ -710,19 +835,16 @@ const saveDevice = async () => {
 		ext.AddressStartWithZero = String(currentDevice.addressStartWithZero === true);
 		ext.IsStringReverse = String(currentDevice.isStringReverse === true);
 	}
-	if (isInovanceSerial.value) {
+	if (isSerialConnection.value) {
 		ext.PortName = (currentDevice.portName ?? "").trim();
 		ext.BaudRate = String(currentDevice.baudRate ?? 9600);
 		ext.DataBits = String(currentDevice.dataBits ?? 8);
 		ext.StopBits = currentDevice.stopBits ?? "One";
 		ext.Parity = currentDevice.parity ?? "None";
 	}
+	if (currentDevice.protocol === "OmronHostLink") ext.Mode = currentDevice.hostLinkMode ?? "Tcp";
 
-	// InovanceSerial / InovanceSerialOverTcp 注册时没有 "*" 通配品牌（只有以太网版有），
-	// brand 必须命中 Inovance/汇川，否则后端 DriverRegistry.Resolve 找不到驱动
-	const brand = isInovance.value
-		? "Inovance"
-		: currentDevice.model || currentDevice.protocol;
+	const brand = currentDevice.brand.trim();
 
 	try {
 		if (isEditing.value) {
@@ -783,7 +905,7 @@ const deleteDevice = (id: string) => {
 
 // 刷新设备列表 = 重新拉取后端真实设备
 const refreshDeviceList = async () => {
-	await loadDevices();
+	await Promise.all([loadDevices(), loadCapabilities()]);
 	ElMessage.success("设备列表已刷新");
 };
 
@@ -843,6 +965,7 @@ const handleCurrentChange = (current: number) => {
 
 onMounted(() => {
 	void loadDevices();
+	void loadCapabilities();
 });
 </script>
 

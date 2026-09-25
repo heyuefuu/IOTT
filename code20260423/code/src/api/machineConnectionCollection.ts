@@ -2,11 +2,14 @@ import { createMachineConnectionClient } from "./machineConnectionClient";
 
 export type CollectionDataType =
 	| "Bool"
+	| "Int8"
+	| "UInt8"
 	| "Int16"
 	| "Int32"
 	| "Int64"
 	| "UInt16"
 	| "UInt32"
+	| "UInt64"
 	| "Float"
 	| "Double"
 	| "String"

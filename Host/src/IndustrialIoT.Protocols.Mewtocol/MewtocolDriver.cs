@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 
 [ProtocolDriver(ProtocolType.Mewtocol, "Panasonic", "松下", "FP")]
-public class MewtocolDriver : IProtocolDriver, IAddressSpaceBrowser
+public class MewtocolDriver : IProtocolDriver
 {
     private static readonly Regex NumericAddressRegex = new(
         @"^(?<prefix>DT|SR|X|Y|R|T|C)(?<number>\d+)$",
@@ -36,7 +36,7 @@ public class MewtocolDriver : IProtocolDriver, IAddressSpaceBrowser
 
     public DriverCapabilities Capabilities =>
         DriverCapabilities.Read | DriverCapabilities.Write |
-        DriverCapabilities.Browse | DriverCapabilities.BatchRead;
+        DriverCapabilities.BatchRead;
 
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
 
@@ -245,49 +245,6 @@ public class MewtocolDriver : IProtocolDriver, IAddressSpaceBrowser
         }
     }
 
-    public Task<IReadOnlyList<AddressNode>> BrowseAsync(
-        string? parentPath = null, CancellationToken ct = default)
-    {
-        IReadOnlyList<AddressNode> nodes = parentPath?.ToUpperInvariant() switch
-        {
-            null or "" => BuildRootNodes(),
-            "D"  => BuildRegisterNodes("D",  "数据寄存器",   0, 32767, DataType.Int16, true),
-            "LD" => BuildRegisterNodes("LD", "链接寄存器",   0, 32767, DataType.Int16, true),
-            "L"  => BuildRegisterNodes("L",  "链接继电器",   0, 511,   DataType.Bool,  true),
-            "F"  => BuildRegisterNodes("F",  "文件寄存器",   0, 1023,  DataType.UInt16, true),
-            "DT" => BuildRegisterNodes("DT", "数据寄存器", 0, 32767, DataType.Int16, true),
-            "SR" => BuildRegisterNodes("SR", "特殊寄存器", 0, 1023, DataType.UInt16, false),
-            "X"  => BuildRegisterNodes("X", "外部输入", 0, 127, DataType.Bool, false),
-            "Y"  => BuildRegisterNodes("Y", "外部输出", 0, 127, DataType.Bool, true),
-            "R"  => BuildRegisterNodes("R", "内部继电器", 0, 511, DataType.Bool, true),
-            "T"  => BuildRegisterNodes("T", "定时器", 0, 99, DataType.UInt16, true),
-            "C"  => BuildRegisterNodes("C", "计数器", 0, 99, DataType.UInt16, true),
-            _ => []
-        };
-        return Task.FromResult(nodes);
-    }
-
-    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("Path,DisplayName,DataType,Readable,Writable");
-
-        ExportRegisterRange(sb, "D",  "数据寄存器", 0, 32767, DataType.Int16, true);
-        ExportRegisterRange(sb, "LD", "链接寄存器", 0, 32767, DataType.Int16, true);
-        ExportRegisterRange(sb, "L",  "链接继电器", 0, 511, DataType.Bool, true);
-        ExportRegisterRange(sb, "F",  "文件寄存器", 0, 1023, DataType.UInt16, true);
-        ExportRegisterRange(sb, "DT", "数据寄存器", 0, 32767, DataType.Int16, true);
-        ExportRegisterRange(sb, "SR", "特殊寄存器", 0, 1023, DataType.UInt16, false);
-        ExportRegisterRange(sb, "X", "外部输入", 0, 127, DataType.Bool, false);
-        ExportRegisterRange(sb, "Y", "外部输出", 0, 127, DataType.Bool, true);
-        ExportRegisterRange(sb, "R", "内部继电器", 0, 511, DataType.Bool, true);
-        ExportRegisterRange(sb, "T", "定时器", 0, 99, DataType.UInt16, true);
-        ExportRegisterRange(sb, "C", "计数器", 0, 99, DataType.UInt16, true);
-
-        Stream stream = new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
-        return Task.FromResult(stream);
-    }
-
     public async ValueTask DisposeAsync()
     {
         await DisconnectAsync();
@@ -466,47 +423,4 @@ public class MewtocolDriver : IProtocolDriver, IAddressSpaceBrowser
         ErrorMessage = error,
     };
 
-    private static void ExportRegisterRange(
-        StringBuilder sb, string prefix, string displayPrefix,
-        int min, int max, DataType dataType, bool writable)
-    {
-        for (int i = min; i <= max; i++)
-        {
-            sb.AppendLine($"{prefix}{i},{prefix}{i} {displayPrefix},{dataType},True,{writable}");
-        }
-    }
-
-    private static IReadOnlyList<AddressNode> BuildRootNodes() =>
-    [
-        new() { Path = "D",  DisplayName = "D 数据寄存器 (0-32767)",   NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = true },
-        new() { Path = "LD", DisplayName = "LD 链接寄存器 (0-32767)", NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = true },
-        new() { Path = "L",  DisplayName = "L 链接继电器 (0-511)",    NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = true },
-        new() { Path = "F",  DisplayName = "F 文件寄存器 (0-1023)",   NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = true },
-        new() { Path = "DT", DisplayName = "DT 数据寄存器 (0-32767)", NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = true },
-        new() { Path = "SR", DisplayName = "SR 特殊寄存器 (0-1023)", NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = false },
-        new() { Path = "X",  DisplayName = "X 外部输入 (0-127)",     NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = false },
-        new() { Path = "Y",  DisplayName = "Y 外部输出 (0-127)",     NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = true },
-        new() { Path = "R",  DisplayName = "R 内部继电器 (0-511)",   NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = true },
-        new() { Path = "T",  DisplayName = "T 定时器 (0-99)",        NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = true },
-        new() { Path = "C",  DisplayName = "C 计数器 (0-99)",        NodeType = AddressNodeType.Folder, IsReadable = true, IsWritable = true },
-    ];
-
-    private static IReadOnlyList<AddressNode> BuildRegisterNodes(
-        string prefix, string displayPrefix, int min, int max, DataType dataType, bool writable)
-    {
-        var nodes = new List<AddressNode>(max - min + 1);
-        for (int i = min; i <= max; i++)
-        {
-            nodes.Add(new()
-            {
-                Path = $"{prefix}{i}",
-                DisplayName = $"{prefix}{i} {displayPrefix}",
-                NodeType = AddressNodeType.Variable,
-                DataType = dataType,
-                IsReadable = true,
-                IsWritable = writable
-            });
-        }
-        return nodes;
-    }
 }

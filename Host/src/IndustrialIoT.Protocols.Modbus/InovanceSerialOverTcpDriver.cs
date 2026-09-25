@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 
 [ProtocolDriver(ProtocolType.InovanceSerialOverTcp, "Inovance", "汇川")]
-public sealed class InovanceSerialOverTcpDriver : IProtocolDriver, IAddressSpaceBrowser
+public sealed class InovanceSerialOverTcpDriver : IProtocolDriver
 {
     private const ushort DefaultStringLength = 16;
     private readonly ILogger<InovanceSerialOverTcpDriver> _logger;
@@ -25,7 +25,7 @@ public sealed class InovanceSerialOverTcpDriver : IProtocolDriver, IAddressSpace
     public InovanceSerialOverTcpDriver(ILogger<InovanceSerialOverTcpDriver> logger) => _logger = logger;
     public ProtocolType Protocol => ProtocolType.InovanceSerialOverTcp;
     public ConnectionState State => _state;
-    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.Browse | DriverCapabilities.BatchRead;
+    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.BatchRead;
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
 
     public async Task<ConnectionResult> ConnectAsync(DeviceConnectionConfig config, CancellationToken ct = default)
@@ -116,13 +116,6 @@ public sealed class InovanceSerialOverTcpDriver : IProtocolDriver, IAddressSpace
         finally { _semaphore.Release(); }
     }
 
-    public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default) => Task.FromResult(InovanceAddressSpace.Browse(_series, parentPath));
-    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
-    {
-        var lines = InovanceAddressSpace.Export(_series).Select(x => $"{x.Path},{x.Path},{x.DataType},True,{x.Writable}");
-        var csv = "Path,DisplayName,DataType,Readable,Writable\n" + string.Join(Environment.NewLine, lines);
-        return Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(csv)));
-    }
     public async ValueTask DisposeAsync() { await DisconnectAsync(); _semaphore.Dispose(); GC.SuppressFinalize(this); }
 
     private async Task<TagValue> ReadCoreAsync(string address, string mapped, DataType dataType)
