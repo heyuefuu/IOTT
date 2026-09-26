@@ -1,11 +1,13 @@
 <template>
 	<div class="plc-collection-import-view">
 		<h2 class="page-title">PLC采集配置导入</h2>
+		<el-alert title="采样频率与批量导入" description="手动输入可设置单个点位的采集频率；CSV/JSON 批量导入可为不同分组设置不同的 IntervalMs。导入后在「采集任务管理」启动采集。" type="info" :closable="false" />
 
 		<el-card class="import-card">
 			<template #header>
 				<div class="card-header">
 					<span>导入采集配置</span>
+					<el-button @click="openCollectionManage">采集任务管理</el-button>
 				</div>
 			</template>
 
@@ -128,16 +130,26 @@
 								placeholder="请选择数据类型"
 							>
 								<el-option label="布尔值（Bool）" value="Bool" />
+								<el-option label="8位有符号整数（Int8）" value="Int8" />
+								<el-option label="8位无符号整数（UInt8）" value="UInt8" />
+								<el-option label="16位有符号整数（Int16）" value="Int16" />
+								<el-option label="16位无符号整数（UInt16）" value="UInt16" />
 								<el-option label="整数（Int32）" value="Int32" />
+								<el-option label="32位无符号整数（UInt32）" value="UInt32" />
+								<el-option label="64位有符号整数（Int64）" value="Int64" />
+								<el-option label="64位无符号整数（UInt64）" value="UInt64" />
 								<el-option label="浮点数（Float）" value="Float" />
+								<el-option label="双精度浮点数（Double）" value="Double" />
 								<el-option label="字符串（String）" value="String" />
+								<el-option label="字节数组（ByteArray）" value="ByteArray" />
 							</el-select>
 						</el-form-item>
 						<el-form-item label="采集频率" required>
 							<el-input-number
 								v-model="manualConfig.frequency"
 								:min="1"
-								:max="1000"
+								:max="60000"
+								:precision="0"
 								:step="1"
 								style="width: 200px"
 							/>
@@ -193,6 +205,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { Upload, View, Check } from "@element-plus/icons-vue";
 import {
 	ElMessage,
@@ -237,6 +250,12 @@ const manualConfig = reactive({
 
 const devices = ref<DeviceDto[]>([]);
 const devicesLoading = ref(false);
+const route = useRoute();
+const router = useRouter();
+const openCollectionManage = () => {
+	const deviceId = importMethod.value === "file" ? fileConfig.deviceId : manualConfig.deviceId;
+	void router.push({ path: "/collection/manage", query: deviceId ? { deviceId } : {} });
+};
 const getImportError = (error: unknown, fallback: string): string => {
 	const requestError = error as {
 		response?: { data?: string | { error?: string; detail?: string } };
@@ -261,7 +280,14 @@ const loadDevices = async () => {
 	}
 };
 
-onMounted(loadDevices);
+onMounted(async () => {
+	await loadDevices();
+	const deviceId = route.query.deviceId;
+	if (typeof deviceId === "string" && devices.value.some((device) => device.id === deviceId)) {
+		fileConfig.deviceId = deviceId;
+		manualConfig.deviceId = deviceId;
+	}
+});
 
 const normalizeDataType = (value: string): CollectionDataType => {
 	switch (value.toLowerCase()) {
@@ -386,6 +412,10 @@ const getImportFile = async (file: File) => {
 };
 
 const importConfig = () => {
+	if (importMethod.value === "manual" && (!Number.isInteger(manualConfig.frequency) || manualConfig.frequency < 1 || manualConfig.frequency > 60000)) {
+		ElMessage.warning("采样周期应为 1–60000 ms 的整数");
+		return;
+	}
 	if (importMethod.value === "file" && !uploadedFile.value) {
 		ElMessage.warning("请先选择文件");
 		return;
@@ -420,13 +450,12 @@ const importConfig = () => {
 				);
 				ElMessage.success(`导入完成：成功 ${result.successCount} 条，失败 ${result.errorCount} 条`);
 				clearUploadedFile();
-				Object.assign(fileConfig, { deviceId: "", frequency: 1000, groupName: "" });
+				Object.assign(fileConfig, { frequency: 1000, groupName: "" });
 			} else {
 				await importManualConfig();
 				ElMessage.success("配置导入成功");
 				Object.assign(manualConfig, {
 					name: "",
-					deviceId: "",
 					address: "",
 					dataType: "Int32",
 					frequency: 1000,

@@ -57,6 +57,49 @@
 			show-icon
 		/>
 
+		<el-card v-if="probeProfile" class="address-space-card">
+			<template #header>{{ selectedProtocol }} 可读地址探测</template>
+			<el-alert title="探测结果是可读取的地址，不代表已识别变量名称、类型或全部点位。" type="info" :closable="false" />
+			<p>{{ probeProfile.note }} 实际可用范围以 PLC 型号及组态为准。</p>
+			<el-form v-if="probeProfile.areas.length" inline class="probe-form">
+				<el-form-item label="区域">
+					<el-select v-model="probe.area" :disabled="probe.running" style="width: 190px">
+						<el-option v-for="area in probeProfile.areas" :key="area.id" :label="area.label" :value="area.id" />
+					</el-select>
+				</el-form-item>
+				<el-form-item v-if="probeArea?.needsDb" label="DB 块号"><el-input-number v-model="probe.dbNumber" :min="1" :max="65535" :precision="0" :disabled="probe.running" /></el-form-item>
+				<el-form-item label="起始索引"><el-input-number v-model="probe.start" :min="0" :max="65535" :precision="0" :disabled="probe.running" /></el-form-item>
+				<el-form-item label="结束索引"><el-input-number v-model="probe.end" :min="0" :max="65535" :precision="0" :disabled="probe.running" /></el-form-item>
+				<el-form-item>
+					<el-button type="primary" :disabled="probe.running" @click="startProbe">开始只读探测</el-button>
+					<el-button :disabled="!probe.running" @click="stopProbe">停止</el-button>
+					<el-button :disabled="probe.results.length === 0" @click="exportProbeResults">导出候选地址</el-button>
+				</el-form-item>
+			</el-form>
+			<p v-if="probeArea">地址预览：{{ probePreview }}；每次最多探测 64 个地址。</p>
+			<p>进度：{{ probe.checked }} / {{ probe.total }}；可读：{{ probe.results.length }}；读取失败：{{ probe.failed }}</p>
+			<el-alert v-if="probe.lastReadError" :title="probe.lastReadError" type="warning" :closable="false" />
+			<el-alert v-if="probe.error" :title="probe.error" type="error" :closable="false" />
+		</el-card>
+
+		<el-card v-if="probe.results.length" class="address-space-card">
+			<template #header>采集点位配置</template>
+			<el-form v-if="probe.results.length" inline style="margin-top: 12px">
+				<el-form-item label="采集配置名称"><el-input v-model="probeCollection.name" placeholder="例如：产线状态采集" :disabled="probeCollection.saving" /></el-form-item>
+				<el-form-item><el-button type="success" :loading="probeCollection.saving" :disabled="probe.running || !probeSelection.length" @click="saveProbeCollection">保存选中点位并进入采集</el-button></el-form-item>
+			</el-form>
+			<p v-if="probe.results.length">勾选需要持续采集的地址，确认数据类型和采样周期；保存后在任务页启动采集。</p>
+			<el-table v-if="probe.results.length" :data="probe.results" max-height="420" border @selection-change="handleProbeSelection">
+				<el-table-column type="selection" width="45" :selectable="() => !probe.running && !probeCollection.saving" />
+				<el-table-column prop="address" label="候选地址" width="160" />
+				<el-table-column prop="value" label="当前读取值" />
+				<el-table-column prop="dataType" label="探测读取类型" width="150" />
+				<el-table-column label="采集名称" min-width="150"><template #default="{ row }"><el-input v-model="row.displayName" :disabled="probeCollection.saving" /></template></el-table-column>
+				<el-table-column label="采集类型" width="150"><template #default="{ row }"><el-select v-model="row.collectionDataType" :disabled="probeCollection.saving"><el-option v-for="type in directReadDataTypes" :key="type" :label="type" :value="type" /></el-select></template></el-table-column>
+				<el-table-column label="采样周期 (ms)" width="180"><template #default="{ row }"><el-input-number v-model="row.intervalMs" :min="1" :max="60000" :precision="0" :disabled="probeCollection.saving" /></template></el-table-column>
+			</el-table>
+		</el-card>
+
 		<!-- 地址空间树 -->
 		<el-card class="address-space-card" v-if="addressSpace.length > 0">
 			<template #header>
@@ -294,7 +337,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from "vue";
+import { computed, ref, reactive, onMounted, onUnmounted, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import {
 	Refresh,
 	Search,
@@ -307,6 +351,8 @@ import {
 } from "@element-plus/icons-vue";
 import { ElMessage, type LoadFunction } from "element-plus";
 import { machineConnectionDevicesApi } from "@/api/machineConnectionDevices";
+import { createProbeTags, getProbeProfile } from "@/utils/plcProbe";
+import { machineConnectionCollectionApi, type CollectionGroupConfig } from "@/api/machineConnectionCollection";
 import {
 	machineConnectionPointsApi,
 	type AddressNode,
@@ -322,6 +368,7 @@ interface PLCDevice {
 	port: number;
 	protocol: string;
 	status: string;
+	extendedProperties?: Record<string, string>;
 }
 
 // 地址类型定义
@@ -360,6 +407,41 @@ const directReadDataTypes: DataTypeApi[] = [
 
 // 设备列表（来自后端 /api/devices?type=PLC）
 const devices = ref<PLCDevice[]>([]);
+const route = useRoute();
+const router = useRouter();
+const selectedDevice = computed(() => devices.value.find((device) => device.id === form.deviceId));
+const selectedProtocol = computed(() => selectedDevice.value?.protocol);
+const probeProfile = computed(() => getProbeProfile(selectedProtocol.value ?? "", selectedDevice.value?.extendedProperties));
+
+interface ProbeResult {
+	address: string;
+	value: string;
+	dataType: DataTypeApi;
+	collectionDataType: DataTypeApi;
+	displayName: string;
+	intervalMs: number;
+}
+const probeSelection = ref<ProbeResult[]>([]);
+const probeCollection = reactive({ name: "", saving: false });
+let probeSaveVersion = 0;
+const handleProbeSelection = (rows: ProbeResult[]) => { probeSelection.value = rows; };
+const probe = reactive({ area: "HR", dbNumber: 1, start: 0, end: 63, running: false, checked: 0, total: 0,
+	failed: 0, error: "", lastReadError: "", results: [] as ProbeResult[] });
+const probeArea = computed(() => probeProfile.value?.areas.find((area) => area.id === probe.area));
+const probePreview = computed(() => {
+	if (!probeArea.value) return "";
+	try {
+		const tags = createProbeTags(probeArea.value, probe.start, probe.end, probe.dbNumber);
+		return `${tags[0]?.address} → ${tags[tags.length - 1]?.address}`;
+	} catch (error) { return (error as Error).message; }
+});
+let probeController: AbortController | null = null;
+const stopProbe = () => {
+	probeController?.abort();
+	probeController = null;
+	probe.running = false;
+};
+onUnmounted(() => { stopProbe(); probeSaveVersion += 1; });
 
 function getErr(e: unknown, fallback: string): string {
 	const ax = e as {
@@ -396,6 +478,7 @@ const loadDevices = async () => {
 			port: d.port,
 			protocol: d.protocol,
 			status: d.status,
+			extendedProperties: d.extendedProperties,
 		}));
 	} catch (e: unknown) {
 		ElMessage.error(getErr(e, "加载设备列表失败"));
@@ -447,6 +530,12 @@ const addressTreeProps = {
 // 初始化
 onMounted(async () => {
 	await loadDevices();
+	const requestedDeviceId = route.query.deviceId;
+	if (typeof requestedDeviceId === "string" && devices.value.some((device) => device.id === requestedDeviceId)) {
+		form.deviceId = requestedDeviceId;
+		await loadAddressSpace();
+		return;
+	}
 	// 默认选择第一个设备
 	if (devices.value.length > 0) {
 		form.deviceId = devices.value[0]?.id || "";
@@ -456,6 +545,20 @@ onMounted(async () => {
 
 // 处理设备变更
 const handleDeviceChange = () => {
+	stopProbe();
+	probeSaveVersion += 1;
+	probeSelection.value = [];
+	probeCollection.name = "";
+	probe.results = [];
+	probe.checked = 0;
+	probe.total = 0;
+	probe.error = "";
+	probe.failed = 0;
+	probe.lastReadError = "";
+	probe.area = probeProfile.value?.areas[0]?.id ?? "";
+	probe.dbNumber = 1;
+	probe.start = 0;
+	probe.end = 63;
 	clearExactAddressRead();
 	addressSpaceVersion.value += 1;
 	loading.value = false;
@@ -466,6 +569,98 @@ const handleDeviceChange = () => {
 	selectedAddress.value = null;
 	selectedAddresses.value = [];
 	searchResults.value = [];
+};
+
+const startProbe = async () => {
+	const area = probeArea.value;
+	if (!area || !form.deviceId || probe.running || probeCollection.saving) return;
+	let pendingTags: ReturnType<typeof createProbeTags>;
+	try { pendingTags = createProbeTags(area, probe.start, probe.end, probe.dbNumber); }
+	catch (error) {
+		ElMessage.warning((error as Error).message);
+		return;
+	}
+	const deviceId = form.deviceId;
+	const controller = new AbortController();
+	probeController = controller;
+	probe.running = true;
+	probe.checked = 0;
+	probe.total = pendingTags.length;
+	probe.error = "";
+	probe.failed = 0;
+	probe.lastReadError = "";
+	probe.results = [];
+	probeSelection.value = [];
+	try {
+		for (const request of pendingTags) {
+			if (controller.signal.aborted) break;
+			const response = await machineConnectionPointsApi.readTags(deviceId, { tags: [request] }, controller.signal);
+			if (controller.signal.aborted || form.deviceId !== deviceId) break;
+			const tag = response.tags.find((item) => item.address === request.address);
+			if (tag?.quality === "Good") {
+				probe.results.push({
+					address: tag.address,
+					value: typeof tag.value === "object" ? JSON.stringify(tag.value) : String(tag.value),
+					dataType: area.dataType,
+					collectionDataType: area.dataType,
+					displayName: tag.address,
+					intervalMs: 1000,
+				});
+			} else {
+				probe.failed += 1;
+				probe.lastReadError = `${request.address}：${tag?.errorMessage || "未返回有效读取值"}`;
+			}
+			probe.checked += 1;
+			if (probe.checked < probe.total) await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+	} catch (error) {
+		if (!controller.signal.aborted) probe.error = getErr(error, "探测失败");
+	} finally {
+		if (probeController === controller) { probeController = null; probe.running = false; }
+	}
+};
+
+const saveProbeCollection = async () => {
+	if (probe.running || probeCollection.saving || !form.deviceId) return;
+	const selected = probeSelection.value.filter((row) => probe.results.includes(row));
+	if (!selected.length || !probeCollection.name.trim()) {
+		ElMessage.warning("请填写采集配置名称并勾选点位");
+		return;
+	}
+	if (selected.some((row) => !Number.isInteger(row.intervalMs) || row.intervalMs < 1 || row.intervalMs > 60000
+		|| !directReadDataTypes.includes(row.collectionDataType))) {
+		ElMessage.warning("请确认采集类型及 1–60000 ms 的整数采样周期");
+		return;
+	}
+	const groups = new Map<number, CollectionGroupConfig>();
+	for (const row of selected) {
+		const group = groups.get(row.intervalMs) ?? { groupName: `采样_${row.intervalMs}ms`, intervalMs: row.intervalMs, tags: [] };
+		group.tags.push({ address: row.address, dataType: row.collectionDataType, displayName: row.displayName.trim() || row.address });
+		groups.set(row.intervalMs, group);
+	}
+	const deviceId = form.deviceId;
+	const version = probeSaveVersion;
+	probeCollection.saving = true;
+	try {
+		await machineConnectionCollectionApi.createProfile(deviceId, { name: probeCollection.name.trim(), groups: [...groups.values()] });
+		if (version !== probeSaveVersion || deviceId !== form.deviceId) return;
+		ElMessage.success("采集配置已保存，可在任务页启动采集");
+		await router.push({ path: "/collection/manage", query: { deviceId } });
+	} catch (error) {
+		if (version === probeSaveVersion) ElMessage.error(getErr(error, "保存采集配置失败"));
+	} finally { probeCollection.saving = false; }
+};
+
+const exportProbeResults = () => {
+	const escapeCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
+	const rows = ["Address,Value,ReadType", ...probe.results.map((result) =>
+		[result.address, result.value, result.dataType].map(escapeCell).join(","))];
+	const url = URL.createObjectURL(new Blob([rows.join("\r\n")], { type: "text/csv;charset=utf-8" }));
+	const anchor = document.createElement("a");
+	anchor.href = url;
+	anchor.download = `${selectedProtocol.value}_readable_${form.deviceId}.csv`;
+	anchor.click();
+	URL.revokeObjectURL(url);
 };
 
 // 加载地址空间 = 真实浏览后端地址空间
@@ -717,11 +912,33 @@ const exportAddresses = async () => {
 
 // 添加到采集
 const addSelectedToCollection = () => {
+	if (probe.running || probeCollection.saving) return;
 	if (selectedAddresses.value.length === 0) {
 		ElMessage.warning("请先选择点位");
 		return;
 	}
-	ElMessage.info("请通过 PLC采集配置导入 页面写入后端采集配置");
+	const selected = new Set(selectedAddresses.value);
+	const rows: ProbeResult[] = [];
+	let unsupported = false;
+	const visit = (nodes: AddressItem[]) => {
+		for (const node of nodes) {
+			if (node.type !== "folder" && selected.has(node.address)) {
+				const dataType = directReadDataTypes.find((type) => type === node.dataType);
+				if (!dataType) unsupported = true;
+				else rows.push({ address: node.address, value: "—", dataType, collectionDataType: dataType,
+					displayName: node.name, intervalMs: 1000 });
+			}
+			if (node.children) visit(node.children);
+		}
+	};
+	visit(addressSpace.value);
+	if (unsupported || !rows.length) {
+		ElMessage.warning("请选择具有明确数据类型的变量节点；复杂类型请通过采集配置导入设置");
+		return;
+	}
+	probe.results = rows;
+	probeSelection.value = [];
+	ElMessage.success("点位已加入上方采集配置，请勾选并设置采样周期后保存");
 };
 
 // 获取地址类型名称

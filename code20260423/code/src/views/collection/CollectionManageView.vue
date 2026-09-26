@@ -66,6 +66,7 @@
 							type="success"
 							size="small"
 							:loading="startingProfileId === scope.row.id"
+							:disabled="!scope.row.isEnabled || !!startingProfileId"
 							@click="startProfile(scope.row)"
 						>
 							启动采集
@@ -260,6 +261,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { Refresh } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -292,6 +294,7 @@ function getErr(e: unknown, fallback: string): string {
 // ---------- 设备 ----------
 const devices = ref<DeviceDto[]>([]);
 const selectedDeviceId = ref("");
+const route = useRoute();
 
 const deviceName = (id: string) =>
 	devices.value.find((d) => d.id === id)?.name ?? id;
@@ -307,6 +310,7 @@ const loadDevices = async () => {
 // ---------- 采集配置 ----------
 const profiles = ref<CollectionProfileDto[]>([]);
 const loadingProfiles = ref(false);
+let profilesRequestVersion = 0;
 const detailDialogVisible = ref(false);
 const detailProfile = ref<CollectionProfileDto | null>(null);
 const startingProfileId = ref("");
@@ -318,17 +322,19 @@ const formatIntervals = (p: CollectionProfileDto) =>
 	[...new Set(p.groups.map((g) => `${g.intervalMs}ms`))].join(" / ") || "-";
 
 const loadProfiles = async () => {
-	if (!selectedDeviceId.value) return;
+	const version = ++profilesRequestVersion;
+	const deviceId = selectedDeviceId.value;
+	if (!deviceId) { loadingProfiles.value = false; return; }
 	loadingProfiles.value = true;
 	try {
-		profiles.value = await machineConnectionCollectionApi.listProfiles(
-			selectedDeviceId.value,
-		);
+		const loaded = await machineConnectionCollectionApi.listProfiles(deviceId);
+		if (version === profilesRequestVersion && deviceId === selectedDeviceId.value) profiles.value = loaded;
 	} catch (e: unknown) {
+		if (version !== profilesRequestVersion || deviceId !== selectedDeviceId.value) return;
 		profiles.value = [];
 		ElMessage.error(getErr(e, "加载采集配置失败"));
 	} finally {
-		loadingProfiles.value = false;
+		if (version === profilesRequestVersion) loadingProfiles.value = false;
 	}
 };
 
@@ -395,6 +401,11 @@ const showProfileDetail = (profile: CollectionProfileDto) => {
 };
 
 const startProfile = async (profile: CollectionProfileDto) => {
+	if (startingProfileId.value) return;
+	if (!profile.isEnabled || profile.deviceId !== selectedDeviceId.value) {
+		ElMessage.warning("请选择当前设备已启用的采集配置");
+		return;
+	}
 	if (!profile.groups.length || !countTags(profile)) {
 		ElMessage.warning("该配置没有可采集的点位");
 		return;
@@ -471,6 +482,7 @@ const subscribedDeviceId = ref("");
 const MAX_LIVE_ROWS = 200;
 
 const onBatch = (batch: CollectedDataBatch) => {
+	if (batch.deviceId !== subscribedDeviceId.value) return;
 	// 按地址合并为「最新值」表：同地址覆盖，新地址插入
 	const rows = new Map(
 		liveRows.value.map((r) => [`${r.groupName}|${r.address}`, r] as const),
@@ -551,13 +563,20 @@ const formatValue = (value: unknown) => {
 };
 
 onMounted(() => {
-	void loadDevices();
+	void loadDevices().then(() => {
+		const deviceId = route.query.deviceId;
+		if (typeof deviceId === "string" && devices.value.some((device) => device.id === deviceId)) {
+			selectedDeviceId.value = deviceId;
+			handleDeviceChange();
+		}
+	});
 	void loadTasks();
 	// 任务状态轻量轮询（数据本身走 SignalR 推送）
 	tasksTimer = window.setInterval(() => void loadTasks(), 10_000);
 });
 
 onUnmounted(() => {
+	profilesRequestVersion += 1;
 	if (tasksTimer !== undefined) {
 		clearInterval(tasksTimer);
 		tasksTimer = undefined;

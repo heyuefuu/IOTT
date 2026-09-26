@@ -3,17 +3,25 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
-import { nextTick, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import TreeStore from "element-plus/es/components/tree/src/model/tree-store.mjs";
 
 const component = readFileSync(new URL("../src/views/plc/AddressBrowserView.vue", import.meta.url), "utf8");
+const probeExports = {};
+vm.runInNewContext(ts.transpileModule(
+    readFileSync(new URL("../src/utils/plcProbe.ts", import.meta.url), "utf8"),
+    { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
+).outputText, { exports: probeExports });
+const { getProbeProfile, createProbeTags } = probeExports;
 const script = component.match(/<script[^>]*setup[^>]*>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(script, "AddressBrowserView script setup exists");
 const names = ["mapNode", "getErr", "handleDeviceChange", "loadAddressSpace", "browseNotice", "browseNoticeType",
     "loadAddressChildren", "searchAddress", "form", "searchForm", "devices", "addressSpace",
     "addressSpaceVersion", "expandedKeys", "selectedAddress", "selectedAddresses", "searchResults",
     "loading", "addressTreeProps", "readExactAddress", "clearExactAddressRead", "directRead",
-    "directReadDataTypes", "resetSearch"];
+    "directReadDataTypes", "resetSearch", "selectedDevice", "selectedProtocol", "probeProfile", "probeArea",
+    "probe", "probeController", "stopProbe", "startProbe", "probeSelection", "probeCollection",
+    "probeSaveVersion", "handleProbeSelection", "saveProbeCollection", "addSelectedToCollection"];
 const parsed = ts.createSourceFile("AddressBrowserView.ts", script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 const statements = parsed.statements.filter((statement) => {
     if (ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression)
@@ -50,19 +58,23 @@ async function flush() {
     await nextTick();
 }
 
-function setup(browse = async (_deviceId, parentPath) => parentPath ? nodes("I5", "Variable") : nodes(), read = async () => ({ tags: [] })) {
+function setup(browse = async (_deviceId, parentPath) => parentPath ? nodes("I5", "Variable") : nodes(), read = async () => ({ tags: [] }), create = async () => ({})) {
     const calls = [];
     const readCalls = [];
     const errors = [];
     const infos = [];
     const warnings = [];
     const successes = [];
+    const creates = [];
+    const routes = [];
     const context = vm.createContext({
-        ref, reactive, watch,
+        ref, reactive, watch, computed, AbortController, setTimeout, createProbeTags, getProbeProfile,
         machineConnectionPointsApi: {
             browseAddressSpace(...args) { calls.push(args); return browse(...args); },
             readTags(...args) { readCalls.push(args); return read(...args); },
         },
+        machineConnectionCollectionApi: { createProfile(...args) { creates.push(args); return create(...args); } },
+        router: { async push(route) { routes.push(route); } },
         ElMessage: { error: (message) => errors.push(message), info: (message) => infos.push(message),
             warning: (message) => warnings.push(message), success: (message) => successes.push(message) },
     });
@@ -70,7 +82,7 @@ function setup(browse = async (_deviceId, parentPath) => parentPath ? nodes("I5"
     const state = context.fixture;
     state.form.deviceId = "A";
     state.devices.value = [{ id: "A", protocol: "OpcUa" }, { id: "B", protocol: "OpcUa" }];
-    return { ...state, calls, readCalls, errors, infos, warnings, successes, mount() {
+    return { ...state, calls, readCalls, errors, infos, warnings, successes, creates, routes, mount() {
         const store = reactive(new TreeStore({
             data: state.addressSpace.value, key: "address", props: state.addressTreeProps,
             lazy: true, load: state.loadAddressChildren, defaultCheckedKeys: [], defaultExpandedKeys: [],
@@ -80,6 +92,131 @@ function setup(browse = async (_deviceId, parentPath) => parentPath ? nodes("I5"
         return { store, stop };
     } };
 }
+
+test("Probe addresses follow protocol numbering, bit boundaries and explicit DB selection", () => {
+    const cases = [
+        ["ModbusTCP", {}, "HR", 0, 1, ["HR0", "HR1"], "UInt16"],
+        ["ModbusRTU", {}, "DI", 0, 1, ["DI0", "DI1"], "Bool"],
+        ["Profibus", {}, "IR", 0, 1, ["IR0", "IR1"], "UInt16"],
+        ["FINS", {}, "DM", 15, 16, ["DM15", "DM16"], "UInt16"],
+        ["OmronHostLink", {}, "CIO", 15, 16, ["CIO15", "CIO16"], "UInt16"],
+        ["Mewtocol", {}, "X", 15, 16, ["X0.F", "X1.0"], "Bool"],
+        ["MewtocolSerial", {}, "DT", 9, 10, ["DT9", "DT10"], "UInt16"],
+        ["SiemensS7", {}, "DB", 9, 10, ["DB12.DBB9", "DB12.DBB10"], "UInt8"],
+        ["SiemensS7", {}, "AIW", 0, 1, ["AIW0", "AIW2"], "UInt16"],
+        ["Inovance", { Series: "H3U" }, "X", 7, 8, ["X7", "X10"], "Bool"],
+        ["InovanceSerial", { series: "H5U" }, "Y", 63, 64, ["Y77", "Y100"], "Bool"],
+        ["InovanceSerialOverTcp", { Series: "AM600" }, "MX", 7, 8, ["MX0.7", "MX1.0"], "Bool"],
+    ];
+    for (const [protocol, properties, id, start, end, addresses, type] of cases) {
+        const area = getProbeProfile(protocol, properties).areas.find((item) => item.id === id);
+        const tags = createProbeTags(area, start, end, 12);
+        assert.deepEqual(Array.from(tags, (tag) => tag.address), addresses, protocol);
+        assert.ok(tags.every((tag) => tag.dataType === type), protocol);
+    }
+    assert.equal(getProbeProfile("OpcUa"), undefined);
+    assert.equal(getProbeProfile("Inovance", { Series: "unknown" }).areas.length, 0);
+    assert.equal(getProbeProfile("Inovance", {}).areas.length, 0);
+});
+
+test("Probe input bounds reject invalid ranges and DB numbers before any read", () => {
+    const area = getProbeProfile("SiemensS7").areas.find((item) => item.id === "DB");
+    for (const args of [[-1, 1, 1], [0, 64, 1], [2, 1, 1], [0.5, 1, 1], [65535, 65536, 1], [0, 1, 0], [0, 1, 1.5]]) {
+        assert.throws(() => createProbeTags(area, ...args));
+    }
+    assert.equal(createProbeTags(area, 0, 63, 65535).length, 64);
+});
+
+test("Probe retains only successful real reads and reports missing or bad replies", async () => {
+    const fixture = setup(undefined, async (_device, { tags }) => ({ tags: tags[0].address === "DM1" ? [] : [
+        { ...tags[0], quality: tags[0].address === "DM2" ? "Bad" : "Good", value: 0, errorMessage: "rejected" },
+    ] }));
+    fixture.devices.value[0].protocol = "FINS";
+    fixture.handleDeviceChange();
+    fixture.probe.end = 2;
+    await fixture.startProbe();
+    assert.equal(fixture.probe.checked, 3);
+    assert.equal(fixture.probe.failed, 2);
+    assert.deepEqual(Array.from(fixture.probe.results, (tag) => tag.address), ["DM0"]);
+    assert.equal(fixture.probe.results[0].value, "0");
+    assert.match(fixture.probe.lastReadError, /DM2.*rejected/);
+    assert.equal(fixture.addressSpace.value.length, 0);
+    assert.ok(fixture.readCalls.every((call) => call[1].tags.length === 1 && call[2] instanceof AbortSignal));
+});
+
+test("Changing devices cancels the probe and discards a late reply", async () => {
+    const waiting = deferred();
+    const fixture = setup(undefined, () => waiting.promise);
+    fixture.devices.value[0].protocol = "SiemensS7";
+    fixture.handleDeviceChange();
+    fixture.probe.end = 1;
+    const run = fixture.startProbe();
+    await fixture.startProbe();
+    assert.equal(fixture.readCalls.length, 1);
+    fixture.form.deviceId = "B";
+    fixture.handleDeviceChange();
+    waiting.resolve(readResult("IB0", "UInt8", 7));
+    await run;
+    assert.equal(fixture.probe.running, false);
+    assert.equal(fixture.probe.results.length, 0);
+    assert.equal(fixture.probe.checked, 0);
+    assert.equal(fixture.readCalls[0][2].aborted, true);
+});
+
+test("Selected probe points save with per-point types, frequency groups and the correct device", async () => {
+    const fixture = setup();
+    fixture.probe.results = [
+        { address: "HR0", dataType: "UInt16", collectionDataType: "Float", displayName: "温度", intervalMs: 1000 },
+        { address: "HR2", dataType: "UInt16", collectionDataType: "UInt16", displayName: "", intervalMs: 5000 },
+        { address: "HR3", dataType: "UInt16", collectionDataType: "UInt16", displayName: "未选中", intervalMs: 1000 },
+    ];
+    fixture.probeCollection.name = "产线采集";
+    fixture.handleProbeSelection(fixture.probe.results.slice(0, 2));
+    await fixture.saveProbeCollection();
+    const [deviceId, profile] = fixture.creates[0];
+    assert.equal(deviceId, "A");
+    assert.deepEqual(Array.from(profile.groups, (group) => group.intervalMs), [1000, 5000]);
+    assert.equal(profile.groups[0].tags[0].dataType, "Float");
+    assert.equal(profile.groups[1].tags[0].displayName, "HR2");
+    assert.equal(fixture.routes[0].query.deviceId, "A");
+    assert.equal(fixture.routes[0].path, "/collection/manage");
+});
+
+test("Saving a probe profile rejects invalid periods and ignores navigation after a device change", async () => {
+    const waiting = deferred();
+    const fixture = setup(undefined, undefined, () => waiting.promise);
+    fixture.probe.results = [{ address: "HR0", collectionDataType: "UInt16", displayName: "A", intervalMs: 0 }];
+    fixture.handleProbeSelection(fixture.probe.results);
+    fixture.probeCollection.name = "A";
+    await fixture.saveProbeCollection();
+    assert.equal(fixture.creates.length, 0);
+    fixture.probe.results[0].intervalMs = 5000;
+    const saving = fixture.saveProbeCollection();
+    await fixture.saveProbeCollection();
+    assert.equal(fixture.creates.length, 1);
+    fixture.form.deviceId = "B";
+    fixture.handleDeviceChange();
+    waiting.resolve({});
+    await saving;
+    assert.equal(fixture.routes.length, 0);
+    assert.equal(fixture.probeCollection.saving, false);
+});
+
+test("OPC UA selected variables enter the same editable collection flow", () => {
+    const fixture = setup();
+    fixture.addressSpace.value = [{ address: "folder", name: "folder", type: "folder", children: [
+        { address: "ns=2;s=Temperature", name: "Temperature", type: "point", dataType: "Float" },
+        { address: "ns=2;s=Other", name: "Other", type: "point", dataType: "Bool" },
+    ] }];
+    fixture.selectedAddresses.value = ["folder", "ns=2;s=Temperature"];
+    fixture.addSelectedToCollection();
+    assert.equal(fixture.probe.results.length, 1);
+    assert.equal(fixture.probe.results[0].collectionDataType, "Float");
+    assert.equal(fixture.probe.results[0].address, "ns=2;s=Temperature");
+    fixture.addressSpace.value[0].children[0].dataType = "Structure";
+    fixture.addSelectedToCollection();
+    assert.equal(fixture.warnings.length, 1);
+});
 
 test("Initial lazy roots and loaded descendants remain visible and searchable with the device protocol", async () => {
     const fixture = setup();

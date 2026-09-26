@@ -1,5 +1,10 @@
 var checks = new (string Name, Func<Task> Run)[]
 {
+    ("PLC collection groups preserve driver values and periods", PlcCollectionRegressionTests.CollectGroupsAsync),
+    ("PLC collection survives request cancellation", PlcCollectionRegressionTests.RequestCancellationAsync),
+    ("PLC collection waits for reads before releasing", PlcCollectionRegressionTests.StopWaitsForReadAsync),
+    ("PLC collection cancels siblings on group initialization failure", PlcCollectionRegressionTests.GroupInitializationFailureAsync),
+    ("PLC collection serializes shared device connection lifetimes", PlcCollectionRegressionTests.SharedDeviceLifecycleAsync),
     ("Collection config rejects missing and deleted devices", CollectionConfigRegressionTests.RejectMissingDevicesAsync),
     ("Collection config preserves registered device profiles", CollectionConfigRegressionTests.CreateForRegisteredDeviceAsync),
     ("PLC address browsing rejects synthetic directories", PlcAddressSpaceRegressionTests.RunAsync),
@@ -22,6 +27,8 @@ var checks = new (string Name, Func<Task> Run)[]
     ("Huazhong robot health address", ModbusRegressionTests.RobotHealthAddressAsync),
     ("HNC and JingDiao IPC directory errors", SdkDirectoryRegressionTests.RunAsync),
 };
+if (args.Contains("--plc-collection"))
+    checks = checks.Where(check => check.Name.StartsWith("PLC collection", StringComparison.Ordinal)).ToArray();
 if (args.Contains("--collection-config"))
     checks = checks.Where(check => check.Name.StartsWith("Collection config", StringComparison.Ordinal)).ToArray();
 if (args.Contains("--siemens-s7"))

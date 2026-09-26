@@ -136,10 +136,11 @@ export const machineConnectionPointsApi = {
      * 法那科 FOCAS 的 address 为斜杠路径（如 `/CNC/Fanuc/Program/Name`），`dataType` 为
      * `String` | `Double` | `Bool` 等与后端 `DataType` 枚举一致（不区分大小写）。
      */
-    async readTags(deviceId: string, body: ReadTagsRequest): Promise<ReadTagsResponse> {
+    async readTags(deviceId: string, body: ReadTagsRequest, signal?: AbortSignal): Promise<ReadTagsResponse> {
         const res = await client.post<ReadTagsResponse>(
             `/api/data/${encodeURIComponent(deviceId)}/read`,
             body,
+            { signal, ...(signal ? { timeout: 15_000 } : {}) },
         );
         return res.data;
     },

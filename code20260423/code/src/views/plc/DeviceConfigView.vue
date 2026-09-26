@@ -29,7 +29,8 @@
 						<el-icon><Grid /></el-icon>
 						协议能力矩阵
 					</el-button>
-					<el-button @click="goTo('/plc/import')">采集导入</el-button>
+					<el-button @click="goTo('/plc/import')">采样频率与批量导入</el-button>
+					<el-button @click="goTo('/collection/manage')">采集任务管理</el-button>
 					<el-input v-model="searchQuery" placeholder="搜索设备名称/编号/IP/协议"
 						style="width: 300px; margin-left: auto" prefix-icon="Search" />
 				</div>
@@ -59,9 +60,11 @@
 						<div class="card-footer">
 							<div class="card-footer-row">
 								<el-button type="success" link size="small" @click="testConnection(device)">连接测试</el-button>
-								<el-button type="primary" link size="small" @click="goTo('/plc/address')">地址浏览</el-button>
+								<el-button type="primary" link size="small" @click="goToCollection('/plc/address', device.id)">地址浏览</el-button>
 								<el-button type="warning" link size="small" @click="goTo('/plc/rw')">数据读写</el-button>
 								<el-button type="info" link size="small" @click="goTo('/plc/status')">状态监控</el-button>
+								<el-button type="success" link size="small" @click="goToCollection('/plc/import', device.id)">采集配置</el-button>
+								<el-button type="success" link size="small" @click="goToCollection('/collection/manage', device.id)">启动采集</el-button>
 							</div>
 							<div class="card-footer-row">
 								<el-button type="primary" link size="small" @click="openEditDeviceDialog(device)">编辑</el-button>
@@ -531,6 +534,10 @@ const goTo = (path: string) => {
 	void router.push(path);
 };
 
+const goToCollection = (path: string, deviceId: string) => {
+	void router.push({ path, query: { deviceId } });
+};
+
 function getErr(e: unknown, fallback: string): string {
 	const ax = e as {
 		response?: { data?: { error?: string; detail?: string } };
@@ -989,6 +996,7 @@ onMounted(() => {
 
 	.action-bar {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		margin-bottom: 20px;
 		gap: 10px;

@@ -62,7 +62,7 @@ const script = component.match(/<script[^>]*setup[^>]*>([\s\S]*?)<\/script>/)?.[
 assert.ok(script);
 const names = ["fileConfig", "manualConfig", "uploadedFile", "clearUploadedFile", "handleFileChange",
     "handleFileRemove", "parseTiaFile", "getImportFile", "importMethod", "devices", "devicesLoading",
-    "getImportError", "loadDevices", "normalizeDataType", "importManualConfig", "importConfig"];
+    "getImportError", "loadDevices", "normalizeDataType", "importManualConfig", "importConfig", "openCollectionManage"];
 const parsed = ts.createSourceFile("CollectionImportView.ts", script, ts.ScriptTarget.Latest, true);
 const statements = parsed.statements.filter(statement => ts.isVariableStatement(statement)
     && names.includes(statement.declarationList.declarations[0]?.name.getText(parsed)));
@@ -82,9 +82,11 @@ function setup(options = {}) {
     const requests = [];
     const deviceRequests = [];
     const confirmations = [];
+    const routes = [];
     let clearCount = 0;
     const context = vm.createContext({
         reactive, ref, watch, File, parseTiaSymbolTableCsv, readImportFileText, toCollectionImportCsvFile,
+        router: { push(route) { routes.push(route); } },
         fileType: ref("tia"), uploadRef: ref({ clearFiles() { clearCount++; } }),
         ElMessage: { error(message) { messages.push(message); }, warning(message) { warnings.push(message); },
             success(message) { successes.push(message); } },
@@ -109,7 +111,7 @@ function setup(options = {}) {
     });
     vm.runInContext(handlersSource, context);
     return { ...context.handlers, context, messages, warnings, successes, requests, deviceRequests,
-        confirmations, get clearCount() { return clearCount; } };
+        confirmations, routes, get clearCount() { return clearCount; } };
 }
 
 test("TIA frequency and group are independent of the manual form", async () => {
@@ -213,7 +215,36 @@ test("Manual import submits the selected device ID and the requested I5 Int32 pr
             tags: [{ address: "I5", dataType: "Int32", displayName: "111" }] }] },
     }]);
     assert.deepEqual(fixture.successes, ["配置导入成功"]);
-    assert.equal(fixture.manualConfig.deviceId, "");
+    assert.equal(fixture.manualConfig.deviceId, registeredDevice.id);
+});
+
+test("Collection navigation uses the active import mode and retains its device after saving", async () => {
+    const fixture = setup();
+    await fixture.loadDevices();
+    fillManual(fixture);
+    fixture.fileConfig.deviceId = "another-device";
+    fixture.openCollectionManage();
+    assert.equal(fixture.routes[0].query.deviceId, registeredDevice.id);
+    await fixture.importConfig();
+    fixture.openCollectionManage();
+    assert.equal(fixture.routes[1].query.deviceId, registeredDevice.id);
+    fixture.importMethod.value = "file";
+    fixture.openCollectionManage();
+    assert.equal(fixture.routes[2].query.deviceId, "another-device");
+});
+
+test("Manual collection accepts slow sampling and rejects invalid periods", async () => {
+    const fixture = setup();
+    await fixture.loadDevices();
+    fillManual(fixture);
+    for (const period of [0, -1, 1.5, 60001, NaN]) {
+        fixture.manualConfig.frequency = period;
+        await fixture.importConfig();
+    }
+    assert.equal(fixture.requests.length, 0);
+    fixture.manualConfig.frequency = 5000;
+    await fixture.importConfig();
+    assert.equal(fixture.requests[0].body.groups[0].intervalMs, 5000);
 });
 
 for (const method of ["manual", "file"]) {

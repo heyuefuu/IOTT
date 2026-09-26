@@ -18,6 +18,7 @@ public class CollectionSchedulerService : BackgroundService, ICollectionPipeline
     private readonly ILogger<CollectionSchedulerService> _logger;
     private readonly Channel<CollectedDataBatch> _channel;
     private readonly ConcurrentDictionary<string, CollectionTaskEntry> _tasks = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _deviceLifecycleLocks = new();
     private readonly IProtocolDriverFactory _driverFactory;
     private readonly IServiceProvider _serviceProvider;
 
@@ -36,47 +37,36 @@ public class CollectionSchedulerService : BackgroundService, ICollectionPipeline
 
     public ChannelReader<CollectedDataBatch> GetOutputReader() => _channel.Reader;
 
-    public Task<string> StartCollectionAsync(DeviceCollectionProfile profile, CancellationToken ct = default)
+    public async Task<string> StartCollectionAsync(DeviceCollectionProfile profile, CancellationToken ct = default)
     {
+        var lifecycleGate = _deviceLifecycleLocks.GetOrAdd(profile.DeviceId, _ => new SemaphoreSlim(1, 1));
+        await lifecycleGate.WaitAsync(ct);
         var taskId = Guid.NewGuid().ToString("N");
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var cts = new CancellationTokenSource();
         var entry = new CollectionTaskEntry
         {
             TaskId = taskId,
             DeviceId = profile.DeviceId,
             Profile = profile,
             Cts = cts,
+            LifecycleGate = lifecycleGate,
             IsRunning = true,
         };
-        _tasks[taskId] = entry;
+        try { _tasks[taskId] = entry; }
+        finally { lifecycleGate.Release(); }
         _ = RunCollectionAsync(entry);
         _logger.LogInformation("Started collection task {TaskId} for device {DeviceId}", taskId, profile.DeviceId);
-        return Task.FromResult(taskId);
+        return taskId;
     }
 
     public async Task StopCollectionAsync(string taskId, CancellationToken ct = default)
     {
-        if (_tasks.TryRemove(taskId, out var entry))
+        if (_tasks.TryGetValue(taskId, out var entry))
         {
-            entry.Cts.Cancel();
-            entry.IsRunning = false;
+            try { entry.Cts.Cancel(); }
+            catch (ObjectDisposedException) { }
+            await entry.Completion.Task.WaitAsync(ct);
             _logger.LogInformation("Stopped collection task {TaskId} for device {DeviceId}", taskId, entry.DeviceId);
-
-            // Release device connection back to pool if no other tasks use it
-            var deviceStillInUse = _tasks.Values.Any(t => t.DeviceId == entry.DeviceId && t.IsRunning);
-            if (!deviceStillInUse)
-            {
-                try
-                {
-                    var pool = _serviceProvider.GetRequiredService<IDeviceConnectionPool>();
-                    await pool.ReleaseAsync(entry.DeviceId, ct);
-                    _logger.LogInformation("Released connection for device {DeviceId} after last task stopped", entry.DeviceId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to release connection for device {DeviceId}", entry.DeviceId);
-                }
-            }
         }
     }
 
@@ -97,12 +87,28 @@ public class CollectionSchedulerService : BackgroundService, ICollectionPipeline
         return Task.CompletedTask; // tasks are started on demand
     }
 
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        var entries = _tasks.Values.ToArray();
+        foreach (var entry in entries)
+        {
+            try { entry.Cts.Cancel(); }
+            catch (ObjectDisposedException) { }
+        }
+        await Task.WhenAll(entries.Select(entry => entry.Completion.Task)).WaitAsync(cancellationToken);
+        await base.StopAsync(cancellationToken);
+    }
+
     private async Task RunCollectionAsync(CollectionTaskEntry entry)
     {
         try
         {
             // For each group, run a periodic collection loop
-            var groupTasks = entry.Profile.Groups.Select(g => RunGroupLoopAsync(entry, g, entry.Cts.Token));
+            var groupTasks = entry.Profile.Groups.Select(async group =>
+            {
+                try { await RunGroupLoopAsync(entry, group, entry.Cts.Token); }
+                catch { entry.Cts.Cancel(); throw; }
+            });
             await Task.WhenAll(groupTasks);
         }
         catch (OperationCanceledException) { }
@@ -112,26 +118,32 @@ public class CollectionSchedulerService : BackgroundService, ICollectionPipeline
         }
         finally
         {
-            entry.IsRunning = false;
-
-            // Safety net: release connection if task exits abnormally and wasn't cleaned up by StopCollectionAsync
-            var deviceStillInUse = _tasks.Values.Any(t => t.DeviceId == entry.DeviceId && t.IsRunning);
-            if (!deviceStillInUse)
+            await entry.LifecycleGate.WaitAsync();
+            try
             {
-                try
-                {
-                    var pool = _serviceProvider.GetRequiredService<IDeviceConnectionPool>();
-                    await pool.ReleaseAsync(entry.DeviceId);
-                    _logger.LogDebug("Released connection for device {DeviceId} in task finally block", entry.DeviceId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to release connection for device {DeviceId} in finally block", entry.DeviceId);
-                }
-            }
+                entry.IsRunning = false;
 
-            // Clean up from task dictionary if still present (task might have faulted without StopCollectionAsync)
-            _tasks.TryRemove(entry.TaskId, out _);
+                // All group reads have completed; this is the sole connection-release path.
+                var deviceStillInUse = _tasks.Values.Any(t => t.DeviceId == entry.DeviceId && t.IsRunning);
+                if (!deviceStillInUse)
+                {
+                    try
+                    {
+                        var pool = _serviceProvider.GetRequiredService<IDeviceConnectionPool>();
+                        await pool.ReleaseAsync(entry.DeviceId);
+                        _logger.LogDebug("Released connection for device {DeviceId} in task finally block", entry.DeviceId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to release connection for device {DeviceId} in finally block", entry.DeviceId);
+                    }
+                }
+
+                _tasks.TryRemove(entry.TaskId, out _);
+            }
+            finally { entry.LifecycleGate.Release(); }
+            entry.Cts.Dispose();
+            entry.Completion.TrySetResult();
         }
     }
 
@@ -233,6 +245,8 @@ public class CollectionSchedulerService : BackgroundService, ICollectionPipeline
         public required string DeviceId { get; init; }
         public required DeviceCollectionProfile Profile { get; init; }
         public required CancellationTokenSource Cts { get; init; }
+        public required SemaphoreSlim LifecycleGate { get; init; }
+        public TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool IsRunning { get; set; }
         public DateTimeOffset? LastCollectedAt { get; set; }
         public long TotalCollections { get; set; }
