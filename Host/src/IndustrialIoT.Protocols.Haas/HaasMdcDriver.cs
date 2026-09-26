@@ -1,7 +1,6 @@
 namespace IndustrialIoT.Protocols.Haas;
 
 using System.Net.Sockets;
-using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using IndustrialIoT.Domain.Enums;
@@ -104,10 +103,12 @@ public sealed class HaasMdcDriver : IProtocolDriver, IAddressSpaceBrowser
         {
             var raw = await SendCommandAsync(command, ct);
             var valueText = HaasCommandMap.ExtractValue(raw, command);
+            if (HaasCommandMap.IsErrorValue(valueText))
+                return BuildError(address, dataType, $"Device rejected read: {raw}");
             return new TagValue
             {
                 Address = address, DataType = dataType,
-                Value = CoerceValue(valueText, dataType),
+                Value = TagValueConversion.ConvertScalar(valueText, dataType),
                 Quality = string.IsNullOrEmpty(valueText) ? TagQuality.Uncertain : TagQuality.Good,
                 Timestamp = DateTimeOffset.UtcNow,
             };
@@ -324,14 +325,4 @@ public sealed class HaasMdcDriver : IProtocolDriver, IAddressSpaceBrowser
         Timestamp = DateTimeOffset.UtcNow, ErrorMessage = error,
     };
 
-    private static object CoerceValue(string raw, DataType target) => target switch
-    {
-        DataType.Bool => bool.TryParse(raw, out var b) ? b : raw == "1",
-        DataType.Int16 => short.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) ? i : (object)raw,
-        DataType.Int32 => int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) ? i : (object)raw,
-        DataType.Int64 => long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) ? i : (object)raw,
-        DataType.Float => float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var f) ? f : (object)raw,
-        DataType.Double => double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : (object)raw,
-        _ => raw,
-    };
 }

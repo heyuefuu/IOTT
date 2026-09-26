@@ -223,6 +223,7 @@ public static class ModbusAddressParser
             DataType.UInt32  => 2,
             DataType.Float   => 2,
             DataType.Int64   => 4,
+            DataType.UInt64  => 4,
             DataType.Double  => 4,
             DataType.String  => 1,     // caller should override for multi-register strings
             DataType.ByteArray => 1,
@@ -235,4 +236,16 @@ public static class ModbusAddressParser
     /// </summary>
     public static bool IsBitType(ModbusRegisterType registerType) =>
         registerType is ModbusRegisterType.Coil or ModbusRegisterType.DiscreteInput;
+
+    public static void ValidateScalarWrite(ParsedAddress parsed, DataType dataType)
+    {
+        if (IsBitType(parsed.RegisterType) && dataType != DataType.Bool)
+            throw new FormatException("Coil and discrete input addresses require Bool data type.");
+        if (!parsed.CountExplicit) return;
+        if (dataType is DataType.String or DataType.ByteArray)
+            throw new NotSupportedException("Explicit ;N lengths are supported for reads, not variable-length writes.");
+        var expected = GetRegisterCount(parsed.RegisterType, dataType);
+        if (parsed.RegisterCount != expected)
+            throw new FormatException($"A scalar {dataType} write requires {expected} registers/bits; requested {parsed.RegisterCount}.");
+    }
 }

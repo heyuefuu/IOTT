@@ -141,6 +141,11 @@ internal static class HaasCommandMap
         return trimmed;
     }
 
+    public static bool IsErrorValue(string value) =>
+        value.StartsWith('?') ||
+        value.StartsWith("ERROR", StringComparison.OrdinalIgnoreCase) ||
+        value.StartsWith("INVALID", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>写入响应成功判定。Haas NGC 成功时回显命令，失败回 "?" 或错误文本。</summary>
     public static bool IsWriteSuccessful(string rawResponse)
     {

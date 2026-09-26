@@ -94,6 +94,8 @@ public sealed class MewtocolSerialDriver : IProtocolDriver
 
     public async Task<TagValue> ReadTagAsync(string address, DataType dataType, CancellationToken ct = default)
     {
+        if (dataType is DataType.Int8 or DataType.UInt8 || !Enum.IsDefined(dataType))
+            return BadTag(address, dataType, $"Mewtocol does not support {dataType}; use an explicit word or bit type.");
         EnsureConnected();
         var mapped = MapAddress(address);
         await _semaphore.WaitAsync(ct);
@@ -106,6 +108,8 @@ public sealed class MewtocolSerialDriver : IProtocolDriver
 
             if (IsTimerOrCounterAddress(body))
             {
+                if (dataType is not (DataType.Bool or DataType.UInt16))
+                    return BadTag(address, dataType, "Mewtocol timer/counter values require Bool or UInt16.");
                 var tc = await c.ReadUInt16Async(mapped);
                 if (!tc.IsSuccess) return BadTag(address, dataType, tc.Message);
                 object tcValue = dataType == DataType.Bool ? tc.Content > 0 : tc.Content;
@@ -121,10 +125,11 @@ public sealed class MewtocolSerialDriver : IProtocolDriver
                 DataType.UInt32 => ToTagValue(address, dataType, await c.ReadUInt32Async(mapped)),
                 DataType.Float => ToTagValue(address, dataType, await c.ReadFloatAsync(mapped)),
                 DataType.Int64 => ToTagValue(address, dataType, await c.ReadInt64Async(mapped)),
+                DataType.UInt64 => ToTagValue(address, dataType, await c.ReadUInt64Async(mapped)),
                 DataType.Double => ToTagValue(address, dataType, await c.ReadDoubleAsync(mapped)),
                 DataType.String => ToTagValue(address, dataType, await c.ReadStringAsync(mapped, DefaultStringLength, Encoding.ASCII)),
                 DataType.ByteArray => ToTagValue(address, dataType, await c.ReadAsync(mapped, 1)),
-                _ => ToTagValue(address, dataType, await c.ReadUInt16Async(mapped)),
+                _ => BadTag(address, dataType, $"Unsupported Mewtocol data type: {dataType}"),
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { _logger.LogError(ex, "Mewtocol serial read failed at {Address}", address); return BadTag(address, dataType, ex.Message); }
@@ -140,6 +145,8 @@ public sealed class MewtocolSerialDriver : IProtocolDriver
 
     public async Task<WriteResult> WriteTagAsync(string address, DataType dataType, object value, CancellationToken ct = default)
     {
+        if (dataType is DataType.Int8 or DataType.UInt8 || !Enum.IsDefined(dataType))
+            return new() { Success = false, ErrorMessage = $"Mewtocol does not support {dataType}; use an explicit word or bit type." };
         EnsureConnected();
         var mapped = MapAddress(address);
         await _semaphore.WaitAsync(ct);
@@ -154,6 +161,8 @@ public sealed class MewtocolSerialDriver : IProtocolDriver
             }
             else if (IsTimerOrCounterAddress(body))
             {
+                if (dataType is not (DataType.Bool or DataType.UInt16))
+                    return new() { Success = false, ErrorMessage = "Mewtocol timer/counter values require Bool or UInt16." };
                 result = await c.WriteAsync(mapped, Convert.ToUInt16(value));
             }
             else
@@ -167,10 +176,11 @@ public sealed class MewtocolSerialDriver : IProtocolDriver
                     DataType.UInt32 => await c.WriteAsync(mapped, Convert.ToUInt32(value)),
                     DataType.Float => await c.WriteAsync(mapped, Convert.ToSingle(value)),
                     DataType.Int64 => await c.WriteAsync(mapped, Convert.ToInt64(value)),
+                    DataType.UInt64 => await c.WriteAsync(mapped, Convert.ToUInt64(value)),
                     DataType.Double => await c.WriteAsync(mapped, Convert.ToDouble(value)),
                     DataType.String => await c.WriteAsync(mapped, Convert.ToString(value) ?? string.Empty, DefaultStringLength, Encoding.ASCII),
                     DataType.ByteArray => await c.WriteAsync(mapped, (byte[])value),
-                    _ => await c.WriteAsync(mapped, Convert.ToUInt16(value)),
+                    _ => throw new NotSupportedException($"Unsupported Mewtocol data type: {dataType}"),
                 };
             }
             return result.IsSuccess ? new() { Success = true } : new() { Success = false, ErrorMessage = result.Message };
@@ -210,7 +220,7 @@ public sealed class MewtocolSerialDriver : IProtocolDriver
     private static string? Get(DeviceConnectionConfig config, string key) => config.ExtendedProperties.TryGetValue(key, out var v) ? v : null;
 
     private static TagValue ToTagValue<T>(string address, DataType dataType, OperateResult<T> result) => result.IsSuccess
-        ? new() { Address = address, DataType = dataType, Value = result.Content is byte[] bytes ? bytes.ToArray() : result.Content!, Quality = TagQuality.Good, Timestamp = DateTimeOffset.UtcNow }
+        ? new() { Address = address, DataType = dataType, Value = result.Content is ulong unsigned ? unsigned.ToString(System.Globalization.CultureInfo.InvariantCulture) : result.Content is byte[] bytes ? bytes.ToArray() : result.Content!, Quality = TagQuality.Good, Timestamp = DateTimeOffset.UtcNow }
         : BadTag(address, dataType, result.Message);
 
     private static TagValue ToTagValue<TSource>(string address, DataType dataType, OperateResult<TSource> result, Func<TSource, object> projector) => result.IsSuccess

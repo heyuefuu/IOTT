@@ -111,10 +111,16 @@ public sealed class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
         {
             acquired = await _semaphore.WaitAsync(_pingTimeout, ct);
             if (!acquired) return false;
-            var readTask = _client.ReadFanucDataAsync();
-            var winner = await Task.WhenAny(readTask, Task.Delay(_pingTimeout, ct));
-            if (winner != readTask) return false;
-            return readTask.Result.IsSuccess;
+            var client = _client!;
+            var previousReceiveTimeout = client.ReceiveTimeOut;
+            try
+            {
+                var pingReceiveTimeout = (int)Math.Clamp(_pingTimeout.TotalMilliseconds, 1, int.MaxValue);
+                client.ReceiveTimeOut = previousReceiveTimeout > 0
+                    ? Math.Min(previousReceiveTimeout, pingReceiveTimeout) : pingReceiveTimeout;
+                return (await client.ReadFanucDataAsync()).IsSuccess;
+            }
+            finally { client.ReceiveTimeOut = previousReceiveTimeout; }
         }
         catch { return false; }
         finally { if (acquired) _semaphore.Release(); }

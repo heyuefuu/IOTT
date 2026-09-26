@@ -87,9 +87,8 @@ public sealed class InovanceSerialDriver : IProtocolDriver
     public async Task<TagValue> ReadTagAsync(string address, DataType dataType, CancellationToken ct = default)
     {
         EnsureConnected();
-        var mapped = InovanceAddressSpace.Normalize(address, RequireSeries());
         await _semaphore.WaitAsync(ct);
-        try { return await ReadCoreAsync(address, mapped, dataType); }
+        try { return await ReadCoreAsync(address, InovanceAddressSpace.Normalize(address, RequireSeries()), dataType); }
         catch (Exception ex) when (ex is not OperationCanceledException) { _logger.LogError(ex, "Inovance serial read failed at {Address}", address); return BadTag(address, dataType, ex.Message); }
         finally { _semaphore.Release(); }
     }
@@ -104,17 +103,19 @@ public sealed class InovanceSerialDriver : IProtocolDriver
     public async Task<WriteResult> WriteTagAsync(string address, DataType dataType, object value, CancellationToken ct = default)
     {
         EnsureConnected();
-        var mapped = InovanceAddressSpace.Normalize(address, RequireSeries());
         await _semaphore.WaitAsync(ct);
         try
         {
+            var mapped = InovanceAddressSpace.Normalize(address, RequireSeries());
             var client = _client!;
             var result = dataType switch
             {
                 DataType.Bool => await client.WriteAsync(mapped, Convert.ToBoolean(value)), DataType.Int16 => await client.WriteAsync(mapped, Convert.ToInt16(value)), DataType.UInt16 => await client.WriteAsync(mapped, Convert.ToUInt16(value)),
                 DataType.Int32 => await client.WriteAsync(mapped, Convert.ToInt32(value)), DataType.UInt32 => await client.WriteAsync(mapped, Convert.ToUInt32(value)), DataType.Float => await client.WriteAsync(mapped, Convert.ToSingle(value)),
                 DataType.Int64 => await client.WriteAsync(mapped, Convert.ToInt64(value)), DataType.Double => await client.WriteAsync(mapped, Convert.ToDouble(value)), DataType.String => await client.WriteAsync(mapped, Convert.ToString(value) ?? string.Empty, DefaultStringLength, Encoding.ASCII),
-                DataType.ByteArray => await client.WriteAsync(mapped, (byte[])value), _ => await client.WriteAsync(mapped, Convert.ToUInt16(value)),
+                DataType.UInt64 => await client.WriteAsync(mapped, Convert.ToUInt64(value)),
+                DataType.ByteArray => await client.WriteAsync(mapped, (byte[])value),
+                _ => throw new NotSupportedException($"DataType {dataType} is not supported by this Inovance driver; use an explicit word type."),
             };
             return result.IsSuccess ? new() { Success = true } : new() { Success = false, ErrorMessage = result.Message };
         }
@@ -132,7 +133,9 @@ public sealed class InovanceSerialDriver : IProtocolDriver
             DataType.Bool => ToTagValue(address, dataType, await client.ReadBoolAsync(mapped)), DataType.Int16 => ToTagValue(address, dataType, await client.ReadInt16Async(mapped)), DataType.UInt16 => ToTagValue(address, dataType, await client.ReadUInt16Async(mapped)),
             DataType.Int32 => ToTagValue(address, dataType, await client.ReadInt32Async(mapped)), DataType.UInt32 => ToTagValue(address, dataType, await client.ReadUInt32Async(mapped)), DataType.Float => ToTagValue(address, dataType, await client.ReadFloatAsync(mapped)),
             DataType.Int64 => ToTagValue(address, dataType, await client.ReadInt64Async(mapped)), DataType.Double => ToTagValue(address, dataType, await client.ReadDoubleAsync(mapped)), DataType.String => ToTagValue(address, dataType, await client.ReadStringAsync(mapped, DefaultStringLength, Encoding.ASCII)),
-            DataType.ByteArray => ToTagValue(address, dataType, await client.ReadAsync(mapped, 1)), _ => ToTagValue(address, dataType, await client.ReadUInt16Async(mapped)),
+            DataType.UInt64 => ToTagValue(address, dataType, await client.ReadUInt64Async(mapped)),
+            DataType.ByteArray => ToTagValue(address, dataType, await client.ReadAsync(mapped, 1)),
+            _ => throw new NotSupportedException($"DataType {dataType} is not supported by this Inovance driver; use an explicit word type."),
         };
     }
 
@@ -141,6 +144,6 @@ public sealed class InovanceSerialDriver : IProtocolDriver
     private void SetState(ConnectionState state, string? reason = null) { var old = _state; if (old == state) return; _state = state; StateChanged?.Invoke(this, new() { OldState = old, NewState = state, Reason = reason }); }
     private void CleanupClient() { try { _client?.Dispose(); } catch { } _client = null; }
     private static string? Get(DeviceConnectionConfig config, string key) => InovanceAddressSpace.GetProperty(config, key);
-    private static TagValue ToTagValue<T>(string address, DataType dataType, OperateResult<T> result) => result.IsSuccess ? new() { Address = address, DataType = dataType, Value = result.Content is byte[] bytes ? bytes.ToArray() : result.Content!, Quality = TagQuality.Good, Timestamp = DateTimeOffset.UtcNow } : BadTag(address, dataType, result.Message);
+    private static TagValue ToTagValue<T>(string address, DataType dataType, OperateResult<T> result) => result.IsSuccess ? new() { Address = address, DataType = dataType, Value = result.Content is ulong unsignedValue ? unsignedValue.ToString(System.Globalization.CultureInfo.InvariantCulture) : result.Content is byte[] bytes ? bytes.ToArray() : result.Content!, Quality = TagQuality.Good, Timestamp = DateTimeOffset.UtcNow } : BadTag(address, dataType, result.Message);
     private static TagValue BadTag(string address, DataType dataType, string? error) => new() { Address = address, DataType = dataType, Value = dataType == DataType.String ? string.Empty : dataType == DataType.ByteArray ? Array.Empty<byte>() : dataType == DataType.Bool ? false : 0, Quality = TagQuality.Bad, Timestamp = DateTimeOffset.UtcNow, ErrorMessage = error };
 }

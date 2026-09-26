@@ -114,6 +114,8 @@ public sealed class FinsDriver : IProtocolDriver
 
     public async Task<TagValue> ReadTagAsync(string address, DataType dataType, CancellationToken ct = default)
     {
+        if (dataType is DataType.Int8 or DataType.UInt8 || !Enum.IsDefined(dataType))
+            return BadTag(address, dataType, $"FINS does not support {dataType}; use an explicit word or bit type.");
         EnsureConnected();
         string mappedAddress = MapAddress(address, dataType);
 
@@ -130,10 +132,11 @@ public sealed class FinsDriver : IProtocolDriver
                 DataType.UInt32 => ToTagValue(address, dataType, await client.ReadUInt32Async(mappedAddress)),
                 DataType.Float => ToTagValue(address, dataType, await client.ReadFloatAsync(mappedAddress)),
                 DataType.Int64 => ToTagValue(address, dataType, await client.ReadInt64Async(mappedAddress)),
+                DataType.UInt64 => ToTagValue(address, dataType, await client.ReadUInt64Async(mappedAddress)),
                 DataType.Double => ToTagValue(address, dataType, await client.ReadDoubleAsync(mappedAddress)),
                 DataType.String => ToTagValue(address, dataType, await client.ReadStringAsync(mappedAddress, DefaultStringLength, Encoding.UTF8)),
                 DataType.ByteArray => ToTagValue(address, dataType, await client.ReadAsync(mappedAddress, GetWordCount(dataType))),
-                _ => ToTagValue(address, dataType, await client.ReadUInt16Async(mappedAddress)),
+                _ => BadTag(address, dataType, $"Unsupported FINS data type: {dataType}"),
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -159,6 +162,8 @@ public sealed class FinsDriver : IProtocolDriver
     public async Task<WriteResult> WriteTagAsync(
         string address, DataType dataType, object value, CancellationToken ct = default)
     {
+        if (dataType is DataType.Int8 or DataType.UInt8 || !Enum.IsDefined(dataType))
+            return new() { Success = false, ErrorMessage = $"FINS does not support {dataType}; use an explicit word or bit type." };
         EnsureConnected();
         string mappedAddress = MapAddress(address, dataType);
 
@@ -175,10 +180,11 @@ public sealed class FinsDriver : IProtocolDriver
                 DataType.UInt32 => await client.WriteAsync(mappedAddress, Convert.ToUInt32(value)),
                 DataType.Float => await client.WriteAsync(mappedAddress, Convert.ToSingle(value)),
                 DataType.Int64 => await client.WriteAsync(mappedAddress, Convert.ToInt64(value)),
+                DataType.UInt64 => await client.WriteAsync(mappedAddress, Convert.ToUInt64(value)),
                 DataType.Double => await client.WriteAsync(mappedAddress, Convert.ToDouble(value)),
                 DataType.String => await client.WriteAsync(mappedAddress, Convert.ToString(value) ?? string.Empty, DefaultStringLength, Encoding.UTF8),
                 DataType.ByteArray => await client.WriteAsync(mappedAddress, (byte[])value),
-                _ => await client.WriteAsync(mappedAddress, Convert.ToUInt16(value)),
+                _ => throw new NotSupportedException($"Unsupported FINS data type: {dataType}"),
             };
 
             if (!result.IsSuccess)
@@ -332,7 +338,8 @@ public sealed class FinsDriver : IProtocolDriver
         if (!result.IsSuccess)
             return BadTag(address, dataType, result.Message);
 
-        object value = result.Content is byte[] bytes ? bytes.ToArray() : result.Content!;
+        object value = result.Content is ulong unsigned ? unsigned.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : result.Content is byte[] bytes ? bytes.ToArray() : result.Content!;
         return new()
         {
             Address = address,

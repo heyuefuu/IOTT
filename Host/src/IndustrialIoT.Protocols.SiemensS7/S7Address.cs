@@ -82,15 +82,21 @@ public sealed record S7Address
     private static S7Address ParseCounterTimer(string address, S7MemoryArea area, S7DataLength length) =>
         Create(area, 0, address[1..], length, isCounterTimer: true);
 
-    private static S7Address Create(S7MemoryArea area, ushort dbNumber, string offset, S7DataLength length, bool isCounterTimer) =>
-        new()
+    private static S7Address Create(S7MemoryArea area, ushort dbNumber, string offset, S7DataLength length, bool isCounterTimer)
+    {
+        var bitAddress = ParseBitAddress(offset, isCounterTimer);
+        var lastAddress = (long)bitAddress + (isCounterTimer ? length.Bytes - 1L : length.IsBit ? 0L : length.Bytes * 8L - 1L);
+        if (length.Bytes == 0 || bitAddress < 0 || lastAddress > 0xFFFFFF)
+            throw new FormatException("S7 address and length exceed the 24-bit address range.");
+        return new()
         {
             Area = area,
             DbNumber = dbNumber,
-            BitAddress = ParseBitAddress(offset, isCounterTimer),
+            BitAddress = bitAddress,
             Length = length.Bytes,
             IsBit = length.IsBit,
         };
+    }
 
     private static int ParseBitAddress(string offset, bool isCounterTimer)
     {
@@ -102,6 +108,8 @@ public sealed record S7Address
         var bitOffset = parts.Length == 2 ? int.Parse(parts[1]) : 0;
         if (bitOffset is < 0 or > 7)
             throw new FormatException($"S7 bit offset must be 0-7, got {bitOffset}.");
-        return byteOffset * 8 + bitOffset;
+        if (byteOffset < 0 || byteOffset > 0x1FFFFF)
+            throw new FormatException("S7 byte offset must be between 0 and 2097151.");
+        return checked(byteOffset * 8 + bitOffset);
     }
 }

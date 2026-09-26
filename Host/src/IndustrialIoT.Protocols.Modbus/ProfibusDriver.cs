@@ -15,7 +15,7 @@ using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 /// PROFIBUS-to-Ethernet 网关（如 Hilscher netTAP / 西门子 IE-PB-Link /
 /// Anybus 等）把 DP 从站的 I/O 数据镜像到 Modbus-TCP 寄存器区，上位机经
 /// 网关的以太网口用 Modbus-TCP 读写。本驱动即面向这一部署模型：复用经过
-/// 验证的 Modbus-TCP 栈（HslCommunication），对外标识为 PROFIBUS 协议。
+/// 验证的 Modbus-TCP 栈（FluentModbus），对外标识为 PROFIBUS 协议。
 ///
 /// 部署前提：
 ///   1. 现场已用 PROFIBUS 网关把目标 DP 从站桥接为 Modbus-TCP（默认端口 502）；

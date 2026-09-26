@@ -16,6 +16,7 @@ public interface IInovanceClient : IDisposable
     Task<OperateResult<int>> ReadInt32Async(string address);
     Task<OperateResult<uint>> ReadUInt32Async(string address);
     Task<OperateResult<long>> ReadInt64Async(string address);
+    Task<OperateResult<ulong>> ReadUInt64Async(string address);
     Task<OperateResult<double>> ReadDoubleAsync(string address);
     Task<OperateResult<float>> ReadFloatAsync(string address);
     Task<OperateResult<string>> ReadStringAsync(string address, ushort length, Encoding encoding);
@@ -25,6 +26,7 @@ public interface IInovanceClient : IDisposable
     Task<OperateResult> WriteAsync(string address, int value);
     Task<OperateResult> WriteAsync(string address, uint value);
     Task<OperateResult> WriteAsync(string address, long value);
+    Task<OperateResult> WriteAsync(string address, ulong value);
     Task<OperateResult> WriteAsync(string address, double value);
     Task<OperateResult> WriteAsync(string address, float value);
     Task<OperateResult> WriteAsync(string address, byte[] value);
@@ -46,6 +48,7 @@ internal sealed class HslInovanceClientAdapter : IInovanceClient
     public Task<OperateResult<int>> ReadInt32Async(string address) => Inner.ReadInt32Async(address);
     public Task<OperateResult<uint>> ReadUInt32Async(string address) => Inner.ReadUInt32Async(address);
     public Task<OperateResult<long>> ReadInt64Async(string address) => Inner.ReadInt64Async(address);
+    public Task<OperateResult<ulong>> ReadUInt64Async(string address) => Inner.ReadUInt64Async(address);
     public Task<OperateResult<double>> ReadDoubleAsync(string address) => Inner.ReadDoubleAsync(address);
     public Task<OperateResult<float>> ReadFloatAsync(string address) => Inner.ReadFloatAsync(address);
     public Task<OperateResult<string>> ReadStringAsync(string address, ushort length, Encoding encoding) => Inner.ReadStringAsync(address, length, encoding);
@@ -55,6 +58,7 @@ internal sealed class HslInovanceClientAdapter : IInovanceClient
     public Task<OperateResult> WriteAsync(string address, int value) => Inner.WriteAsync(address, value);
     public Task<OperateResult> WriteAsync(string address, uint value) => Inner.WriteAsync(address, value);
     public Task<OperateResult> WriteAsync(string address, long value) => Inner.WriteAsync(address, value);
+    public Task<OperateResult> WriteAsync(string address, ulong value) => Inner.WriteAsync(address, value);
     public Task<OperateResult> WriteAsync(string address, double value) => Inner.WriteAsync(address, value);
     public Task<OperateResult> WriteAsync(string address, float value) => Inner.WriteAsync(address, value);
     public Task<OperateResult> WriteAsync(string address, byte[] value) => Inner.WriteAsync(address, value);
@@ -77,6 +81,7 @@ internal sealed class HslInovanceSerialClientAdapter : IInovanceClient
     public Task<OperateResult<int>> ReadInt32Async(string address) => Inner.ReadInt32Async(address);
     public Task<OperateResult<uint>> ReadUInt32Async(string address) => Inner.ReadUInt32Async(address);
     public Task<OperateResult<long>> ReadInt64Async(string address) => Inner.ReadInt64Async(address);
+    public Task<OperateResult<ulong>> ReadUInt64Async(string address) => Inner.ReadUInt64Async(address);
     public Task<OperateResult<double>> ReadDoubleAsync(string address) => Inner.ReadDoubleAsync(address);
     public Task<OperateResult<float>> ReadFloatAsync(string address) => Inner.ReadFloatAsync(address);
     public Task<OperateResult<string>> ReadStringAsync(string address, ushort length, Encoding encoding) => Inner.ReadStringAsync(address, length, encoding);
@@ -86,6 +91,7 @@ internal sealed class HslInovanceSerialClientAdapter : IInovanceClient
     public Task<OperateResult> WriteAsync(string address, int value) => Inner.WriteAsync(address, value);
     public Task<OperateResult> WriteAsync(string address, uint value) => Inner.WriteAsync(address, value);
     public Task<OperateResult> WriteAsync(string address, long value) => Inner.WriteAsync(address, value);
+    public Task<OperateResult> WriteAsync(string address, ulong value) => Inner.WriteAsync(address, value);
     public Task<OperateResult> WriteAsync(string address, double value) => Inner.WriteAsync(address, value);
     public Task<OperateResult> WriteAsync(string address, float value) => Inner.WriteAsync(address, value);
     public Task<OperateResult> WriteAsync(string address, byte[] value) => Inner.WriteAsync(address, value);

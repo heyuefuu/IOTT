@@ -58,10 +58,8 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
         try
         {
             // Build endpoint URL: opc.tcp://host:port
-            var port = config.Port > 0 ? config.Port : 4840;
-            var endpointUrl = config.ExtendedProperties.TryGetValue("EndpointUrl", out var url)
-                ? url
-                : $"opc.tcp://{config.Host}:{port}";
+            var endpointUri = ResolveEndpointUri(config);
+            var endpointUrl = endpointUri.AbsoluteUri;
 
             // Security options from config (default: security ON)
             var securityOptions = ResolveSecurityOptions(config);
@@ -168,19 +166,19 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
             // TCP pre-check: OPC UA SDK's Session.Create does not properly respect
             // CancellationToken during TCP connect — Windows TCP SYN retransmission
             // can hang 60-80s. Do a quick TCP probe first to fail fast.
-            var tcpPort = new Uri(endpointUrl).Port;
+            var tcpPort = endpointUri.Port;
             using (var tcpProbe = new TcpClient())
             {
                 try
                 {
                     var tcpTimeout = TimeSpan.FromSeconds(Math.Min(config.ConnectTimeout.TotalSeconds, 5));
-                    await tcpProbe.ConnectAsync(config.Host, tcpPort > 0 ? tcpPort : port, connectCts.Token).AsTask()
+                    await tcpProbe.ConnectAsync(endpointUri.DnsSafeHost, tcpPort > 0 ? tcpPort : 4840, connectCts.Token).AsTask()
                         .WaitAsync(tcpTimeout, ct);
                 }
                 catch (Exception ex) when (ex is TimeoutException or SocketException or OperationCanceledException)
                 {
                     throw new TimeoutException(
-                        $"TCP connection to {config.Host}:{(tcpPort > 0 ? tcpPort : port)} unreachable (probe failed in <5s)", ex);
+                        $"TCP connection to {endpointUri.DnsSafeHost}:{(tcpPort > 0 ? tcpPort : 4840)} unreachable (probe failed in <5s)", ex);
                 }
             }
 
@@ -215,7 +213,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
             {
                 _session = await sessionTask.WaitAsync(config.ConnectTimeout, ct);
             }
-            catch (TimeoutException)
+            catch (Exception error) when (error is TimeoutException or OperationCanceledException)
             {
                 // Session.Create may still complete in background — dispose to avoid socket leak
                 _ = sessionTask.ContinueWith(t =>
@@ -225,6 +223,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
                         try { t.Result?.Dispose(); }
                         catch { /* best effort cleanup */ }
                     }
+                    else if (t.IsFaulted) _ = t.Exception;
                 }, TaskScheduler.Default);
                 throw;
             }
@@ -243,16 +242,30 @@ public sealed class OpcUaDriver : IProtocolDriver, IAddressSpaceBrowser
         }
     }
 
+    private static Uri ResolveEndpointUri(DeviceConnectionConfig config)
+        => new(config.ExtendedProperties.TryGetValue("EndpointUrl", out var url)
+            ? url : $"opc.tcp://{config.Host}:{(config.Port > 0 ? config.Port : 4840)}");
+
     public async Task DisconnectAsync(CancellationToken ct = default)
     {
-        if (_session is { Connected: true })
+        await _lock.WaitAsync(ct);
+        try
         {
-            _session.KeepAlive -= OnKeepAlive;
-            await _session.CloseAsync(ct);
-            _session.Dispose();
+            var session = _session;
             _session = null;
+            if (session is null) return;
+            try
+            {
+                session.KeepAlive -= OnKeepAlive;
+                if (session.Connected) await session.CloseAsync(ct);
+            }
+            finally { session.Dispose(); }
         }
-        TransitionState(ConnectionState.Disconnected);
+        finally
+        {
+            TransitionState(ConnectionState.Disconnected);
+            _lock.Release();
+        }
     }
 
     public async Task<bool> PingAsync(CancellationToken ct = default)

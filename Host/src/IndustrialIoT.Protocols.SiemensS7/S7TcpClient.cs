@@ -8,19 +8,37 @@ internal sealed class S7TcpClient : IAsyncDisposable
     private NetworkStream? _stream;
     private ushort _messageId = 1;
     private int _pduLength = 200;
+    private TimeSpan _readTimeout = TimeSpan.FromSeconds(5);
+    public bool IsConnected => _stream is not null;
 
-    public async Task ConnectAsync(string host, int port, SiemensS7PlcType plcType, byte rack, byte slot, TimeSpan timeout, CancellationToken ct)
+    public async Task ConnectAsync(string host, int port, SiemensS7PlcType plcType, byte rack, byte slot, TimeSpan timeout, TimeSpan readTimeout, CancellationToken ct)
     {
-        _tcpClient = new TcpClient();
-        await _tcpClient.ConnectAsync(host, port, ct).AsTask().WaitAsync(timeout, ct);
-        _stream = _tcpClient.GetStream();
-        _stream.ReadTimeout = (int)timeout.TotalMilliseconds;
-        _stream.WriteTimeout = (int)timeout.TotalMilliseconds;
+        if (timeout <= TimeSpan.Zero || readTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "S7 timeouts must be positive.");
+        _readTimeout = readTimeout;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(timeout);
+        try
+        {
+            _tcpClient = new TcpClient();
+            await _tcpClient.ConnectAsync(host, port, deadline.Token);
+            _stream = _tcpClient.GetStream();
 
-        await SendAndReceiveAsync(BuildCotpConnectionRequest(plcType, rack, slot), ct);
-        var setup = await SendAndReceiveAsync(BuildSetupCommunication(), ct);
-        if (setup.Length >= 27)
-            _pduLength = Math.Max(200, ReadUInt16(setup, setup.Length - 2) - 28);
+            await SendAndReceiveAsync(BuildCotpConnectionRequest(plcType, rack, slot), deadline.Token);
+            var setup = await SendAndReceiveAsync(BuildSetupCommunication(), deadline.Token);
+            if (setup.Length >= 27)
+                _pduLength = Math.Max(1, ReadUInt16(setup, setup.Length - 2) - 28);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            await DisconnectAsync();
+            throw new TimeoutException("S7 connection handshake timed out.");
+        }
+        catch
+        {
+            await DisconnectAsync();
+            throw;
+        }
     }
 
     public async Task<bool> PingAsync(CancellationToken ct) =>
@@ -52,17 +70,33 @@ internal sealed class S7TcpClient : IAsyncDisposable
     private async Task<byte[]> SendAndReceiveAsync(byte[] command, CancellationToken ct)
     {
         var stream = _stream ?? throw new InvalidOperationException("S7 client is not connected.");
-        await stream.WriteAsync(command, ct);
-        await stream.FlushAsync(ct);
-        return await ReceiveTpktAsync(stream, ct);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(_readTimeout);
+        try
+        {
+            await stream.WriteAsync(command, deadline.Token);
+            await stream.FlushAsync(deadline.Token);
+            return await ReceiveTpktAsync(stream, deadline.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            await DisconnectAsync();
+            throw new TimeoutException("S7 request timed out.");
+        }
+        catch
+        {
+            // A cancelled receive can leave a partial response on the socket.
+            await DisconnectAsync();
+            throw;
+        }
     }
 
     private static byte[] BuildCotpConnectionRequest(SiemensS7PlcType plcType, byte rack, byte slot)
     {
         byte connectionType = 0x01;
+        if (rack > 7 || slot > 31)
+            throw new ArgumentOutOfRangeException(nameof(rack), "S7 rack must be 0-7 and slot 0-31.");
         byte destTsapLow = (byte)(rack * 0x20 + slot);
-        if (plcType == SiemensS7PlcType.S300) destTsapLow = 0x02;
-        if (plcType == SiemensS7PlcType.S400) destTsapLow = 0x03;
         if (plcType is SiemensS7PlcType.S200 or SiemensS7PlcType.S200Smart)
             return [0x03, 0x00, 0x00, 0x16, 0x11, 0xE0, 0x00, 0x00, 0x00, 0x01, 0x00, 0xC1, 0x02, 0x10, 0x00, 0xC2, 0x02, 0x03, 0x00, 0xC0, 0x01, 0x0A];
         return [0x03, 0x00, 0x00, 0x16, 0x11, 0xE0, 0x00, 0x00, 0x00, 0x01, 0x00, 0xC0, 0x01, 0x0A, 0xC1, 0x02, 0x01, 0x02, 0xC2, 0x02, connectionType, destTsapLow];
@@ -89,6 +123,9 @@ internal sealed class S7TcpClient : IAsyncDisposable
 
     private byte[] BuildWriteCommand(S7Address address, byte[] value)
     {
+        if (value.Length == 0 || value.Length > Math.Min(_pduLength - 7, 8191)
+            || value.Length != address.Length || (address.IsBit && value.Length != 1))
+            throw new ArgumentException("S7 write length is empty, mismatched, or exceeds the negotiated PDU limit.", nameof(value));
         var dataLength = address.IsBit ? 1 : value.Length * 8;
         var command = new byte[35 + value.Length];
         command[0] = 0x03; command[1] = 0x00; WriteUInt16(command, 2, (ushort)command.Length);

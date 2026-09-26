@@ -1,5 +1,9 @@
 var checks = new (string Name, Func<Task> Run)[]
 {
+    ("Protocol safety: Modbus writes, lengths and point isolation", ModbusSafetyRegressionTests.RunAsync),
+    ("Protocol safety: PLC types and Siemens S7 transport", PlcSafetyRegressionTests.RunAsync),
+    ("Protocol safety: robot and text data quality", RobotAndTextSafetyRegressionTests.RunAsync),
+    ("Protocol safety: SDK values and OPC UA session cleanup", SdkAndSessionSafetyRegressionTests.RunAsync),
     ("PLC collection groups preserve driver values and periods", PlcCollectionRegressionTests.CollectGroupsAsync),
     ("PLC collection survives request cancellation", PlcCollectionRegressionTests.RequestCancellationAsync),
     ("PLC collection waits for reads before releasing", PlcCollectionRegressionTests.StopWaitsForReadAsync),
@@ -27,6 +31,8 @@ var checks = new (string Name, Func<Task> Run)[]
     ("Huazhong robot health address", ModbusRegressionTests.RobotHealthAddressAsync),
     ("HNC and JingDiao IPC directory errors", SdkDirectoryRegressionTests.RunAsync),
 };
+if (args.Contains("--protocol-safety"))
+    checks = checks.Where(check => check.Name.StartsWith("Protocol safety:", StringComparison.Ordinal)).ToArray();
 if (args.Contains("--plc-collection"))
     checks = checks.Where(check => check.Name.StartsWith("PLC collection", StringComparison.Ordinal)).ToArray();
 if (args.Contains("--collection-config"))

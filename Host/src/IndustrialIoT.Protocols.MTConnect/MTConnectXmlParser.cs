@@ -111,14 +111,7 @@ internal static class MTConnectXmlParser
         };
     }
 
-    public static object CoerceValue(string raw, DataType target) => target switch
-    {
-        DataType.Bool => bool.TryParse(raw, out var b) ? b : raw,
-        DataType.Int16 => short.TryParse(raw, CultureInfo.InvariantCulture, out var i) ? i : (object)raw,
-        DataType.Int32 => int.TryParse(raw, CultureInfo.InvariantCulture, out var i) ? i : (object)raw,
-        DataType.Int64 => long.TryParse(raw, CultureInfo.InvariantCulture, out var i) ? i : (object)raw,
-        DataType.Float => float.TryParse(raw, CultureInfo.InvariantCulture, out var f) ? f : (object)raw,
-        DataType.Double => double.TryParse(raw, CultureInfo.InvariantCulture, out var d) ? d : (object)raw,
-        _ => raw,
-    };
+    public static object CoerceValue(string raw, DataType target) => target == DataType.ByteArray
+        ? Convert.FromBase64String(raw)
+        : TagValueConversion.ConvertScalar(raw, target);
 }

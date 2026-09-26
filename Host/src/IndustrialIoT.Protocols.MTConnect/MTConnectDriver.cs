@@ -204,10 +204,21 @@ public sealed class MTConnectDriver : IProtocolDriver, IAddressSpaceBrowser
             };
 
         var isUnavailable = string.Equals(cur.Raw, "UNAVAILABLE", StringComparison.OrdinalIgnoreCase);
+        object value;
+        try { value = isUnavailable ? string.Empty : MTConnectXmlParser.CoerceValue(cur.Raw, dataType); }
+        catch (Exception ex) when (ex is FormatException or OverflowException)
+        {
+            return new TagValue
+            {
+                Address = address, DataType = dataType, Value = string.Empty,
+                Quality = TagQuality.Bad, Timestamp = cur.Timestamp,
+                ErrorMessage = $"Invalid {dataType} value '{cur.Raw}'",
+            };
+        }
         return new TagValue
         {
             Address = address, DataType = dataType,
-            Value = isUnavailable ? string.Empty : MTConnectXmlParser.CoerceValue(cur.Raw, dataType),
+            Value = value,
             Quality = isUnavailable ? TagQuality.Uncertain : TagQuality.Good,
             Timestamp = cur.Timestamp,
             ErrorMessage = isUnavailable ? "UNAVAILABLE" : null,

@@ -390,6 +390,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver
         DataType.UInt32 => BinaryPrimitives.ReadUInt32BigEndian(span),
         DataType.Float  => BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32BigEndian(span)),
         DataType.Int64  => BinaryPrimitives.ReadInt64BigEndian(span),
+        DataType.UInt64 => BinaryPrimitives.ReadUInt64BigEndian(span).ToString(System.Globalization.CultureInfo.InvariantCulture),
         DataType.Double => BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64BigEndian(span)),
         _ => throw new NotSupportedException($"DataType {dataType} is not supported for register reads.")
     };
@@ -403,6 +404,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver
         DataType.UInt32 => typeof(uint),
         DataType.Float  => typeof(float),
         DataType.Int64  => typeof(long),
+        DataType.UInt64 => typeof(string),
         DataType.Double => typeof(double),
         _ => throw new NotSupportedException($"DataType {dataType} has no scalar CLR mapping.")
     };
@@ -411,6 +413,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver
 
     private void WriteParsed(ParsedAddress parsed, DataType dataType, object value)
     {
+        ValidateScalarWrite(parsed, dataType);
         switch (parsed.RegisterType)
         {
             case ModbusRegisterType.Coil:
@@ -461,6 +464,9 @@ public sealed class ModbusTcpDriver : IProtocolDriver
                     break;
                 case DataType.Int64:
                     BinaryPrimitives.WriteInt64BigEndian(bytes, Convert.ToInt64(value));
+                    break;
+                case DataType.UInt64:
+                    BinaryPrimitives.WriteUInt64BigEndian(bytes, Convert.ToUInt64(value));
                     break;
                 case DataType.Double:
                     BinaryPrimitives.WriteInt64BigEndian(bytes,

@@ -121,11 +121,17 @@ public sealed class HncSdkDriver : IProtocolDriver, IAddressSpaceBrowser, IProgr
     public async Task<TagValue> ReadTagAsync(string address, DataType dataType, CancellationToken ct = default)
     {
         EnsureConnected();
-        var result = await client!.ReadAsync(new(sessionId, address, dataType.ToString()), ct);
-        if (result.ReturnCode != 0)
-            return Bad(address, dataType, result.ErrorMessage ?? $"HNC SDK read failed: {result.ReturnCode}");
-
-        return Good(address, dataType, DecodeValue(result.Value, dataType));
+        try
+        {
+            var result = await client!.ReadAsync(new(sessionId, address, dataType.ToString()), ct);
+            if (result.ReturnCode != 0)
+                return Bad(address, dataType, result.ErrorMessage ?? $"HNC SDK read failed: {result.ReturnCode}");
+            return Good(address, dataType, DecodeValue(result.Value, dataType));
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            return Bad(address, dataType, error.Message);
+        }
     }
 
     public async Task<IReadOnlyList<TagValue>> ReadTagsAsync(IReadOnlyList<TagReadRequest> requests, CancellationToken ct = default)
@@ -302,57 +308,7 @@ public sealed class HncSdkDriver : IProtocolDriver, IAddressSpaceBrowser, IProgr
     }
 
     private static object DecodeValue(object? raw, DataType dataType)
-    {
-        if (raw is null) return DefaultForType(dataType);
-        if (raw is not JsonElement el) return raw;
-
-        switch (el.ValueKind)
-        {
-            case JsonValueKind.Null:
-            case JsonValueKind.Undefined:
-                return DefaultForType(dataType);
-            case JsonValueKind.True:
-                return dataType == DataType.String ? "true" : (object)true;
-            case JsonValueKind.False:
-                return dataType == DataType.String ? "false" : (object)false;
-            case JsonValueKind.String:
-                return ConvertString(el.GetString() ?? "", dataType);
-            case JsonValueKind.Number:
-                return ConvertNumber(el, dataType);
-            default:
-                return el.ToString();
-        }
-    }
-
-    private static object DefaultForType(DataType dataType) => dataType == DataType.String ? "" : 0;
-
-    private static object ConvertString(string s, DataType dataType) => dataType switch
-    {
-        DataType.String => s,
-        DataType.Bool => bool.TryParse(s, out var b) ? b : s == "1",
-        DataType.Int16 => short.TryParse(s, out var v) ? v : (short)0,
-        DataType.Int32 => int.TryParse(s, out var v) ? v : 0,
-        DataType.Int64 => long.TryParse(s, out var v) ? v : 0L,
-        DataType.UInt16 => ushort.TryParse(s, out var v) ? v : (ushort)0,
-        DataType.UInt32 => uint.TryParse(s, out var v) ? v : 0u,
-        DataType.Float => float.TryParse(s, out var v) ? v : 0f,
-        DataType.Double => double.TryParse(s, out var v) ? v : 0d,
-        _ => s,
-    };
-
-    private static object ConvertNumber(JsonElement el, DataType dataType) => dataType switch
-    {
-        DataType.String => el.ToString(),
-        DataType.Bool => el.TryGetInt64(out var b) && b != 0,
-        DataType.Int16 => el.TryGetInt16(out var v) ? v : (short)el.GetDouble(),
-        DataType.Int32 => el.TryGetInt32(out var v) ? v : (int)el.GetDouble(),
-        DataType.Int64 => el.TryGetInt64(out var v) ? v : (long)el.GetDouble(),
-        DataType.UInt16 => el.TryGetUInt16(out var v) ? v : (ushort)el.GetDouble(),
-        DataType.UInt32 => el.TryGetUInt32(out var v) ? v : (uint)el.GetDouble(),
-        DataType.Float => el.TryGetSingle(out var v) ? v : (float)el.GetDouble(),
-        DataType.Double => el.GetDouble(),
-        _ => el.ToString(),
-    };
+        => TagValueConversion.ConvertScalar(raw, dataType);
 
     private static bool ShouldAutoStartShim(DeviceConnectionConfig config)
         => !config.ExtendedProperties.TryGetValue("AutoStartShim", out var value)

@@ -29,13 +29,19 @@ public sealed class SiemensS7Driver(ILogger<SiemensS7Driver> logger) : IProtocol
             if (_state == ConnectionState.Connected) return new() { Success = true };
             SetState(ConnectionState.Connecting);
             var client = new S7TcpClient();
-            await client.ConnectAsync(config.Host, config.Port, GetPlcType(config), GetByte(config, "Rack", 0), GetByte(config, "Slot", GetDefaultSlot(config)), config.ConnectTimeout, ct);
+            await client.ConnectAsync(config.Host, config.Port, GetPlcType(config), GetByte(config, "Rack", 0), GetByte(config, "Slot", GetDefaultSlot(config)), config.ConnectTimeout, config.ReadTimeout, ct);
             _stringLength = GetUShort(config, "StringLength", 16);
             _client = client;
             SetState(ConnectionState.Connected);
             return new() { Success = true };
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            await CleanupAsync();
+            SetState(ConnectionState.Faulted, "S7 connection cancelled.");
+            throw;
+        }
+        catch (Exception ex)
         {
             await CleanupAsync();
             logger.LogError(ex, "Siemens S7 connection failed.");
@@ -68,7 +74,7 @@ public sealed class SiemensS7Driver(ILogger<SiemensS7Driver> logger) : IProtocol
         await _semaphore.WaitAsync(ct);
         try { return await _client.PingAsync(ct); }
         catch { return false; }
-        finally { _semaphore.Release(); }
+        finally { CompleteIo(); }
     }
 
     public async Task<TagValue> ReadTagAsync(string address, DataType dataType, CancellationToken ct = default)
@@ -88,7 +94,7 @@ public sealed class SiemensS7Driver(ILogger<SiemensS7Driver> logger) : IProtocol
             logger.LogError(ex, "Siemens S7 read failed at {Address}", address);
             return BadTag(address, dataType, ex.Message);
         }
-        finally { _semaphore.Release(); }
+        finally { CompleteIo(); }
     }
 
     public async Task<IReadOnlyList<TagValue>> ReadTagsAsync(IReadOnlyList<TagReadRequest> requests, CancellationToken ct = default)
@@ -105,8 +111,11 @@ public sealed class SiemensS7Driver(ILogger<SiemensS7Driver> logger) : IProtocol
         await _semaphore.WaitAsync(ct);
         try
         {
-            var s7Address = S7Address.Parse(address, S7ValueCodec.GetLength(dataType, _stringLength));
             var bytes = S7ValueCodec.GetBytes(dataType, value, _stringLength);
+            var length = dataType == DataType.ByteArray
+                ? S7DataLength.BytesOf(checked((ushort)bytes.Length))
+                : S7ValueCodec.GetLength(dataType, _stringLength);
+            var s7Address = S7Address.Parse(address, length);
             var result = await _client!.WriteAsync(s7Address, bytes, ct);
             return result.Success ? new() { Success = true } : new() { Success = false, ErrorMessage = result.ErrorMessage };
         }
@@ -115,7 +124,7 @@ public sealed class SiemensS7Driver(ILogger<SiemensS7Driver> logger) : IProtocol
             logger.LogError(ex, "Siemens S7 write failed at {Address}", address);
             return new() { Success = false, ErrorMessage = ex.Message };
         }
-        finally { _semaphore.Release(); }
+        finally { CompleteIo(); }
     }
 
     public async ValueTask DisposeAsync()
@@ -127,8 +136,18 @@ public sealed class SiemensS7Driver(ILogger<SiemensS7Driver> logger) : IProtocol
 
     private void EnsureConnected()
     {
-        if (_state != ConnectionState.Connected || _client is null)
+        if (_state != ConnectionState.Connected || _client is not { IsConnected: true })
             throw new InvalidOperationException("Siemens S7 driver is not connected.");
+    }
+
+    private void CompleteIo()
+    {
+        try
+        {
+            if (_state == ConnectionState.Connected && _client is not { IsConnected: true })
+                SetState(ConnectionState.Faulted, "S7 transport closed after failed or cancelled IO.");
+        }
+        finally { _semaphore.Release(); }
     }
 
     private async Task CleanupAsync()

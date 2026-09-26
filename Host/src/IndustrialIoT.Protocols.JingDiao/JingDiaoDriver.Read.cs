@@ -1,6 +1,5 @@
 namespace IndustrialIoT.Protocols.JingDiao;
 
-using System.Globalization;
 using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Protocols.Models;
 
@@ -128,14 +127,22 @@ public sealed partial class JingDiaoDriver
         return result.ReturnCode == 0 ? Good(address, dataType, result.Value) : Bad(address, dataType, Error(result));
     }
 
-    private static TagValue Good(string address, DataType dataType, object? value) => new()
+    private static TagValue Good(string address, DataType dataType, object? value)
     {
-        Address = address,
-        DataType = dataType,
-        Value = ConvertValue(value, dataType),
-        Quality = TagQuality.Good,
-        Timestamp = DateTimeOffset.UtcNow
-    };
+        try
+        {
+            return new()
+            {
+                Address = address, DataType = dataType,
+                Value = TagValueConversion.ConvertScalar(value, dataType),
+                Quality = TagQuality.Good, Timestamp = DateTimeOffset.UtcNow,
+            };
+        }
+        catch (Exception error) when (error is FormatException or OverflowException or NotSupportedException)
+        {
+            return Bad(address, dataType, error.Message);
+        }
+    }
 
     private static TagValue Bad(string address, DataType dataType, string? error) => new()
     {
@@ -146,25 +153,6 @@ public sealed partial class JingDiaoDriver
         Timestamp = DateTimeOffset.UtcNow,
         ErrorMessage = error
     };
-
-    private static object ConvertValue(object? value, DataType dataType)
-    {
-        if (value is null) return dataType == DataType.String ? "" : 0;
-        var text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
-        return dataType switch
-        {
-            DataType.String => text,
-            DataType.Bool => bool.TryParse(text, out var b) ? b : text == "1",
-            DataType.Int16 => short.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var i16) ? i16 : (short)0,
-            DataType.Int32 => int.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var i32) ? i32 : 0,
-            DataType.Int64 => long.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var i64) ? i64 : 0L,
-            DataType.UInt16 => ushort.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var u16) ? u16 : (ushort)0,
-            DataType.UInt32 => uint.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var u32) ? u32 : 0u,
-            DataType.Float => float.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var f) ? f : 0f,
-            DataType.Double => double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) ? d : 0d,
-            _ => value
-        };
-    }
 
     private static int AxisIndex(string axis) => axis.ToUpperInvariant() switch
     {

@@ -198,7 +198,6 @@ public sealed class GskrmDriver : IProtocolDriver, IAddressSpaceBrowser
             Variable("Status.Mode",        "WorkMode",   DataType.String),
             Variable("Status.ProgramName", "Program",    DataType.String),
             Variable("Status.LineNo",      "LineNo",     DataType.Int32),
-            Variable("Status.Estop",       "Estop",      DataType.Bool, writable: false),
         ],
         "rate" =>
         [

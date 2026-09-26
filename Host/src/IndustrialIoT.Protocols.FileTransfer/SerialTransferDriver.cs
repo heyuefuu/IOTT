@@ -249,6 +249,7 @@ public class SerialTransferDriver : IProtocolDriver, INCProgramTransfer
 
             long transferred = 0;
             ushort expectedSeq = 0;
+            var failedFrames = 0;
 
             while (true)
             {
@@ -258,6 +259,8 @@ public class SerialTransferDriver : IProtocolDriver, INCProgramTransfer
 
                 if (!valid)
                 {
+                    if (++failedFrames >= MaxRetries)
+                        throw new IOException($"Serial receive failed after {MaxRetries} invalid or timed-out frames.");
                     // Send NAK, ask for retransmission
                     _serialPort.Write([NAK], 0, 1);
                     continue;
@@ -265,11 +268,14 @@ public class SerialTransferDriver : IProtocolDriver, INCProgramTransfer
 
                 if (seqNo != expectedSeq)
                 {
+                    if (++failedFrames >= MaxRetries)
+                        throw new IOException($"Serial receive sequence failed after {MaxRetries} attempts.");
                     _logger.LogWarning("Sequence mismatch: expected {Expected}, got {Actual}", expectedSeq, seqNo);
                     _serialPort.Write([NAK], 0, 1);
                     continue;
                 }
 
+                failedFrames = 0;
                 // End-of-transfer marker must have the expected sequence number.
                 if (data.Length == 0)
                 {

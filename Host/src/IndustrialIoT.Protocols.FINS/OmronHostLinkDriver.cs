@@ -129,6 +129,8 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
 
     public async Task<TagValue> ReadTagAsync(string address, DataType dataType, CancellationToken ct = default)
     {
+        if (dataType is DataType.Int8 or DataType.UInt8 || !Enum.IsDefined(dataType))
+            return BadTag(address, dataType, $"HostLink does not support {dataType}; use an explicit word or bit type.");
         EnsureConnected();
         var mapped = MapAddress(address, dataType);
         await _semaphore.WaitAsync(ct);
@@ -144,10 +146,11 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
                 DataType.UInt32 => ToTagValue(address, dataType, await c.ReadUInt32Async(mapped)),
                 DataType.Float => ToTagValue(address, dataType, await c.ReadFloatAsync(mapped)),
                 DataType.Int64 => ToTagValue(address, dataType, await c.ReadInt64Async(mapped)),
+                DataType.UInt64 => ToTagValue(address, dataType, await c.ReadUInt64Async(mapped)),
                 DataType.Double => ToTagValue(address, dataType, await c.ReadDoubleAsync(mapped)),
                 DataType.String => ToTagValue(address, dataType, await c.ReadStringAsync(mapped, DefaultStringLength, Encoding.UTF8)),
                 DataType.ByteArray => ToTagValue(address, dataType, await c.ReadAsync(mapped, 1)),
-                _ => ToTagValue(address, dataType, await c.ReadUInt16Async(mapped)),
+                _ => BadTag(address, dataType, $"Unsupported HostLink data type: {dataType}"),
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { _logger.LogError(ex, "HostLink read failed at {Address}", address); return BadTag(address, dataType, ex.Message); }
@@ -163,6 +166,8 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
 
     public async Task<WriteResult> WriteTagAsync(string address, DataType dataType, object value, CancellationToken ct = default)
     {
+        if (dataType is DataType.Int8 or DataType.UInt8 || !Enum.IsDefined(dataType))
+            return new() { Success = false, ErrorMessage = $"HostLink does not support {dataType}; use an explicit word or bit type." };
         EnsureConnected();
         var mapped = MapAddress(address, dataType);
         await _semaphore.WaitAsync(ct);
@@ -178,10 +183,11 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
                 DataType.UInt32 => await c.WriteAsync(mapped, Convert.ToUInt32(value)),
                 DataType.Float => await c.WriteAsync(mapped, Convert.ToSingle(value)),
                 DataType.Int64 => await c.WriteAsync(mapped, Convert.ToInt64(value)),
+                DataType.UInt64 => await c.WriteAsync(mapped, Convert.ToUInt64(value)),
                 DataType.Double => await c.WriteAsync(mapped, Convert.ToDouble(value)),
                 DataType.String => await c.WriteAsync(mapped, Convert.ToString(value) ?? string.Empty, DefaultStringLength, Encoding.UTF8),
                 DataType.ByteArray => await c.WriteAsync(mapped, (byte[])value),
-                _ => await c.WriteAsync(mapped, Convert.ToUInt16(value)),
+                _ => throw new NotSupportedException($"Unsupported HostLink data type: {dataType}"),
             };
             return result.IsSuccess ? new() { Success = true } : new() { Success = false, ErrorMessage = result.Message };
         }
@@ -223,7 +229,7 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
 
 
     private static TagValue ToTagValue<T>(string address, DataType dataType, OperateResult<T> result) => result.IsSuccess
-        ? new() { Address = address, DataType = dataType, Value = result.Content is byte[] bytes ? bytes.ToArray() : result.Content!, Quality = TagQuality.Good, Timestamp = DateTimeOffset.UtcNow }
+        ? new() { Address = address, DataType = dataType, Value = result.Content is ulong unsigned ? unsigned.ToString(System.Globalization.CultureInfo.InvariantCulture) : result.Content is byte[] bytes ? bytes.ToArray() : result.Content!, Quality = TagQuality.Good, Timestamp = DateTimeOffset.UtcNow }
         : BadTag(address, dataType, result.Message);
 
     private static TagValue BadTag(string address, DataType dataType, string? error) => new()
@@ -246,6 +252,7 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
         Task<OperateResult<int>> ReadInt32Async(string address);
         Task<OperateResult<uint>> ReadUInt32Async(string address);
         Task<OperateResult<long>> ReadInt64Async(string address);
+        Task<OperateResult<ulong>> ReadUInt64Async(string address);
         Task<OperateResult<float>> ReadFloatAsync(string address);
         Task<OperateResult<double>> ReadDoubleAsync(string address);
         Task<OperateResult<string>> ReadStringAsync(string address, ushort length, Encoding encoding);
@@ -255,6 +262,7 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
         Task<OperateResult> WriteAsync(string address, int value);
         Task<OperateResult> WriteAsync(string address, uint value);
         Task<OperateResult> WriteAsync(string address, long value);
+        Task<OperateResult> WriteAsync(string address, ulong value);
         Task<OperateResult> WriteAsync(string address, float value);
         Task<OperateResult> WriteAsync(string address, double value);
         Task<OperateResult> WriteAsync(string address, byte[] value);
@@ -273,6 +281,7 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
         public Task<OperateResult<int>> ReadInt32Async(string address) => _inner.ReadInt32Async(address);
         public Task<OperateResult<uint>> ReadUInt32Async(string address) => _inner.ReadUInt32Async(address);
         public Task<OperateResult<long>> ReadInt64Async(string address) => _inner.ReadInt64Async(address);
+        public Task<OperateResult<ulong>> ReadUInt64Async(string address) => _inner.ReadUInt64Async(address);
         public Task<OperateResult<float>> ReadFloatAsync(string address) => _inner.ReadFloatAsync(address);
         public Task<OperateResult<double>> ReadDoubleAsync(string address) => _inner.ReadDoubleAsync(address);
         public Task<OperateResult<string>> ReadStringAsync(string address, ushort length, Encoding encoding) => _inner.ReadStringAsync(address, length, encoding);
@@ -282,6 +291,7 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
         public Task<OperateResult> WriteAsync(string address, int value) => _inner.WriteAsync(address, value);
         public Task<OperateResult> WriteAsync(string address, uint value) => _inner.WriteAsync(address, value);
         public Task<OperateResult> WriteAsync(string address, long value) => _inner.WriteAsync(address, value);
+        public Task<OperateResult> WriteAsync(string address, ulong value) => _inner.WriteAsync(address, value);
         public Task<OperateResult> WriteAsync(string address, float value) => _inner.WriteAsync(address, value);
         public Task<OperateResult> WriteAsync(string address, double value) => _inner.WriteAsync(address, value);
         public Task<OperateResult> WriteAsync(string address, byte[] value) => _inner.WriteAsync(address, value);
@@ -301,6 +311,7 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
         public Task<OperateResult<int>> ReadInt32Async(string address) => _inner.ReadInt32Async(address);
         public Task<OperateResult<uint>> ReadUInt32Async(string address) => _inner.ReadUInt32Async(address);
         public Task<OperateResult<long>> ReadInt64Async(string address) => _inner.ReadInt64Async(address);
+        public Task<OperateResult<ulong>> ReadUInt64Async(string address) => _inner.ReadUInt64Async(address);
         public Task<OperateResult<float>> ReadFloatAsync(string address) => _inner.ReadFloatAsync(address);
         public Task<OperateResult<double>> ReadDoubleAsync(string address) => _inner.ReadDoubleAsync(address);
         public Task<OperateResult<string>> ReadStringAsync(string address, ushort length, Encoding encoding) => _inner.ReadStringAsync(address, length, encoding);
@@ -310,6 +321,7 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
         public Task<OperateResult> WriteAsync(string address, int value) => _inner.WriteAsync(address, value);
         public Task<OperateResult> WriteAsync(string address, uint value) => _inner.WriteAsync(address, value);
         public Task<OperateResult> WriteAsync(string address, long value) => _inner.WriteAsync(address, value);
+        public Task<OperateResult> WriteAsync(string address, ulong value) => _inner.WriteAsync(address, value);
         public Task<OperateResult> WriteAsync(string address, float value) => _inner.WriteAsync(address, value);
         public Task<OperateResult> WriteAsync(string address, double value) => _inner.WriteAsync(address, value);
         public Task<OperateResult> WriteAsync(string address, byte[] value) => _inner.WriteAsync(address, value);
