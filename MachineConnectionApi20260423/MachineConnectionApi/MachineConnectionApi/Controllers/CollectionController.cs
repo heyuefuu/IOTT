@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using MachineConnectionApi.Proxy;
+using MachineConnectionApi.Services;
+using System.Text.Json;
+using System.Collections.Concurrent;
 
 namespace MachineConnectionApi.Controllers;
 
@@ -11,14 +14,18 @@ namespace MachineConnectionApi.Controllers;
 public class CollectionController : IndustrialIoTProxyControllerBase
 {
     private readonly IConfiguration _configuration;
+    private readonly IDeviceStore _devices;
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> ImportLocks = new(StringComparer.OrdinalIgnoreCase);
 
     public CollectionController(
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
-        ILogger<CollectionController> logger)
+        ILogger<CollectionController> logger,
+        IDeviceStore devices)
         : base(httpClientFactory, logger)
     {
         _configuration = configuration;
+        _devices = devices;
     }
 
     private string CollectionConfigPath =>
@@ -92,9 +99,38 @@ public class CollectionController : IndustrialIoTProxyControllerBase
     [HttpPost("batch-import/tags/{deviceId}")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(50_000_000)]
-    public Task<IActionResult> ImportTags(string deviceId, CancellationToken ct) =>
-        ProxyForwardAsync(
+    public async Task<IActionResult> ImportTags(string deviceId, CancellationToken ct)
+    {
+        var importLock = ImportLocks.GetOrAdd(deviceId, _ => new SemaphoreSlim(1, 1));
+        await importLock.WaitAsync(ct);
+        try { return await ImportTagsCoreAsync(deviceId, ct); }
+        finally { importLock.Release(); }
+    }
+
+    private async Task<IActionResult> ImportTagsCoreAsync(string deviceId, CancellationToken ct)
+    {
+        var result = await ProxyForwardAsync(
             HttpMethod.Post,
             $"{BatchImportPath}/tags/{Uri.EscapeDataString(deviceId)}",
             ct);
+        if (result is not ContentResult { StatusCode: 200, Content: not null } response)
+            return result;
+        if (!_devices.ReadAll().Any(device => device.Id == deviceId && device.Protocol == "HuazhongRobot"))
+            return result;
+        using var document = JsonDocument.Parse(response.Content);
+        var body = document.RootElement;
+        if (body.TryGetProperty("addressMap", out var map) && map.ValueKind == JsonValueKind.String
+            && body.TryGetProperty("successCount", out var count) && count.GetInt32() > 0)
+        {
+            _devices.Update(rows =>
+            {
+                var index = rows.FindIndex(device => device.Id == deviceId && device.Protocol == "HuazhongRobot");
+                if (index < 0) return false;
+                rows[index] = rows[index] with { ExtendedProperties = new(rows[index].ExtendedProperties)
+                    { ["AddressMap"] = map.GetString()! } };
+                return true;
+            });
+        }
+        return result;
+    }
 }

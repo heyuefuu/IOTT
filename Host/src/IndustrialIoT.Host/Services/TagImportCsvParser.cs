@@ -8,7 +8,9 @@ public sealed record TagImportCsvRow(
     string GroupName,
     int IntervalMs,
     string? DisplayName,
-    string? Unit);
+    string? Unit,
+    string? ModbusAddress = null,
+    bool? IsWritable = null);
 
 public static class TagImportCsvParser
 {
@@ -39,11 +41,17 @@ public static class TagImportCsvParser
                 Get(fields, columns, "GroupName"),
                 int.TryParse(Get(fields, columns, "IntervalMs"), out var ms) ? ms : 0,
                 GetOptional(fields, columns, "DisplayName"),
-                GetOptional(fields, columns, "Unit")));
+                GetOptional(fields, columns, "Unit"),
+                GetOptional(fields, columns, "ModbusAddress"),
+                ParseWritable(Get(fields, columns, "IsWritable"))));
         }
 
         return Task.FromResult<IReadOnlyList<TagImportCsvRow>>(rows);
     }
+
+    private static bool? ParseWritable(string value) => string.IsNullOrWhiteSpace(value) ? null
+        : bool.TryParse(value, out var writable) ? writable
+        : throw new FormatException("IsWritable must be true or false.");
 
     private static string Get(string[] fields, Dictionary<string, int> columns, string name) =>
         columns.TryGetValue(name, out var i) && i < fields.Length ? fields[i].Trim() : "";

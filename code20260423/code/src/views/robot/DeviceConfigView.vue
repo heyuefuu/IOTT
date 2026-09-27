@@ -62,6 +62,14 @@
 									@click="goTo('/robot/estun')">埃斯顿面板</el-button>
 							</div>
 							<div class="card-footer-row">
+								<el-upload v-if="device.protocol === 'HuazhongRobot'" accept=".csv,.json"
+									title="CSV/JSON：Address、ModbusAddress、DataType、GroupName、IntervalMs；可选 DisplayName、IsWritable"
+									:auto-upload="false" :show-file-list="false" :disabled="!!importingDeviceId"
+									:on-change="(file: UploadFile) => importRobotTags(device, file)">
+									<el-button type="primary" link size="small" :loading="importingDeviceId === device.id">导入采集点位</el-button>
+								</el-upload>
+								<el-button v-if="device.protocol === 'HuazhongRobot'" type="primary" link size="small"
+									@click="goTo(`/collection/manage?deviceId=${encodeURIComponent(device.id)}`)">采集任务管理</el-button>
 								<el-button type="primary" link size="small" @click="openEditDeviceDialog(device)">编辑</el-button>
 								<el-button type="danger" link size="small" @click="deleteDevice(device.id)">删除</el-button>
 							</div>
@@ -81,7 +89,7 @@
 		<el-dialog
 			v-model="deviceDialogVisible"
 			:title="isEditing ? '编辑设备' : '新增设备'"
-			width="500px"
+			:width="currentDevice.protocol === 'HuazhongRobot' ? '720px' : '500px'"
 		>
 			<el-form :model="currentDevice" label-width="120px">
 				<el-form-item label="设备编号" prop="deviceCode" required>
@@ -131,6 +139,34 @@
 						style="width: 200px" />
 					<span class="field-hint">控制器 Modbus/TCP 从站号，默认 1</span>
 				</el-form-item>
+				<template v-if="currentDevice.protocol === 'HuazhongRobot'">
+					<el-form-item label="心跳地址">
+						<el-input v-model="currentDevice.pingAddress" placeholder="留空使用映射首点或最近成功读取点" />
+					</el-form-item>
+					<el-form-item v-if="currentDevice.pingAddress.trim()" label="心跳数据类型">
+						<el-select v-model="currentDevice.pingDataType">
+							<el-option label="自动（映射类型或 UInt16）" value="" />
+							<el-option v-for="type in robotDataTypes" :key="type" :label="type" :value="type" />
+						</el-select>
+					</el-form-item>
+					<el-form-item label="寄存器字节序">
+						<el-select v-model="currentDevice.dataFormat">
+							<el-option label="驱动默认" value="" />
+							<el-option v-for="format in robotDataFormats" :key="format" :label="format" :value="format" />
+						</el-select>
+					</el-form-item>
+					<el-form-item label="字符串字节数">
+						<el-input-number v-model="currentDevice.stringLength" :min="1" :max="250" :step="1" :precision="0" />
+					</el-form-item>
+					<el-form-item label="字节数组长度">
+						<el-input-number v-model="currentDevice.byteArrayLength" :min="2" :max="250" :step="2" :precision="0" />
+					</el-form-item>
+					<el-form-item label="设备点位映射">
+						<el-input v-model="currentDevice.addressMap" type="textarea" :rows="6"
+							placeholder='[{"Path":"/Robot/Status","DisplayName":"状态","ModbusAddress":"100","DataType":"UInt16","IsWritable":false}]' />
+						<span class="field-hint">填写控制器实际点位 JSON 数组；留空使用全局映射，[] 表示不使用映射。</span>
+					</el-form-item>
+				</template>
 				<el-form-item label="机器人型号" prop="model" required>
 					<el-input
 						v-model="currentDevice.model"
@@ -201,7 +237,8 @@
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Plus, Loading } from "@element-plus/icons-vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
+import { machineConnectionCollectionApi } from "@/api/machineConnectionCollection";
 import {
 	machineConnectionDevicesApi,
 	type DeviceDto,
@@ -219,8 +256,29 @@ interface Device {
 	manufacturer: string;
 	description: string;
 	status: string;
-	/** 埃斯顿等 Modbus 系机器人的从站号，落到 extendedProperties.Station */
+	/** Modbus 系机器人的从站号，落到 extendedProperties.Station */
 	station: number;
+	extendedProperties: Record<string, string>;
+	pingAddress: string;
+	pingDataType: string;
+	dataFormat: string;
+	stringLength: number;
+	byteArrayLength: number;
+	addressMap: string;
+}
+
+const robotDataTypes = ["Bool", "Int16", "UInt16", "Int32", "UInt32", "Int64", "UInt64", "Float", "Double", "String", "ByteArray"];
+const robotDataFormats = ["ABCD", "BADC", "CDAB", "DCBA"];
+function robotOptions(properties: Record<string, string> = {}) {
+	return {
+		extendedProperties: { ...properties },
+		pingAddress: properties.PingAddress ?? "",
+		pingDataType: properties.PingDataType ?? "",
+		dataFormat: properties.DataFormat ?? "",
+		stringLength: Number(properties.StringLength ?? 16),
+		byteArrayLength: Number(properties.ByteArrayLength ?? 2),
+		addressMap: properties.AddressMap ?? "",
+	};
 }
 
 // 设备列表（来自后端 /api/devices?type=Robot）
@@ -257,7 +315,9 @@ function mapToRobot(d: DeviceDto): Device {
 		manufacturer: d.brand,
 		description: d.extendedProperties?.description ?? "",
 		status: d.status,
-		station: Number(d.extendedProperties?.Station ?? 1) || 1,
+		station: Number((d.protocol === "ModbusTCP" ? d.extendedProperties?.UnitId : undefined)
+			?? d.extendedProperties?.Station ?? 1) || 1,
+		...robotOptions(d.extendedProperties),
 	};
 }
 
@@ -347,6 +407,7 @@ const currentDevice = reactive<Device>({
 	description: "",
 	status: "离线",
 	station: 1,
+	...robotOptions(),
 });
 
 // 测试连接
@@ -381,6 +442,7 @@ const openAddDeviceDialog = () => {
 		description: "",
 		status: "离线",
 		station: 1,
+		...robotOptions(),
 	});
 	deviceDialogVisible.value = true;
 };
@@ -409,10 +471,33 @@ function resolveBrand(protocol: string, manufacturer: string): string {
 	return canonical[protocol] ?? (manufacturer || protocol);
 }
 
-/** 底层走 Modbus/TCP、需要从站号的协议。ModbusTCP 是通用 Modbus 主站，
- * 埃斯顿控制器本身就是 Modbus/TCP 服务端，两者都要填站号。 */
+/** 底层走 Modbus/TCP、需要从站号的协议。 */
 function usesModbusStation(protocol: string): boolean {
-	return protocol === "EstunRobot" || protocol === "ModbusTCP";
+	return ["EstunRobot", "ModbusTCP", "HuazhongRobot"].includes(protocol);
+}
+
+function validateRobotOptions(): string | undefined {
+	if (currentDevice.pingAddress.trim() && currentDevice.pingDataType && !robotDataTypes.includes(currentDevice.pingDataType)) return "请选择有效的心跳数据类型";
+	if (currentDevice.dataFormat && !robotDataFormats.includes(currentDevice.dataFormat)) return "请选择有效的寄存器字节序";
+	if ([currentDevice.stringLength, currentDevice.byteArrayLength].some((length) => !Number.isInteger(length) || length < 1 || length > 250))
+		return "字符串和字节数组长度必须为 1 到 250 的整数";
+	if (currentDevice.byteArrayLength % 2 !== 0) return "字节数组长度必须为偶数（每个寄存器 2 字节）";
+	if (!currentDevice.addressMap.trim()) return;
+	let nodes: unknown;
+	try { nodes = JSON.parse(currentDevice.addressMap); }
+	catch { return "设备点位映射必须是有效的 JSON 数组"; }
+	if (!Array.isArray(nodes)) return "设备点位映射必须是 JSON 数组";
+	const paths = new Set<string>();
+	for (const [index, node] of nodes.entries()) {
+		if (!node || typeof node !== "object" ||
+			["Path", "DisplayName", "ModbusAddress"].some((key) => typeof node[key] !== "string" || !node[key].trim()) ||
+			!robotDataTypes.includes(node.DataType) || typeof node.IsWritable !== "boolean")
+			return `第 ${index + 1} 个点位需填写 Path、DisplayName、ModbusAddress、有效 DataType 和布尔值 IsWritable`;
+		const path = node.Path.trim().toLowerCase();
+		if (paths.has(path)) return `第 ${index + 1} 个点位路径重复`;
+		paths.add(path);
+		if (node.ModbusAddress.trim().startsWith("/")) return `第 ${index + 1} 个点位需填写实际 Modbus 地址`;
+	}
 }
 
 // 保存设备 = 真实创建/更新
@@ -434,13 +519,30 @@ const saveDevice = async () => {
 		return;
 	}
 
-	const ext: Record<string, string> = {};
-	if (currentDevice.deviceCode) ext.deviceCode = currentDevice.deviceCode;
-	if (currentDevice.description) ext.description = currentDevice.description;
-	// 从站号：EstunRobot 驱动读 ExtendedProperties["Station"]，
-	// ModbusTcpDriver 读 "UnitId"（也兼容 "Station"）。两种协议都需要，缺省 1。
+	const ext: Record<string, string> = { ...currentDevice.extendedProperties };
+	ext.deviceCode = currentDevice.deviceCode;
+	ext.description = currentDevice.description;
 	if (usesModbusStation(currentDevice.protocol)) {
-		ext.Station = String(currentDevice.station || 1);
+		if (!Number.isInteger(currentDevice.station) || currentDevice.station < 1 || currentDevice.station > 255) {
+			ElMessage.warning("Modbus站号必须为 1 到 255 的整数");
+			return;
+		}
+		ext.Station = String(currentDevice.station);
+		if (currentDevice.protocol === "ModbusTCP") ext.UnitId = ext.Station;
+	}
+	if (currentDevice.protocol === "HuazhongRobot") {
+		const error = validateRobotOptions();
+		if (error) {
+			ElMessage.warning(error);
+			return;
+		}
+		ext.PingAddress = currentDevice.pingAddress.trim();
+		if (ext.PingAddress && currentDevice.pingDataType) ext.PingDataType = currentDevice.pingDataType;
+		else delete ext.PingDataType;
+		ext.DataFormat = currentDevice.dataFormat;
+		ext.StringLength = String(currentDevice.stringLength);
+		ext.ByteArrayLength = String(currentDevice.byteArrayLength);
+		ext.AddressMap = currentDevice.addressMap.trim();
 	}
 
 	const brand = resolveBrand(currentDevice.protocol, currentDevice.manufacturer);
@@ -480,6 +582,29 @@ const saveDevice = async () => {
 		ElMessage.error(getErr(e, "保存设备失败"));
 	}
 };
+
+const importingDeviceId = ref("");
+async function importRobotTags(device: Device, file: UploadFile) {
+	if (!file.raw || importingDeviceId.value) return;
+	if (!/\.(csv|json)$/i.test(file.name)) {
+		ElMessage.warning("请选择 CSV 或 JSON 点位文件");
+		return;
+	}
+	importingDeviceId.value = device.id;
+	try {
+		const result = await machineConnectionCollectionApi.importTags(device.id, file.raw);
+		if (result.errorCount > 0 || result.successCount === 0) {
+			ElMessage.error(result.errors.join("；") || "未导入有效点位");
+			return;
+		}
+		ElMessage.success(`已导入 ${result.successCount} 个点位，可在采集任务管理启动采集`);
+		await loadDevices();
+	} catch (error: unknown) {
+		ElMessage.error(getErr(error, "导入点位失败"));
+	} finally {
+		importingDeviceId.value = "";
+	}
+}
 
 // 删除设备 = 真实删除
 const deleteDevice = (id: string) => {

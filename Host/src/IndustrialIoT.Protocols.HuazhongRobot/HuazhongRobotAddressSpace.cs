@@ -7,7 +7,7 @@ using IndustrialIoT.Protocols.Models;
 /// 华中机器人 HSR / HR / HC 系列 Modbus/TCP 地址映射（实例化，按设备/配置注入）。
 /// 默认无内置映射 — 真实地址必须通过下列任一方式提供：
 ///   1) appsettings.json 的 "RobotAddressMaps:Huazhong:Nodes" 节点（站点级共享映射）
-///   2) <see cref="BatchImportController"/> CSV/JSON 批量导入（设备级映射，存入 CollectionProfile）
+///   2) 设备 ExtendedProperties["AddressMap"] 中的 JSON 节点数组
 ///   3) 调用方直传 Hsl 原始 Modbus 地址，跳过路径解析：
 ///        线圈/IO        — "0x0000"（DI/DO/SI/SO，Coil 区）
 ///        保持寄存器     — "100"、"4x100"（状态/坐标整型）
@@ -28,6 +28,14 @@ public sealed class HuazhongRobotAddressSpace
     public HuazhongRobotAddressSpace(IEnumerable<Node>? nodes)
     {
         _all = (nodes ?? Enumerable.Empty<Node>()).ToList();
+        foreach (var node in _all)
+        {
+            if (node is null || string.IsNullOrWhiteSpace(node.Path) || string.IsNullOrWhiteSpace(node.ModbusAddress)
+                || node.ModbusAddress.TrimStart().StartsWith('/') || !Enum.IsDefined(node.DataType)
+                || node.DataType is DataType.Int8 or DataType.UInt8)
+                throw new ArgumentException("Robot address map requires valid Path, ModbusAddress and DataType.");
+        }
+        _all = _all.Select(node => node with { Path = node.Path.Trim(), ModbusAddress = node.ModbusAddress.Trim() }).ToList();
         _byPath = _all.ToDictionary(n => n.Path, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -38,6 +46,8 @@ public sealed class HuazhongRobotAddressSpace
     {
         if (_byPath.TryGetValue(pathOrAddress, out var n))
             return (n.ModbusAddress, n.DataType, n.IsWritable);
+        if (pathOrAddress.StartsWith('/'))
+            throw new KeyNotFoundException($"Robot address path '{pathOrAddress}' is not configured.");
         return (pathOrAddress, requestedType, true);
     }
 

@@ -5,6 +5,7 @@ using System.Text.Json;
 using MachineConnectionApi.Controllers;
 using MachineConnectionApi.Data;
 using MachineConnectionApi.Entities;
+using MachineConnectionApi.Models;
 using MachineConnectionApi.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,89 @@ namespace MachineConnectionApi.Tests;
 
 internal static partial class CncGatewayRoutingRegressionTests
 {
+    private sealed class ImportDeviceStore(params MachineDeviceDto[] devices) : IDeviceStore
+    {
+        private List<MachineDeviceDto> _devices = [.. devices];
+        public List<MachineDeviceDto> ReadAll() => [.. _devices];
+        public void WriteAll(IEnumerable<MachineDeviceDto> items) => _devices = [.. items];
+        public TResult Update<TResult>(Func<List<MachineDeviceDto>, TResult> update) => update(_devices);
+    }
+
+    private static async Task RobotImportPreservesRegistry()
+    {
+        const string addressMap = "[{\"Path\":\"/Robot/Ready\",\"ModbusAddress\":\"240\",\"DataType\":\"UInt16\"}]";
+        foreach (var protocol in new[] { "HuazhongRobot", "ModbusTCP" })
+        foreach (var successCount in new[] { 0, 1 })
+        {
+            var device = new MachineDeviceDto { Id = "robot-import", Name = "Robot", Type = "Robot",
+                Brand = "HSR", Model = "HSR", Protocol = protocol, Status = "Offline",
+                Host = "127.0.0.1", Port = 502, CreatedAt = DateTimeOffset.UtcNow,
+                ExtendedProperties = new() { ["Station"] = "7", ["AddressMap"] = "[]" } };
+            var other = device with { Id = "other" };
+            var store = new ImportDeviceStore(device, other);
+            var response = JsonSerializer.Serialize(new { successCount, addressMap });
+            using var host = new HostFixture { ResponseText = response };
+            var controller = WithRequest(new CollectionController(host, Configuration,
+                NullLogger<CollectionController>.Instance, store));
+            controller.Request.ContentType = "multipart/form-data; boundary=robot-fixture";
+            var bytes = System.Text.Encoding.UTF8.GetBytes("Address,DataType\n240,UInt16");
+            controller.Request.Form = new Microsoft.AspNetCore.Http.FormCollection(
+                new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>(),
+                new Microsoft.AspNetCore.Http.FormFileCollection { new Microsoft.AspNetCore.Http.FormFile(
+                    new MemoryStream(bytes), 0, bytes.Length, "file", "robot.csv")
+                    { Headers = new Microsoft.AspNetCore.Http.HeaderDictionary(), ContentType = "text/csv" } });
+            var result = await controller.ImportTags(device.Id, CancellationToken.None);
+            AssertContent(result, 200, response);
+            var request = AssertRequest(host, HttpMethod.Post, "/api/batch-import/tags/robot-import");
+            if (!request.Parts.Single().Body.SequenceEqual(bytes))
+                throw new InvalidOperationException("Robot import corrupted the uploaded file.");
+            var saved = store.ReadAll().Single(row => row.Id == device.Id);
+            var expected = protocol == "HuazhongRobot" && successCount > 0 ? addressMap : "[]";
+            if (saved.ExtendedProperties["AddressMap"] != expected || saved.ExtendedProperties["Station"] != "7"
+                || store.ReadAll().Single(row => row.Id == "other").ExtendedProperties["AddressMap"] != "[]")
+                throw new InvalidOperationException("Robot import failed to retain and isolate gateway device mappings.");
+        }
+    }
+
+    private static async Task RobotImportsSerializeResponses()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var device = new MachineDeviceDto { Id = "robot-concurrent", Name = "Robot", Type = "Robot",
+            Brand = "HSR", Model = "HSR", Protocol = "HuazhongRobot", Status = "Offline",
+            Host = "127.0.0.1", Port = 502, CreatedAt = DateTimeOffset.UtcNow,
+            ExtendedProperties = new() { ["AddressMap"] = "[]" } };
+        var store = new ImportDeviceStore(device);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = new HostFixture();
+        host.BeforeResponse = async count =>
+        {
+            if (count == 1) { started.TrySetResult(); await release.Task.WaitAsync(timeout.Token); }
+            host.ResponseText = JsonSerializer.Serialize(new { successCount = 1,
+                addressMap = count == 1 ? "[\"First\"]" : "[\"First\",\"Second\"]" });
+        };
+        CollectionController Controller() => WithRequest(new CollectionController(host, Configuration,
+            NullLogger<CollectionController>.Instance, store));
+        var first = Controller().ImportTags(device.Id, timeout.Token);
+        await started.Task.WaitAsync(timeout.Token);
+        var second = Controller().ImportTags(device.Id, timeout.Token);
+        try
+        {
+            if (host.Requests.Count != 1 || store.ReadAll()[0].ExtendedProperties["AddressMap"] != "[]")
+                throw new InvalidOperationException("Gateway imports forwarded concurrently before saving the first response.");
+        }
+        finally { release.TrySetResult(); }
+        await Task.WhenAll(first, second);
+        if (host.Requests.Count != 2 || store.ReadAll()[0].ExtendedProperties["AddressMap"] != "[\"First\",\"Second\"]")
+            throw new InvalidOperationException("Gateway import responses lost the newest map.");
+        host.BeforeResponse = null;
+        host.ThrowOnSend = true;
+        await Controller().ImportTags(device.Id, timeout.Token);
+        host.ThrowOnSend = false;
+        AssertContent(await Controller().ImportTags(device.Id, timeout.Token), 200,
+            System.Text.Encoding.UTF8.GetString(host.ResponseBytes));
+    }
+
     private static async Task LegacyCollectionUsesHost()
     {
         foreach (var device in Devices)

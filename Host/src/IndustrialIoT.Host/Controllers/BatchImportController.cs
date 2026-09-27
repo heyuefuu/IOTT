@@ -1,9 +1,14 @@
 namespace IndustrialIoT.Host.Controllers;
 
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Collections.Concurrent;
 using IndustrialIoT.Domain.Entities;
 using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Domain.Interfaces;
 using IndustrialIoT.Host.Services;
+using IndustrialIoT.Infrastructure.BackgroundServices;
+using IndustrialIoT.Protocols.HuazhongRobot;
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
@@ -12,22 +17,47 @@ public class BatchImportController : ControllerBase
 {
     private readonly IDeviceRepository _deviceRepo;
     private readonly ICollectionProfileRepository _profileRepo;
+    private readonly ICollectionImportRepository _importRepo;
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> ImportLocks = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<BatchImportController> _logger;
+    private readonly IDeviceConnectionPool _pool;
+    private readonly HuazhongRobotAddressSpace _defaultAddressSpace;
+    private static readonly JsonSerializerOptions AddressMapJsonOptions = new()
+    {
+        Converters = { new JsonStringEnumConverter() },
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = true,
+    };
 
     public BatchImportController(
         IDeviceRepository deviceRepo,
         ICollectionProfileRepository profileRepo,
-        ILogger<BatchImportController> logger)
+        ILogger<BatchImportController> logger,
+        IDeviceConnectionPool pool,
+        HuazhongRobotAddressSpace defaultAddressSpace,
+        ICollectionImportRepository importRepo)
     {
         _deviceRepo = deviceRepo;
         _profileRepo = profileRepo;
+        _importRepo = importRepo;
         _logger = logger;
+        _pool = pool;
+        _defaultAddressSpace = defaultAddressSpace;
     }
 
     /// <summary>批量导入采集点位配置（CSV 格式）</summary>
     [HttpPost("tags/{deviceId}")]
     [Consumes("multipart/form-data")]
     public async Task<ActionResult<BatchImportResult>> ImportTags(
+        string deviceId, IFormFile file, CancellationToken ct)
+    {
+        var importLock = ImportLocks.GetOrAdd(deviceId, _ => new SemaphoreSlim(1, 1));
+        await importLock.WaitAsync(ct);
+        try { return await ImportTagsCoreAsync(deviceId, file, ct); }
+        finally { importLock.Release(); }
+    }
+
+    private async Task<ActionResult<BatchImportResult>> ImportTagsCoreAsync(
         string deviceId, IFormFile file, CancellationToken ct)
     {
         var device = await _deviceRepo.GetByIdAsync(deviceId, ct);
@@ -48,7 +78,11 @@ public class BatchImportController : ControllerBase
 
         if (ext == ".csv")
         {
-            rows = await ParseCsvAsync(reader, errors, ct);
+            try { rows = await ParseCsvAsync(reader, errors, ct); }
+            catch (Exception ex) when (ex is FormatException or ArgumentException or Microsoft.VisualBasic.FileIO.MalformedLineException)
+            {
+                return BadRequest($"Invalid CSV: {ex.Message}");
+            }
         }
         else
         {
@@ -65,17 +99,23 @@ public class BatchImportController : ControllerBase
         }
 
         var totalRows = rows.Count;
+        if (totalRows == 0) errors.Add("No tag rows were provided");
 
         // Validate rows
         for (var i = 0; i < rows.Count; i++)
         {
             var row = rows[i];
             var lineNum = i + 2; // 1-based, +1 for header
+            if (row is null)
+            {
+                errors.Add($"Row {lineNum}: Tag must be an object");
+                continue;
+            }
             if (string.IsNullOrWhiteSpace(row.Address))
                 errors.Add($"Row {lineNum}: Address is required");
             if (string.IsNullOrWhiteSpace(row.GroupName))
                 errors.Add($"Row {lineNum}: GroupName is required");
-            if (!Enum.TryParse<DataType>(row.DataType, true, out _))
+            if (!Enum.TryParse<DataType>(row.DataType, true, out var parsedType) || !Enum.IsDefined(parsedType))
                 errors.Add($"Row {lineNum}: Invalid DataType '{row.DataType}'");
             if (row.IntervalMs <= 0)
                 errors.Add($"Row {lineNum}: IntervalMs must be > 0");
@@ -90,6 +130,43 @@ public class BatchImportController : ControllerBase
                 ErrorCount = errors.Count,
                 Errors = errors,
             });
+        }
+
+        var connectionConfig = device.ConnectionConfig;
+        if (device.Protocol == ProtocolType.HuazhongRobot)
+        {
+            var duplicatePaths = rows
+                .Where(row => !string.IsNullOrWhiteSpace(row.Address))
+                .GroupBy(row => row.Address.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Any(group => group.Count() > 1);
+            if (duplicatePaths)
+            {
+                return Ok(new BatchImportResult
+                {
+                    TotalRows = totalRows,
+                    SuccessCount = 0,
+                    ErrorCount = 1,
+                    Errors = ["Duplicate robot address paths are not allowed"],
+                });
+            }
+
+            string addressMap;
+            try { addressMap = BuildRobotAddressMap(device, rows); }
+            catch (Exception ex) when (ex is JsonException or ArgumentException)
+            {
+                return Ok(new BatchImportResult
+                {
+                    TotalRows = totalRows, SuccessCount = 0, ErrorCount = 1,
+                    Errors = [ex.Message],
+                });
+            }
+            connectionConfig = device.ConnectionConfig with
+            {
+                ExtendedProperties = new Dictionary<string, string>(device.ConnectionConfig.ExtendedProperties)
+                {
+                    ["AddressMap"] = addressMap,
+                },
+            };
         }
 
         // Build profile from imported rows
@@ -122,7 +199,7 @@ public class BatchImportController : ControllerBase
             group.Tags.Add(new TagConfig
             {
                 GroupId = group.Id,
-                Address = row.Address,
+                Address = row.Address.Trim(),
                 DataType = dataType,
                 DisplayName = row.DisplayName,
                 Unit = row.Unit,
@@ -130,7 +207,12 @@ public class BatchImportController : ControllerBase
             successCount++;
         }
 
-        await _profileRepo.AddAsync(profile, ct);
+        if (device.Protocol == ProtocolType.HuazhongRobot)
+        {
+            await _importRepo.SaveAsync(device, connectionConfig, profile, ct);
+            await _pool.ReleaseAsync(deviceId, CancellationToken.None);
+        }
+        else await _profileRepo.AddAsync(profile, ct);
 
         _logger.LogInformation(
             "Batch import completed for device {DeviceId}: {Success}/{Total} tags imported",
@@ -142,7 +224,34 @@ public class BatchImportController : ControllerBase
             SuccessCount = successCount,
             ErrorCount = 0,
             Errors = [],
+            AddressMap = device.Protocol == ProtocolType.HuazhongRobot
+                ? connectionConfig.ExtendedProperties.GetValueOrDefault("AddressMap") : null,
         });
+    }
+
+    private string BuildRobotAddressMap(Device device, List<TagImportRow> rows)
+    {
+        var existingJson = device.ConnectionConfig.ExtendedProperties.GetValueOrDefault("AddressMap");
+        var existing = string.IsNullOrWhiteSpace(existingJson)
+            ? _defaultAddressSpace
+            : new HuazhongRobotAddressSpace(JsonSerializer.Deserialize<List<HuazhongRobotAddressSpace.Node>>(
+                existingJson, AddressMapJsonOptions) ?? throw new ArgumentException("AddressMap must be a JSON array."));
+        var nodes = existing.All.ToDictionary(node => node.Path, StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            var path = row.Address.Trim();
+            nodes.TryGetValue(path, out var previous);
+            var dataType = Enum.Parse<DataType>(row.DataType, true);
+            if (previous is not null && previous.DataType != dataType)
+                throw new ArgumentException($"Address '{path}' is configured as {previous.DataType}, not {dataType}.");
+            var modbusAddress = string.IsNullOrWhiteSpace(row.ModbusAddress)
+                ? previous?.ModbusAddress ?? path : row.ModbusAddress.Trim();
+            nodes[path] = new(path,
+                string.IsNullOrWhiteSpace(row.DisplayName) ? previous?.DisplayName ?? path : row.DisplayName.Trim(),
+                modbusAddress, dataType, row.IsWritable ?? previous?.IsWritable ?? false);
+        }
+        var validated = new HuazhongRobotAddressSpace(nodes.Values);
+        return JsonSerializer.Serialize(validated.All, AddressMapJsonOptions);
     }
 
     private static async Task<List<TagImportRow>> ParseCsvAsync(
@@ -157,6 +266,8 @@ public class BatchImportController : ControllerBase
             IntervalMs = row.IntervalMs,
             DisplayName = row.DisplayName,
             Unit = row.Unit,
+            ModbusAddress = row.ModbusAddress,
+            IsWritable = row.IsWritable,
         }).ToList();
     }
 
@@ -168,11 +279,14 @@ public class BatchImportController : ControllerBase
         public string? Unit { get; init; }
         public string GroupName { get; init; } = "";
         public int IntervalMs { get; init; }
+        public string? ModbusAddress { get; init; }
+        public bool? IsWritable { get; init; }
     }
 }
 
 public record BatchImportResult
 {
+    public string? AddressMap { get; init; }
     public int TotalRows { get; init; }
     public int SuccessCount { get; init; }
     public int ErrorCount { get; init; }

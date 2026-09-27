@@ -1,6 +1,12 @@
 namespace IndustrialIoT.Protocols.HuazhongRobot;
 
+using System.Globalization;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
 using HslCommunication;
+using HslCommunication.Core;
+using HslCommunication.Core.Pipe;
 using HslCommunication.ModBus;
 using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Domain.ValueObjects;
@@ -19,15 +25,24 @@ public sealed class HuazhongRobotDriver : IProtocolDriver, IAddressSpaceBrowser
 {
     private const int DefaultPort = 502;
     private readonly ILogger<HuazhongRobotDriver> _logger;
-    private readonly HuazhongRobotAddressSpace _addressSpace;
+    private readonly HuazhongRobotAddressSpace _defaultAddressSpace;
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private HuazhongRobotAddressSpace _addressSpace;
     private ModbusTcpNet? _client;
-    private string _pingAddress = "100";
+    private string? _pingAddress;
+    private DataType _pingDataType = DataType.UInt16;
+    private string? _lastReadAddress;
+    private DataType _lastReadDataType;
+    private bool _communicationHealthy;
+    private ushort _stringLength = 16;
+    private ushort _byteArrayLength = 2;
+    private bool _disposed;
     private ConnectionState _state = ConnectionState.Disconnected;
 
     public HuazhongRobotDriver(ILogger<HuazhongRobotDriver> logger, HuazhongRobotAddressSpace addressSpace)
     {
         _logger = logger;
+        _defaultAddressSpace = addressSpace;
         _addressSpace = addressSpace;
     }
     public ProtocolType Protocol => ProtocolType.HuazhongRobot;
@@ -39,68 +54,107 @@ public sealed class HuazhongRobotDriver : IProtocolDriver, IAddressSpaceBrowser
 
     public async Task<ConnectionResult> ConnectAsync(DeviceConnectionConfig config, CancellationToken ct = default)
     {
-        if (_state == ConnectionState.Connected) return new() { Success = true };
-        SetState(ConnectionState.Connecting);
+        await _lock.WaitAsync(ct);
         try
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_state == ConnectionState.Connected) return new() { Success = true };
+            SetState(ConnectionState.Connecting);
             var port = config.Port > 0 ? config.Port : DefaultPort;
             var station = byte.TryParse(config.ExtendedProperties.GetValueOrDefault("Station"), out var s) ? s : (byte)1;
-            var configuredPing = config.ExtendedProperties.GetValueOrDefault("PingAddress");
-            _pingAddress = !string.IsNullOrWhiteSpace(configuredPing)
-                ? configuredPing : _addressSpace.All.FirstOrDefault()?.Path ?? "100";
+            if (config.ExtendedProperties.TryGetValue("Station", out var stationText)
+                && (!byte.TryParse(stationText, out station) || station == 0))
+                throw new ArgumentException("Station must be between 1 and 255.");
+            _addressSpace = LoadAddressSpace(config.ExtendedProperties);
+            _pingAddress = config.ExtendedProperties.GetValueOrDefault("PingAddress");
+            if (string.IsNullOrWhiteSpace(_pingAddress)) _pingAddress = _addressSpace.All.FirstOrDefault()?.Path;
+            var pingNode = _addressSpace.All.FirstOrDefault(node =>
+                node.Path.Equals(_pingAddress, StringComparison.OrdinalIgnoreCase));
+            _pingDataType = Enum.TryParse<DataType>(config.ExtendedProperties.GetValueOrDefault("PingDataType"), true, out var pingType)
+                && Enum.IsDefined(pingType) ? pingType : pingNode?.DataType ?? DataType.UInt16;
+            _stringLength = ParseLength(config.ExtendedProperties, "StringLength", 16);
+            _byteArrayLength = ParseLength(config.ExtendedProperties, "ByteArrayLength", 2);
+            if (_byteArrayLength % 2 != 0) throw new ArgumentException("ByteArrayLength must contain an even number of bytes.");
+            _lastReadAddress = null;
 
             var client = new ModbusTcpNet(config.Host, port, station)
             {
                 ConnectTimeOut = (int)config.ConnectTimeout.TotalMilliseconds,
                 ReceiveTimeOut = (int)config.ReadTimeout.TotalMilliseconds,
             };
-            var r = await client.ConnectServerAsync();
-            if (!r.IsSuccess) throw new InvalidOperationException(r.Message);
-
+            var dataFormat = config.ExtendedProperties.GetValueOrDefault("DataFormat");
+            if (!string.IsNullOrWhiteSpace(dataFormat))
+            {
+                if (!Enum.TryParse<DataFormat>(dataFormat, true, out var format) || !Enum.IsDefined(format))
+                    throw new ArgumentException($"Invalid DataFormat '{dataFormat}'.");
+                client.DataFormat = format;
+            }
             _client?.ConnectClose();
             _client = client;
+            var r = await client.ConnectServerAsync();
+            if (!r.IsSuccess) throw new InvalidOperationException(r.Message);
+            _communicationHealthy = true;
             _logger.LogInformation("Huazhong Robot connected to {Host}:{Port} station={Station}", config.Host, port, station);
             SetState(ConnectionState.Connected);
             return new() { Success = true };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Cleanup();
             _logger.LogError(ex, "Huazhong Robot connection failed");
             SetState(ConnectionState.Faulted, ex.Message);
             return new() { Success = false, ErrorMessage = ex.Message };
         }
+        finally { _lock.Release(); }
     }
 
-    public Task DisconnectAsync(CancellationToken ct = default)
+    public async Task DisconnectAsync(CancellationToken ct = default)
     {
-        Cleanup();
-        SetState(ConnectionState.Disconnected);
-        return Task.CompletedTask;
+        await _lock.WaitAsync(ct);
+        try { Cleanup(); SetState(ConnectionState.Disconnected); }
+        finally { _lock.Release(); }
     }
 
     public async Task<bool> PingAsync(CancellationToken ct = default)
     {
-        if (_state != ConnectionState.Connected || _client is null) return false;
-        try { return (await ReadTagAsync(_pingAddress, DataType.UInt16, ct)).Quality == TagQuality.Good; }
+        string? address;
+        DataType dataType;
+        await _lock.WaitAsync(ct);
+        try
+        {
+            if (_state != ConnectionState.Connected || _client is null) return false;
+            if (!TransportIsHealthy())
+            {
+                SetState(ConnectionState.Faulted, "Modbus connection closed");
+                return false;
+            }
+            address = _pingAddress ?? _lastReadAddress;
+            if (address is null) return _communicationHealthy;
+            dataType = _pingAddress is null ? _lastReadDataType : _pingDataType;
+        }
+        finally { _lock.Release(); }
+        try { return (await ReadTagAsync(address, dataType, ct)).Quality == TagQuality.Good; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch { return false; }
     }
 
     public async Task<TagValue> ReadTagAsync(string address, DataType dataType, CancellationToken ct = default)
     {
-        var (modbusAddr, resolvedType, _) = _addressSpace.Resolve(address, dataType);
-        if (_client is null) return Err(address, dataType, "Not connected");
-
         await _lock.WaitAsync(ct);
         try
         {
+            if (_client is null || _state != ConnectionState.Connected) return Err(address, dataType, "Not connected");
+            var (modbusAddr, resolvedType, _) = _addressSpace.Resolve(address, dataType);
+            if (resolvedType != dataType) return Err(address, dataType, $"Configured type is {resolvedType}; requested {dataType}.");
             var raw = await ReadByTypeAsync(modbusAddr, resolvedType);
+            UpdateTransportHealth(raw is not null);
+            if (raw is not null) { _lastReadAddress = address; _lastReadDataType = dataType; }
             return raw is null
                 ? Err(address, dataType, $"Read failed for {modbusAddr}")
                 : new() { Address = address, DataType = dataType, Value = raw,
                           Quality = TagQuality.Good, Timestamp = DateTimeOffset.UtcNow };
         }
-        catch (Exception ex) { return Err(address, dataType, ex.Message); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return Err(address, dataType, ex.Message); }
         finally { _lock.Release(); }
     }
 
@@ -113,13 +167,17 @@ public sealed class HuazhongRobotDriver : IProtocolDriver, IAddressSpaceBrowser
 
     public async Task<WriteResult> WriteTagAsync(string address, DataType dataType, object value, CancellationToken ct = default)
     {
-        var (modbusAddr, resolvedType, writable) = _addressSpace.Resolve(address, dataType);
-        if (!writable) return new() { Success = false, ErrorMessage = $"Address '{address}' is read-only" };
-        if (_client is null) return new() { Success = false, ErrorMessage = "Not connected" };
-
         await _lock.WaitAsync(ct);
         try
         {
+            if (_client is null || _state != ConnectionState.Connected)
+                return new() { Success = false, ErrorMessage = "Not connected" };
+            var (modbusAddr, resolvedType, writable) = _addressSpace.Resolve(address, dataType);
+            if (resolvedType != dataType)
+                return new() { Success = false, ErrorMessage = $"Configured type is {resolvedType}; requested {dataType}." };
+            if (!writable) return new() { Success = false, ErrorMessage = $"Address '{address}' is read-only" };
+            if (resolvedType == DataType.ByteArray && (value is not byte[] bytes || bytes.Length == 0 || bytes.Length % 2 != 0))
+                return new() { Success = false, ErrorMessage = "ByteArray must contain a positive, even number of bytes." };
             var op = resolvedType switch
             {
                 DataType.Bool => await _client.WriteAsync(modbusAddr, Convert.ToBoolean(value)),
@@ -128,16 +186,26 @@ public sealed class HuazhongRobotDriver : IProtocolDriver, IAddressSpaceBrowser
                 DataType.UInt32 => await _client.WriteAsync(modbusAddr, Convert.ToUInt32(value)),
                 DataType.Int32 => await _client.WriteAsync(modbusAddr, Convert.ToInt32(value)),
                 DataType.Float => await _client.WriteAsync(modbusAddr, Convert.ToSingle(value)),
+                DataType.Int64 => await _client.WriteAsync(modbusAddr, Convert.ToInt64(value)),
+                DataType.UInt64 => await _client.WriteAsync(modbusAddr, Convert.ToUInt64(value)),
+                DataType.Double => await _client.WriteAsync(modbusAddr, Convert.ToDouble(value)),
+                DataType.String => await WriteStringAsync(modbusAddr, Convert.ToString(value) ?? string.Empty),
+                DataType.ByteArray => await _client.WriteAsync(modbusAddr, (byte[])value),
                 _ => new OperateResult { IsSuccess = false, Message = $"Unsupported type {resolvedType}" },
             };
+            UpdateTransportHealth(op.IsSuccess);
             return new() { Success = op.IsSuccess, ErrorMessage = op.IsSuccess ? null : op.Message };
         }
-        catch (Exception ex) { return new() { Success = false, ErrorMessage = ex.Message }; }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return new() { Success = false, ErrorMessage = ex.Message }; }
         finally { _lock.Release(); }
     }
 
     public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
-        => Task.FromResult(_addressSpace.BuildTree());
+    {
+        var roots = _addressSpace.BuildTree();
+        return Task.FromResult<IReadOnlyList<AddressNode>>(string.IsNullOrEmpty(parentPath)
+            ? roots : roots.FirstOrDefault(node => node.Path.Equals(parentPath, StringComparison.OrdinalIgnoreCase))?.Children ?? []);
+    }
 
     public async Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
     {
@@ -151,7 +219,13 @@ public sealed class HuazhongRobotDriver : IProtocolDriver, IAddressSpaceBrowser
         return ms;
     }
 
-    public ValueTask DisposeAsync() { Cleanup(); _lock.Dispose(); GC.SuppressFinalize(this); return ValueTask.CompletedTask; }
+    public async ValueTask DisposeAsync()
+    {
+        await _lock.WaitAsync();
+        try { _disposed = true; Cleanup(); SetState(ConnectionState.Disconnected); }
+        finally { _lock.Release(); }
+        GC.SuppressFinalize(this);
+    }
 
     private async Task<object?> ReadByTypeAsync(string addr, DataType t) => t switch
     {
@@ -161,8 +235,38 @@ public sealed class HuazhongRobotDriver : IProtocolDriver, IAddressSpaceBrowser
         DataType.UInt32 => (await _client!.ReadUInt32Async(addr)) is { IsSuccess: true } x ? x.Content : null,
         DataType.Int32 => (await _client!.ReadInt32Async(addr)) is { IsSuccess: true } x ? x.Content : null,
         DataType.Float => (await _client!.ReadFloatAsync(addr)) is { IsSuccess: true } x ? x.Content : null,
+        DataType.Int64 => (await _client!.ReadInt64Async(addr)) is { IsSuccess: true } x ? x.Content : null,
+        DataType.UInt64 => (await _client!.ReadUInt64Async(addr)) is { IsSuccess: true } x ? x.Content.ToString(CultureInfo.InvariantCulture) : null,
+        DataType.Double => (await _client!.ReadDoubleAsync(addr)) is { IsSuccess: true } x ? x.Content : null,
+        DataType.String => await ReadStringAsync(addr),
+        DataType.ByteArray => (await _client!.ReadAsync(addr, (ushort)(_byteArrayLength / 2))) is { IsSuccess: true } x ? x.Content : null,
         _ => null,
     };
+
+    private async Task<string?> ReadStringAsync(string address)
+    {
+        var result = await _client!.ReadAsync(address, (ushort)((_stringLength + 1) / 2));
+        return result.IsSuccess
+            ? _client.ByteTransform.TransString(result.Content, 0, _stringLength, Encoding.UTF8)
+            : null;
+    }
+
+    private Task<OperateResult> WriteStringAsync(string address, string value)
+    {
+        if (_stringLength > 246)
+            return Task.FromResult(new OperateResult { IsSuccess = false,
+                Message = "String writes support at most 246 bytes (123 Modbus registers)." });
+        var byteCount = 0;
+        var charCount = 0;
+        foreach (var rune in value.EnumerateRunes())
+        {
+            if (byteCount + rune.Utf8SequenceLength > _stringLength) break;
+            byteCount += rune.Utf8SequenceLength;
+            charCount += rune.Utf16SequenceLength;
+        }
+        var bytes = _client!.ByteTransform.TransByte(value[..charCount], (_stringLength + 1) / 2 * 2, Encoding.UTF8);
+        return _client.WriteAsync(address, bytes);
+    }
 
     private static TagValue Err(string addr, DataType t, string msg) => new()
     {
@@ -170,7 +274,45 @@ public sealed class HuazhongRobotDriver : IProtocolDriver, IAddressSpaceBrowser
         Quality = TagQuality.Bad, Timestamp = DateTimeOffset.UtcNow, ErrorMessage = msg,
     };
 
-    private void Cleanup() { _client?.ConnectClose(); _client = null; }
+    private HuazhongRobotAddressSpace LoadAddressSpace(Dictionary<string, string> properties)
+    {
+        if (!properties.TryGetValue("AddressMap", out var json) || string.IsNullOrWhiteSpace(json))
+            return _defaultAddressSpace;
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+        var nodes = JsonSerializer.Deserialize<List<HuazhongRobotAddressSpace.Node>>(json, options)
+            ?? throw new ArgumentException("AddressMap must be a JSON array.");
+        return new HuazhongRobotAddressSpace(nodes);
+    }
+
+    private static ushort ParseLength(Dictionary<string, string> properties, string key, ushort fallback)
+    {
+        if (!properties.TryGetValue(key, out var text) || string.IsNullOrWhiteSpace(text)) return fallback;
+        if (!ushort.TryParse(text, out var length) || length is < 1 or > 250)
+            throw new ArgumentException($"{key} must be between 1 and 250 bytes.");
+        return length;
+    }
+
+    private bool TransportIsHealthy()
+    {
+        try
+        {
+            var pipe = _client?.CommunicationPipe as PipeTcpNet;
+            var socket = pipe?.Socket;
+            return pipe is not null && !pipe.IsConnectError() && socket is { Connected: true }
+                && !(socket.Poll(0, SelectMode.SelectRead) && socket.Available == 0);
+        }
+        catch (Exception ex) when (ex is SocketException or ObjectDisposedException) { return false; }
+    }
+
+    private void UpdateTransportHealth(bool succeeded)
+    {
+        _communicationHealthy = succeeded;
+        if (!succeeded && !TransportIsHealthy())
+            SetState(ConnectionState.Faulted, "Modbus communication failed");
+    }
+
+    private void Cleanup() { _client?.ConnectClose(); _client = null; _communicationHealthy = false; }
 
     private void SetState(ConnectionState next, string? reason = null)
     {

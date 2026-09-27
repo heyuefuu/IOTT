@@ -38,6 +38,8 @@ internal static partial class CncGatewayRoutingRegressionTests
             await UpstreamFailureDoesNotUseFallback(device);
         }
         await LegacyCollectionUsesHost();
+        await RobotImportPreservesRegistry();
+        await RobotImportsSerializeResponses();
         Console.WriteLine("CNC gateway routing: data, browse, transfer, and legacy collection passed.");
     }
 
@@ -232,6 +234,7 @@ internal static partial class CncGatewayRoutingRegressionTests
         public string ResponseType { get; set; } = "application/json";
         public string? FileName { get; set; }
         public bool ThrowOnSend { get; set; }
+        public Func<int, Task>? BeforeResponse { get; set; }
         public bool ResponseDisposed { get; private set; }
         public string ResponseText { set => ResponseBytes = Encoding.UTF8.GetBytes(value); }
 
@@ -258,6 +261,7 @@ internal static partial class CncGatewayRoutingRegressionTests
                     request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(ct),
                     request.Content?.Headers.ContentType?.MediaType, parts));
                 if (fixture.ThrowOnSend) throw new HttpRequestException("Host unavailable");
+                if (fixture.BeforeResponse is not null) await fixture.BeforeResponse(fixture.Requests.Count);
                 var content = new TrackedContent(fixture.ResponseBytes, () => fixture.ResponseDisposed = true);
                 content.Headers.ContentType = MediaTypeHeaderValue.Parse(fixture.ResponseType);
                 if (fixture.FileName is not null)

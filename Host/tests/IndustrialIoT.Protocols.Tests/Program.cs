@@ -29,6 +29,7 @@ var checks = new (string Name, Func<Task> Run)[]
     ("NCLink per-device routing, rejected writes and file keys", NCLinkApiRoutingRegressionTests.RunAsync),
     ("Modbus and Profibus independent wire byte order", ModbusRegressionTests.ByteOrderAsync),
     ("Huazhong robot health address", ModbusRegressionTests.RobotHealthAddressAsync),
+    ("Huazhong robot mapping, wire types and lifetime", HuazhongRobotRegressionTests.RunAsync),
     ("HNC and JingDiao IPC directory errors", SdkDirectoryRegressionTests.RunAsync),
 };
 if (args.Contains("--protocol-safety"))
@@ -39,6 +40,10 @@ if (args.Contains("--collection-config"))
     checks = checks.Where(check => check.Name.StartsWith("Collection config", StringComparison.Ordinal)).ToArray();
 if (args.Contains("--siemens-s7"))
     checks = checks.Where(check => check.Name.StartsWith("Siemens S7", StringComparison.Ordinal)).ToArray();
+if (args.Contains("--huazhong-robot"))
+    checks = checks.Where(check => check.Name.StartsWith("Huazhong robot", StringComparison.Ordinal)).ToArray();
+if (args.Contains("--huazhong-import-db"))
+    checks = [("Huazhong robot atomic SQL import", HuazhongRobotRegressionTests.PersistenceAsync)];
 if (args.Contains("--plc-browse"))
     checks = checks.Where(check => check.Name.StartsWith("PLC address browsing", StringComparison.Ordinal)
         || check.Name.StartsWith("Siemens S7", StringComparison.Ordinal)

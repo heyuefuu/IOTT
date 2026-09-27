@@ -19,6 +19,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IDeviceRepository, EfDeviceRepository>();
         services.AddScoped<INCProgramRepository, EfNCProgramRepository>();
         services.AddScoped<ICollectionProfileRepository, EfCollectionProfileRepository>();
+        services.AddScoped<ICollectionImportRepository, EfCollectionImportRepository>();
 
         services.AddSingleton<CollectionSchedulerService>();
         services.AddSingleton<ICollectionPipeline>(sp => sp.GetRequiredService<CollectionSchedulerService>());
