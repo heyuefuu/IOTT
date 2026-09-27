@@ -141,11 +141,11 @@ const rawMenuItems = [
 	},
 	{
 		path: "/cs",
-		label: "Client/Server 模式",
+		label: "服务器/客户端",
 		icon: Files,
 		subItems: [
-			{ path: "/cs/client", label: "客户端数据源" },
-			{ path: "/cs/server", label: "服务器服务" },
+			{ path: "/cs/server", label: "服务器" },
+			{ path: "/cs/client", label: "客户端" },
 		],
 	},
 	{
