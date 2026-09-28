@@ -1,0 +1,1217 @@
+[
+  {
+    "id": "33cb97c2792c4f47b7cd6c3c8c2bdcd0",
+    "type": "warning",
+    "user": "系统",
+    "action": "初始化默认管理员",
+    "ip": "-",
+    "timestamp": "2026-07-06T11:14:26.2520101+08:00",
+    "detail": "[credential text removed from distribution]"
+  },
+  {
+    "id": "55daa1fe98284fe893b78b6ac49f9830",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-07-06T11:15:04.0615736+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "b65f27120a6c44818b2c887a1650da53",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-07-06T11:33:00.1503562+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "5f18c021d1854c908d02c5be6eee5489",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-07-06T11:36:34.4108835+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "f0bae2523f9f4d4d9f552c945c09e798",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-07-06T14:15:15.3575154+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "f32edc7dafd4467fadac3a0e6a6433ed",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-07-08T10:26:22.0815259+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "9609361703e140f995024acb839aa9a3",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-07-08T17:40:39.2415539+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "57f5f26970824c7a805bdcc03107200f",
+    "type": "warning",
+    "user": "系统",
+    "action": "设备上游对账",
+    "ip": "-",
+    "timestamp": "2026-07-10T13:41:12.1953308+08:00",
+    "detail": "共 11 台：新建 0，更新 0，失败 11"
+  },
+  {
+    "id": "62ea848e971e451cb88a4037097cf6b3",
+    "type": "operation",
+    "user": "系统",
+    "action": "创建设备",
+    "ip": "-",
+    "timestamp": "2026-08-25T23:38:31.2552034+08:00",
+    "detail": "验证-汇川H3U（PLC · Inovance · 192.168.1.50:502）上游同步失败"
+  },
+  {
+    "id": "ec169fc6fe3a49eea6aff17c2c48bf42",
+    "type": "operation",
+    "user": "系统",
+    "action": "创建设备",
+    "ip": "-",
+    "timestamp": "2026-08-25T23:39:08.2279353+08:00",
+    "detail": "验证-埃斯顿ER7（Robot · EstunRobot · 192.168.1.60:502）上游同步失败"
+  },
+  {
+    "id": "e74f44781b3040e784f347a8a14e511e",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-08-25T23:39:12.5813458+08:00",
+    "detail": "验证-埃斯顿ER7-改名（192.168.1.66:502）"
+  },
+  {
+    "id": "1a3f081002f941048b25a086e68dc59c",
+    "type": "operation",
+    "user": "系统",
+    "action": "删除设备",
+    "ip": "-",
+    "timestamp": "2026-08-25T23:40:04.7344243+08:00",
+    "detail": "验证-埃斯顿ER7-改名"
+  },
+  {
+    "id": "2b3f145028d94852a15e300780e4fc67",
+    "type": "operation",
+    "user": "系统",
+    "action": "删除设备",
+    "ip": "-",
+    "timestamp": "2026-08-25T23:40:08.8816333+08:00",
+    "detail": "验证-汇川H3U"
+  },
+  {
+    "id": "68a390e89d74482baf22cb8307431254",
+    "type": "operation",
+    "user": "系统",
+    "action": "创建设备",
+    "ip": "-",
+    "timestamp": "2026-08-26T00:16:32.0087242+08:00",
+    "detail": "11（Robot · ModbusTCP · 127.0.0.1:502）已同步上游"
+  },
+  {
+    "id": "b8883a3e9f7f470b83b3175911b3e930",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-08-26T00:22:04.6926106+08:00",
+    "detail": "埃斯顿（127.0.0.1:502）"
+  },
+  {
+    "id": "7fd9c48f9d60449ebaceeeaafacc0f12",
+    "type": "operation",
+    "user": "系统",
+    "action": "创建设备",
+    "ip": "-",
+    "timestamp": "2026-08-26T01:00:13.118687+08:00",
+    "detail": "埃斯顿1（Robot · EstunRobot · 127.0.0.1:502）已同步上游"
+  },
+  {
+    "id": "82806fa218ec4237a359c299352d5d7f",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-08-26T10:54:20.9674157+08:00",
+    "detail": "埃斯顿（127.0.0.1:506）"
+  },
+  {
+    "id": "61e0d58c478a4dd69fc8b83ce6d2e733",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-08-26T10:56:18.6088849+08:00",
+    "detail": "埃斯顿1（127.0.0.1:506）"
+  },
+  {
+    "id": "f8229b3fba6845f5aa163ee76dcb2ebc",
+    "type": "operation",
+    "user": "系统",
+    "action": "创建设备",
+    "ip": "-",
+    "timestamp": "2026-08-26T14:56:58.1300186+08:00",
+    "detail": "111（PLC · Inovance · 127.0.0.1:509）已同步上游"
+  },
+  {
+    "id": "a7acc6ef24b8457da541f9b972e70acd",
+    "type": "operation",
+    "user": "系统",
+    "action": "创建设备",
+    "ip": "-",
+    "timestamp": "2026-08-26T14:56:58.1357068+08:00",
+    "detail": "111（PLC · Inovance · 127.0.0.1:509）已同步上游"
+  },
+  {
+    "id": "9250ce19dde3418d808b922789acb4ec",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-02T13:15:13.8146968+08:00",
+    "detail": "发那科 CRX-10iA（192.168.187.028:8193）"
+  },
+  {
+    "id": "a08d83cdec9f4458917a0881ad3e7e94",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-02T13:16:02.0785148+08:00",
+    "detail": "发那科 CRX-10iA（192.168.187.128:8193）"
+  },
+  {
+    "id": "6f74d4e418f44b208dc33992e41e3bb6",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-22T18:01:14.422461+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "e2d59e863803494da69ab27266f610c9",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-22T18:01:23.4836562+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "32cca03f6f72435d85bc251d69d07371",
+    "type": "operation",
+    "user": "系统",
+    "action": "创建设备",
+    "ip": "-",
+    "timestamp": "2026-09-22T18:04:33.1046258+08:00",
+    "detail": "848di（CNC · OpcUa · 127.0.0.1:4840）已同步上游"
+  },
+  {
+    "id": "d95a20d8091a4ba6a9cf7c976b2d01fd",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-22T18:14:44.372639+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "98ae3a821d1c45009b3d0ef6f5aa022b",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-22T18:27:38.946365+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "199be3ca1e91438ea08ccd1712edde2b",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-22T23:50:57.4347182+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "f4fcbad5aac942b9bc9be100c9b7dbde",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-22T23:50:57.6043042+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "21695916f2a74b13adb248ea17028c4a",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-22T23:53:47.3580743+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "88477b95496d4d19a3f07c41a18ec923",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T12:16:07.6331814+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "a4cf6203d0924175b976cfe5a6ba21fd",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-23T15:53:40.7878591+08:00",
+    "detail": "848di（127.0.0.1:4840）"
+  },
+  {
+    "id": "3853feecd53344c99900d53260ca2a0e",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-23T15:53:42.0897254+08:00",
+    "detail": "848di（127.0.0.1:4840）"
+  },
+  {
+    "id": "90045a2dc29e4388ab7b63143869aaac",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-23T15:53:43.5092128+08:00",
+    "detail": "848di（127.0.0.1:4840）"
+  },
+  {
+    "id": "d7a5f8fd8e454556afd34d310e67d036",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-23T15:55:18.0344248+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "3bd1ccd95a174945af894b2b79576967",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T16:00:15.1986977+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "3bf06af24b3e40b39e68344e1ba8e46d",
+    "type": "operation",
+    "user": "系统",
+    "action": "创建设备",
+    "ip": "-",
+    "timestamp": "2026-09-23T16:01:13.0689962+08:00",
+    "detail": "1111（CNC · OpcUa · 127.0.0.1:4840）上游同步失败"
+  },
+  {
+    "id": "213131edf96c43bda8659afdb0350396",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-23T16:07:05.6146051+08:00",
+    "detail": "1111（127.0.0.1:4840）"
+  },
+  {
+    "id": "15052cc937ce42ecbfb94b00431b62c4",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T16:30:13.9220805+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "9240045992f0432da543e929ec87da88",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T16:42:19.729117+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "a49491a090aa40cf97758d6c53f47415",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-23T17:01:46.7732865+08:00",
+    "detail": "1111（127.0.0.1:4840）"
+  },
+  {
+    "id": "c0c5bc7f482043d7bca7d2ff969638a4",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-23T17:32:02.8258358+08:00",
+    "detail": "1111（127.0.0.1:4840）"
+  },
+  {
+    "id": "1df619cb3bac42608a8de6af1a779cca",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-23T17:32:34.2687852+08:00",
+    "detail": "1111（127.0.0.1:4840）"
+  },
+  {
+    "id": "0f173ee7db664b8194932b62e1383afe",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T18:08:16.5910241+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "92d4544678f9429fb1531cb1e7ff47a9",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T18:16:44.3251888+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "73c77f7049044b6db769793bdbf61be2",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T18:31:14.8489304+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "6617dc6e9015470d8c7517e07339430e",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-23T18:31:15.9237191+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "050d3da6318847999614141f99fca2f6",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T18:32:29.5718208+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "53bbf96bb326426a8d38c41ed7311a28",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T19:09:22.7506182+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "a79d397ea05d42a2b1ad36abee421f9d",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-23T19:10:52.2050246+08:00",
+    "detail": "1111（127.0.0.1:502）"
+  },
+  {
+    "id": "c769b790dbb743f9a999801d6cf0fdb3",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-23T19:11:16.8672439+08:00",
+    "detail": "1111（127.0.0.1:502）"
+  },
+  {
+    "id": "6254591517cc4220bd20a371e4134d53",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T19:23:21.7559924+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "56c95ed8f3b841b6bcbe9721977a88ad",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T22:59:11.9489694+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "ab1ab7933b77424fa44a40d5cdae38cb",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-23T23:00:43.3245479+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "8609025cae24453ebf08e286f40d024d",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T23:00:58.0415251+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "d8f347c64a5b4fcebde044f43739f4df",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-23T23:13:06.6624566+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "c820e92993724a71ba2e071a14f09e80",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T00:47:49.5852737+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "d5fa63c7329f4a8890ddc439a4e769c8",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T10:58:24.1402512+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "16da73184ae943ff976fca5209c30190",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-24T11:11:01.0390598+08:00",
+    "detail": "欧姆龙 CJ2M（127.0.0.1:505）"
+  },
+  {
+    "id": "b845a7e32bb64f85bdeaec0cd2319b85",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-24T11:11:56.5750909+08:00",
+    "detail": "111（127.0.0.1:509）"
+  },
+  {
+    "id": "faca01a5b9054a6b9588973dc981045d",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-24T11:12:08.5434397+08:00",
+    "detail": "111（127.0.0.1:505）"
+  },
+  {
+    "id": "cabcd3debf674cc98ed0aaaa60383f63",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T14:49:56.466818+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "3b4f8a95425f4ad393d176ee855a74bd",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T16:41:11.5346531+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "fcf1eb675122402884c5cdba55d676dc",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T16:54:21.5975487+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "43f7de3ff71042b982c6e8267f7bcfe9",
+    "type": "operation",
+    "user": "系统",
+    "action": "创建设备",
+    "ip": "-",
+    "timestamp": "2026-09-24T16:57:25.2153298+08:00",
+    "detail": "34（PLC · OpcUa · 127.0.0.1:502）已同步上游"
+  },
+  {
+    "id": "de155197998f45bc827812d919262183",
+    "type": "operation",
+    "user": "系统",
+    "action": "创建设备",
+    "ip": "-",
+    "timestamp": "2026-09-24T16:57:44.2111208+08:00",
+    "detail": "6（PLC · ModbusTCP · 677777:502）已同步上游"
+  },
+  {
+    "id": "3696e0edf6c94d429e4a0a0ca06bff35",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T17:08:09.8899988+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "b2b12a24b6a44ce188d88a992ce5b332",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T17:14:26.8682988+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "412b8bfd262d401ca0928ecb89c2182b",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T17:14:30.6034938+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "898e6774f41044a68b264b3cec2a55b9",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T17:15:03.4813579+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "86caaa6f36614dff9bb6ab3f976b6528",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T17:31:07.3806704+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "2706dab52e41435d9d6f484c2a4cc544",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T17:38:43.4671892+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "148d15a4174f4d7ebc50db0cfa2feea1",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T17:43:07.8018747+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "f556c7a656204c17b41c586f0a991068",
+    "type": "operation",
+    "user": "系统",
+    "action": "创建设备",
+    "ip": "-",
+    "timestamp": "2026-09-24T17:58:27.4465453+08:00",
+    "detail": "77（PLC · SiemensS7 · 127.0.0.1:1）已同步上游"
+  },
+  {
+    "id": "1a2e8be2db49400cac92e85db7c912b1",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-24T17:58:40.9587196+08:00",
+    "detail": "77（127.0.0.1:108）"
+  },
+  {
+    "id": "7348640d28af42128b2b5041612af92c",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-24T18:47:07.3348075+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "c896bc4bfc514f7f87267459269d12a4",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-25T10:17:31.7874568+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "68b0aeea21384019bfef722e578a93f2",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-25T12:48:34.8493198+08:00",
+    "detail": "西门子 S7-1500（192.168.1.102:509）"
+  },
+  {
+    "id": "0252a2270c5d43ab8c3c2b040198c122",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-26T09:25:21.5030683+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "fa76b86bd5e243a39b4e8d55b382dff4",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-26T10:04:19.5963957+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "3c1d42a16d18438296491047d8d049bb",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-26T10:17:01.472031+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "cb2fe503630f486fa3f7b19c04db9c30",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-26T15:31:16.6543654+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "65e8210267c74db1887261eeef9f9fbf",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-27T11:07:52.1851846+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "e73a005203a8475fb571291cedaae78c",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-27T12:23:50.4830095+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "2c3e86639c3548b5b90e6cfa448b11e1",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-27T12:38:08.9371088+08:00",
+    "detail": "1111（127.0.0.1:502）"
+  },
+  {
+    "id": "000ed3712d3d4079a1f9e3ff215961ac",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-27T13:54:25.6231466+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "a0901ea6eb2f4851bf4677b7618befd3",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-27T13:56:43.7345288+08:00",
+    "detail": "1111（127.0.0.1:502）"
+  },
+  {
+    "id": "1d7106947a0f484892eb8f09610328ab",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-27T15:31:37.7034356+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "cae473d7ff1b4551bdab86213de38b28",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-27T17:05:09.7024302+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "27776830883e4d858c871c6a768ce73c",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:18:47.899027+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "a49a7e8723eb4bc99faabacf053d860e",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:30:33.0858108+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "2eb00a5a5702452187b02a0219e8c892",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:30:33.2664103+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "c74f37e6e88a4c4bb1a730c5b2e60caf",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:39:15.0583508+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "57086cf640e8451f851d3f594061ce95",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:39:15.262436+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "9877f680e4b74cbeb8c26eed099ee288",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:41:43.5435484+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "a901c09477f8476882cc57805858846e",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:41:43.8628152+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "69d9f9c100244c45aa21a68b5212639c",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:42:35.5287481+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "1c890c964b1744c8bd952aa0dce86950",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:49:42.0486907+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "2f42e2368b304ed193fad3b7001e0cd6",
+    "type": "warning",
+    "user": "系统",
+    "action": "执行验证任务（手动）",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:50:02.94465+08:00",
+    "detail": "七项指标测试报告 2026-09-28 15:49:42：不通过，自动验证完成：达标 6/7 项"
+  },
+  {
+    "id": "9606ffa5b7014352adaf5717a0b05657",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:50:03.0834686+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "7f4f0b1b7282455aae18d00668e24c96",
+    "type": "warning",
+    "user": "系统",
+    "action": "执行验证任务（手动）",
+    "ip": "-",
+    "timestamp": "2026-09-28T15:51:51.1106903+08:00",
+    "detail": "七项指标测试报告 2026-09-28 15:49:42：不通过，自动验证完成：达标 6/7 项"
+  },
+  {
+    "id": "7bc13c03d9ce4dfaa57177421b5b9391",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T16:19:03.8846121+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "6fe814f82b124d83b3e17b2f31213439",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T16:59:18.2257128+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "19ddecb4d24f4ed1b604e0533cb2f02b",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:14:48.5541941+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "fedae758d4444b91925a355a87b01752",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:15:01.7998302+08:00",
+    "detail": "Edited fixture（127.0.0.1:502）"
+  },
+  {
+    "id": "6d3fc419f1d64f958be782425c7bc8ef",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:16:46.8980622+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "34ab80a37dca47f9b19654898845dc5f",
+    "type": "operation",
+    "user": "系统",
+    "action": "更新设备",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:16:46.9790788+08:00",
+    "detail": "1111（127.0.0.1:502）"
+  },
+  {
+    "id": "083ee907c2844ae28298d4785fbefc3c",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:16:47.0223464+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "557c43a6f95e4b868596673e389d8058",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:17:08.9839193+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "39c55295815747a7bdd321e13d613b1e",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:17:34.0852887+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "b427540e7e8342aba297ff4157022b21",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:17:42.3596107+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "00823facc6314bc988a062dea03d4903",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:18:39.7319888+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "60c06d5c34b74a22af34dc163c15b26e",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:18:49.7126525+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "02575dfa55e14c029b9e23c478ca4994",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:38:38.1330784+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "e1d62aa254d749ac85e1b610c1621432",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:39:39.8440965+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "28cbb8732646465caf9e9a28481d81af",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:39:42.0698408+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "da6b258a89474fb393d9e6084b49564a",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:45:12.0870048+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "a27672aad896439cb8ae030ebd62e54d",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:45:31.6450218+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "295c62e3566548dbb3d22cbef984b9ce",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:45:31.7876498+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "902bea4753164c00914396f0d2cd77d4",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:46:12.9776619+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "9e6646c5bc164f72b2805ff13d52c819",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:46:14.7046475+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "a36b76656a174e1993d24598587321b6",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:46:36.8212307+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "e1a9512992184957808d246922330ca7",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:46:40.0060797+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "f11278fd5aba4d0e8932a0200ef7f018",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T17:52:10.715098+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "8b314c193d62442898b8d5c436b1e744",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T20:46:52.596308+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "e2f0351dbeac4b48bfba0106d25b14a0",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T20:47:07.6910052+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "2fcfffa434fa42528c9a3b8b9ad7714c",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T21:04:03.4312838+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "baad894323364f9dbdcba5208b70f078",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户退出",
+    "ip": "-",
+    "timestamp": "2026-09-28T21:04:03.5782649+08:00",
+    "detail": "admin"
+  },
+  {
+    "id": "9feaff3c971a4f83857baa51ab7ee286",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T21:04:31.0761366+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "56cb37ad895643dbb646fa6692ed2385",
+    "type": "warning",
+    "user": "系统",
+    "action": "执行验证任务（手动）",
+    "ip": "-",
+    "timestamp": "2026-09-28T21:09:38.3484177+08:00",
+    "detail": "测试：不通过，自动验证完成：达标 3/7 项"
+  },
+  {
+    "id": "0b9d8018f465464fb2d81c91c41c8a69",
+    "type": "warning",
+    "user": "系统",
+    "action": "执行验证任务（手动）",
+    "ip": "-",
+    "timestamp": "2026-09-28T21:24:24.4667691+08:00",
+    "detail": "七项指标测试报告 2026-09-28 15:49:42：不通过，自动验证完成：达标 3/7 项"
+  },
+  {
+    "id": "4d9483afd0b644ddbad857d2340c193b",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-28T21:28:52.182798+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "8608e9cee63841088820520245499c59",
+    "type": "operation",
+    "user": "系统",
+    "action": "执行验证任务（手动）",
+    "ip": "-",
+    "timestamp": "2026-09-28T22:01:08.092337+08:00",
+    "detail": "11：通过，自动验证完成：达标 1/1 项"
+  },
+  {
+    "id": "c25700c0b07d40d5ba54351d28d1d871",
+    "type": "operation",
+    "user": "admin",
+    "action": "用户登录",
+    "ip": "-",
+    "timestamp": "2026-09-29T05:44:22.1065442+08:00",
+    "detail": "系统管理员（admin）"
+  },
+  {
+    "id": "0eca9fb650504cbfbef42f8b9868f420",
+    "type": "operation",
+    "user": "系统",
+    "action": "执行验证任务（手动）",
+    "ip": "-",
+    "timestamp": "2026-09-29T05:47:12.8544339+08:00",
+    "detail": "11：待判定，执行结束：达标 0/1 项，已评分 0/1 项"
+  }
+]

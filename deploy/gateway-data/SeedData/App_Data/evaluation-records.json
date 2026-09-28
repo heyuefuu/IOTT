@@ -1,0 +1,772 @@
+[
+  {
+    "id": "bd391b20f2bc425994514d10d8e82c8e",
+    "machineName": "1111",
+    "machineNo": "2222",
+    "machineModel": "0i-MF",
+    "controlSystem": "华中数控",
+    "partName": "112",
+    "partFeature": "",
+    "testLocation": "",
+    "testDate": "2026-09-28",
+    "tester": "",
+    "dataSource": "sync",
+    "category": "machine",
+    "snapshot": {
+      "category": "machine",
+      "version": 1,
+      "indicators": [
+        {
+          "id": "l1_1",
+          "name": "设备硬件",
+          "weight": 40,
+          "children": [
+            {
+              "id": "l2_1_1",
+              "name": "硬件本体",
+              "weight": 70,
+              "items": [
+                {
+                  "id": "i_1",
+                  "name": "自动门指标",
+                  "weight": 8.3,
+                  "desc": "通过微改机床PLC程序，验证自动化总控系统是否能对自动门进行控制和状态读写。",
+                  "method": "评价：满分100分，可实现自动门开关而不具备自动门状态反馈控制得80分，无自动门开关功能得0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "无自动门开关功能",
+                    "80": "可实现自动门开关无状态反馈",
+                    "full": "可实现自动门开关并具备状态反馈"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_2",
+                  "name": "机内对刀仪指标",
+                  "weight": 8.3,
+                  "desc": "通过微改机床PLC程序及参数修改，检查自动化总控系统是否能通过数控机床与对刀仪进行数据只读，且数控机床是否可使用测量数据执行刀具补偿等功能。",
+                  "method": "评价：满分100分，能使用测量数据执行补偿等功能得80分，实现数据读取功能得20分，不具备对刀仪得0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "不具备对刀仪",
+                    "20": "仅实现数据读取功能",
+                    "80": "功能完整可用",
+                    "full": "可使用测量数据执行刀具补偿功能"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_3",
+                  "name": "机内测头指标",
+                  "weight": 8.3,
+                  "desc": "通过微改机床PLC程序及参数修改，检查自动化总控系统是否能通过数控机床与测头进行数据只读，且数控机床是否可使用测量数据执行加工程序变量修改等功能。",
+                  "method": "评价：满分100分，能使用测量数据执行变量修改等功能得80分，实现数据读取功能得60分，不具备测头得0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "不具备测头",
+                    "60": "仅实现数据读取功能",
+                    "80": "功能完整可用",
+                    "full": "可使用测量数据执行变量修改功能"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_4",
+                  "name": "断刀/刀具磨损监测功能指标",
+                  "weight": 8.3,
+                  "desc": "通过微改机床PLC程序及参数修改，检查自动化总控系统是否能通过数控机床获取刀具监测数据，且数控机床是否可正常使用刀具监测功能。",
+                  "method": "评价：满分100分，能正常使用刀具监测功能得80分，实现刀具监测数据获取得60分，不具备断刀/刀具磨损监测功能得0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "不具备监测功能",
+                    "60": "可获取刀具监测数据",
+                    "80": "可正常使用刀具监测功能",
+                    "full": "刀具监测功能正常使用"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_5",
+                  "name": "刀具寿命管理功能指标",
+                  "weight": 8.3,
+                  "desc": "通过微改机床PLC程序及参数修改，检查自动化总控系统是否能通过数控机床获取刀具寿命管理数据，且数控机床是否可正常使用刀具寿命管理功能。",
+                  "method": "评价：满分100分，能正常使用刀具寿命管理功能得80分，实现刀具寿命管理数据获取得60分，不具备刀具寿命管理功能得0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "不具备该功能",
+                    "60": "可获取管理数据",
+                    "80": "可正常使用管理功能",
+                    "full": "刀具寿命管理功能正常使用"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_6",
+                  "name": "刀具库容量指标",
+                  "weight": 8.3,
+                  "desc": "按实际工况检查，确认刀具库是否至少满足成组入线单一零件自动化生产单一工序需求，且包含清洁用相关刀具。",
+                  "method": "评价：满分100分，按照使用刀具最多的零件加工工序数（n）分值平均，即100/n，全满足者得100分，每少1个工序则减100/n分，最低分0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "最低0分",
+                    "formula": "100/n（n为使用刀具最多工序数）",
+                    "full": "全部满足需求"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_7",
+                  "name": "支持刀具数据远程读写指标",
+                  "weight": 8.3,
+                  "desc": "通过微改机床PLC程序及参数修改，检查自动化总控系统或管控系统是否能对机床刀具参数进行读写。",
+                  "method": "评价：完整实现刀具参数读写功能得100分，功能不完整则得0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "功能不完整",
+                    "full": "完整实现刀具参数读写"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_8",
+                  "name": "自动夹具接口指标",
+                  "weight": 8.3,
+                  "desc": "检查自动夹具接口是否至少满足成组入线单一零件自动化生产单一自动化夹具需求。",
+                  "method": "评价：满分100分，按照成组入线零件自动化夹具需求总数（n）分值平均，即100/n，全满足者得100分，每少支持1个夹具则减100/n分，最低分0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "最低0分",
+                    "formula": "100/n（n为夹具需求总数）",
+                    "full": "全部满足需求"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_9",
+                  "name": "工件夹具清洁功能指标",
+                  "weight": 8.3,
+                  "desc": "通过微改机床PLC程序及参数修改，检查自动化总控系统是否能对工件或夹具进行清洁。",
+                  "method": "评价：满分100分，按照成组入线零件工件及夹具需求总类型数（n）分值平均，即100/n，全满足者得100分，每少支持1种清洁类型则减100/n分，最低分0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "最低0分",
+                    "formula": "100/n（n为清洁类型总数）",
+                    "full": "全部满足需求"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_10",
+                  "name": "零件夹紧到位监测功能指标",
+                  "weight": 8.3,
+                  "desc": "通过微改机床PLC程序及参数修改，检查是否满足成组入线单一零件自动化生产单一自动化零件夹紧到位监测功能（含人工预装无状态监测）。",
+                  "method": "评价：满分100分，按照成组入线零件自动化加工夹紧状态相关需求总数（n）分值平均，即100/n，全满足者得100分，每少支持1个则减100/n分，最低分0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "最低0分",
+                    "formula": "100/n（n为夹紧监测需求总数）",
+                    "full": "全部满足需求"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_11",
+                  "name": "机内冲屑功能指标",
+                  "weight": 8.3,
+                  "desc": "通过微改机床PLC程序及参数修改，检查自动化总控系统是否能进行自动冲屑。",
+                  "method": "评价：满分100分，按照成组入线零件自动冲屑需求总数（n）分值平均，即100/n，全满足者得100分，每少支持1种零件则减100/n分，最低分0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "最低0分",
+                    "formula": "100/n（n为冲屑需求零件数）",
+                    "full": "全部满足需求"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_12",
+                  "name": "自动排屑功能指标",
+                  "weight": 8.7,
+                  "desc": "检查机床是否自带并支持自动化排屑功能。",
+                  "method": "评价：有此功能得100分，无此功能得0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "无此功能",
+                    "full": "具备自动排屑功能"
+                  },
+                  "metricId": null
+                }
+              ]
+            },
+            {
+              "id": "l2_1_2",
+              "name": "控制系统",
+              "weight": 30,
+              "items": [
+                {
+                  "id": "i_13",
+                  "name": "自动化接口指标",
+                  "weight": 20,
+                  "desc": "通过微改机床PLC程序及参数修改，检查是否支持自动化总控及管控系统进行自动化加工的相关控制和管理。",
+                  "method": "评价：有此功能得100分，无此功能得0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "无此功能",
+                    "full": "支持自动化接口"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_14",
+                  "name": "设备I/O点位预留容量指标",
+                  "weight": 20,
+                  "desc": "按实际工况检查，通过微改机床PLC程序及参数修改，确认是否至少满足成组入线单一零件自动化生产单一工序自动化控制的I/O需求。",
+                  "method": "评价：满分100分，按照使用I/O点最多的零件加工工序数（n）分值平均，即100/n，全满足者得100分，每少1个工序则减100/n分，最低分0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "最低0分",
+                    "formula": "100/n（n为最多工序数）",
+                    "full": "全部满足需求"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_15",
+                  "name": "系统权限（支持修改PLC参数等）指标",
+                  "weight": 20,
+                  "desc": "检查机床是否具备分级权限管理，且是否满足成组入线零件自动化生产中微改机床PLC程序及参数修改的需求。",
+                  "method": "评价：有此功能得100分，无此功能得0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "无此功能",
+                    "full": "具备分级权限管理"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_16",
+                  "name": "满足远程监控通讯负荷指标",
+                  "weight": 20,
+                  "desc": "通过微改机床PLC程序及参数修改，以最长无人值守需求时间为测试典型周期，周期内按成组入线零件自动化加工数据最大的情况进行测试。",
+                  "method": "评价：满分100分，按照无人值守时长种类数量（n）分值平均，自动化监控及自动化加工正常得100分，因远程通讯负荷导致自动化故障，每少支持1种无人值守周期则减100/n分，最低分0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "最低0分",
+                    "formula": "100/n（n为值守时长种类数）",
+                    "full": "监控加工均正常"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_17",
+                  "name": "自动上下料指标",
+                  "weight": 20,
+                  "desc": "通过设计自动上下料方式、微改机床PLC程序及参数修改，检查是否满足成组入线零件自动化生产的机床自动上下料控制需求。",
+                  "method": "评价：以针对机床的验证零件数量（n）进行分值平均，满足全部验证零件自动上下料得100分，少一种零件则得减100/n分，最低分0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "最低0分",
+                    "formula": "100/n（n为验证零件数量）",
+                    "full": "全部零件满足"
+                  },
+                  "metricId": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "l1_2",
+          "name": "通讯指标",
+          "weight": 30,
+          "children": [
+            {
+              "id": "l2_2_1",
+              "name": "通讯指标",
+              "weight": 100,
+              "items": [
+                {
+                  "id": "i_18",
+                  "name": "工控协议覆盖率指标",
+                  "weight": 15,
+                  "desc": "梳理设备支持的工控协议类型，对照常用数据采集协议（GSK、modbus、OPC/OPC UA、Profibus、S7、NC-Link等），统计实际支持的协议数量。",
+                  "method": "评价：支持协议数量÷标准协议总数×100分",
+                  "evidenceType": "protocol",
+                  "evidence": "",
+                  "standards": "工控协议测试规范 v1.0",
+                  "files": [],
+                  "protocols": [
+                    "Modbus",
+                    "OPC UA"
+                  ],
+                  "scoring": {
+                    "full": "协议覆盖率100%",
+                    "formula": "支持数/总数×100"
+                  },
+                  "metricId": "industrial-protocol"
+                },
+                {
+                  "id": "i_19",
+                  "name": "通讯稳定性指标",
+                  "weight": 15,
+                  "desc": "软件与设备建立连接后，连续运行通信30min（如实时读取设备状态数据），记录运行过程中的中断次数。",
+                  "method": "评价：连续30分钟通讯无中断得100分，连续20分钟通讯无中断得80分，连续10分钟通讯无中断得60分，连续＜10分钟通讯无中断得0分",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "通讯稳定性测试规范 v1.0",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "不足10分钟",
+                    "60": "连续10分钟无中断",
+                    "80": "连续20分钟无中断",
+                    "100": "连续30分钟无中断"
+                  },
+                  "metricId": "communication-stability"
+                },
+                {
+                  "id": "i_20",
+                  "name": "最大并发连接数指标",
+                  "weight": 14,
+                  "desc": "逐步增加并发连接设备数量（从1个开始，每次增加1个），直至出现连接失败（连续3次连接失败），记录此时的设备数量为\"最大并发连接数\"（最大值为4）。",
+                  "method": "评价：最大并发连接数≥4个得100分，≥3个得80分，≥2个得60分，≤1个得0分",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "并发连接测试规范 v1.0",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "≤1个并发",
+                    "60": "≥2个并发",
+                    "80": "≥3个并发",
+                    "100": "≥4个并发"
+                  },
+                  "metricId": "max-connections"
+                },
+                {
+                  "id": "i_21",
+                  "name": "传输协议覆盖率指标",
+                  "weight": 14,
+                  "desc": "梳理设备支持的文件传输协议（OPC UA、FTP、NFS、SMB、NC-Link等），统计支持的文件传输协议数量。",
+                  "method": "评价：支持≥2种协议得100分，支持1种协议得60分，支持＜1种协议得0分",
+                  "evidenceType": "protocol",
+                  "evidence": "",
+                  "standards": "文件传输协议测试规范 v1.0",
+                  "files": [],
+                  "protocols": [
+                    "FTP",
+                    "OPC UA"
+                  ],
+                  "scoring": {
+                    "0": "无支持",
+                    "60": "支持1种",
+                    "100": "≥2种传输协议"
+                  },
+                  "metricId": "transfer-protocol"
+                },
+                {
+                  "id": "i_22",
+                  "name": "文件完整性指标",
+                  "weight": 14,
+                  "desc": "选取4个不同大小的文件（0.1MB、1MB、10MB、20MB），记录每个文件的原始文件的大小；计算\"大小一致的文件数量/总文件数量×100%\"为文件完整性通过率。",
+                  "method": "评价：通过率100%得100分，75%得80分，50%得60分，＜50%得0分",
+                  "evidenceType": "file",
+                  "evidence": "",
+                  "standards": "文件传输测试规范 v1.0",
+                  "files": [
+                    {
+                      "id": null,
+                      "name": "test_0.1MB.nc",
+                      "size": "0.1MB",
+                      "sizeBytes": null
+                    },
+                    {
+                      "id": null,
+                      "name": "test_1MB.nc",
+                      "size": "1MB",
+                      "sizeBytes": null
+                    },
+                    {
+                      "id": null,
+                      "name": "test_10MB.nc",
+                      "size": "10MB",
+                      "sizeBytes": null
+                    },
+                    {
+                      "id": null,
+                      "name": "test_20MB.nc",
+                      "size": "20MB",
+                      "sizeBytes": null
+                    }
+                  ],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "＜50%",
+                    "60": "通过率50%",
+                    "80": "通过率75%",
+                    "100": "通过率100%"
+                  },
+                  "metricId": "file-integrity"
+                },
+                {
+                  "id": "i_23",
+                  "name": "传输速度指标",
+                  "weight": 14,
+                  "desc": "选取1份10M左右的标准数控程序，通过软件传输至机床设备，记录传输开始时间与结束时间，计算平均传输速度（速度=文件大小/传输时长）。",
+                  "method": "评价：平均速度≥10MB/s得100分，≥5MB/s得80分，2-5MB/s得60分，＜2MB/s得0分",
+                  "evidenceType": "file",
+                  "evidence": "",
+                  "standards": "传输性能测试规范 v1.0",
+                  "files": [
+                    {
+                      "id": null,
+                      "name": "speed_test_10M.nc",
+                      "size": "10MB",
+                      "sizeBytes": null
+                    }
+                  ],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "＜2MB/s",
+                    "60": "2-5MB/s",
+                    "80": "≥5MB/s",
+                    "100": "≥10MB/s"
+                  },
+                  "metricId": "transfer-speed"
+                },
+                {
+                  "id": "i_24",
+                  "name": "文件大小指标",
+                  "weight": 14,
+                  "desc": "逐步增大传输文件的大小（从1MB开始），尝试通过软件传输至机床设备，记录可成功传输的最大文件。",
+                  "method": "评价：最大文件≥200M得100分，≥10M得80分，≥1M得60分，＜1MB得0分",
+                  "evidenceType": "file",
+                  "evidence": "",
+                  "standards": "大文件传输测试规范 v1.0",
+                  "files": [
+                    {
+                      "id": null,
+                      "name": "max_test_1M.nc",
+                      "size": "1MB",
+                      "sizeBytes": null
+                    },
+                    {
+                      "id": null,
+                      "name": "max_test_10M.nc",
+                      "size": "10MB",
+                      "sizeBytes": null
+                    },
+                    {
+                      "id": null,
+                      "name": "max_test_200M.nc",
+                      "size": "200MB",
+                      "sizeBytes": null
+                    }
+                  ],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "＜1MB",
+                    "60": "≥1MB",
+                    "80": "≥10MB",
+                    "100": "≥200MB"
+                  },
+                  "metricId": "file-size"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "l1_3",
+          "name": "产线指标",
+          "weight": 30,
+          "children": [
+            {
+              "id": "l2_3_1",
+              "name": "产线指标",
+              "weight": 100,
+              "items": [
+                {
+                  "id": "i_25",
+                  "name": "PLC控制系统接口匹配性指标",
+                  "weight": 17,
+                  "desc": "检查控制系统是否支持标准的通讯协议和接口（如Profibus、Profinet、MODBUS等），确保可与不同厂商设备兼容，无协议不匹配导致的连接失败，验证控制系统与设备间信号传输的一致性，发送10组不同控制命令（如设备启停、参数调整），观察控制命令是否正确发送且反馈结果与指令匹配，无信号失真或误判。",
+                  "method": "评价：控制命令正确发送且反馈结果与指令匹配，无信号失真或误判，得100分；否则0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013",
+                  "files": [],
+                  "protocols": [
+                    "Profinet",
+                    "Modbus",
+                    "Profibus"
+                  ],
+                  "scoring": {
+                    "0": "存在信号问题",
+                    "full": "命令反馈匹配无失真"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_26",
+                  "name": "电气接口匹配性指标",
+                  "weight": 17,
+                  "desc": "检查接口电压（如DC 24V、AC 220V）、电流（如≤1A、5A）、接地电阻（如≤4Ω）等参数是否符合GB/T 15579.1-2013等相关标准，是否有参数不匹配导致的设备损坏或信号中断。",
+                  "method": "评价：无参数不匹配导致的设备损坏或信号中断，得100分；否则0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013 电气接口标准",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "存在不匹配",
+                    "full": "参数全部符合标准"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_27",
+                  "name": "机械接口匹配性指标",
+                  "weight": 17,
+                  "desc": "使用卡尺、千分尺等工具检查机械接口的关键尺寸（如定位孔直径、爪钳开合范围），确保符合设计要求（允许偏差≤0.02mm），能与零件或夹具的接口精确配合。",
+                  "method": "评价：满足得100分；不满足0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "GB/T 15579.1-2013 机械接口标准",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "不满足精度要求",
+                    "full": "尺寸偏差≤0.02mm配合精确"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_28",
+                  "name": "加工任务切换指标",
+                  "weight": 16,
+                  "desc": "执行3次不同加工任务的切换操作，验证自动化生产线是否能准确执行新任务要求，包括数控程序切换、机器人手爪更换、夹具调整等，切换后首件产品合格率≥98%。",
+                  "method": "评价：满足要求得100分；不满足0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "产线换型测试规范 v1.0",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "不满足要求",
+                    "full": "切换准确首件合格率≥98%"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_29",
+                  "name": "零件换产时间指标",
+                  "weight": 16,
+                  "desc": "a)换产流程测试：模拟实际生产场景，执行3次零件换产操作，记录从换产命令发出到新零件开始生产的总时间，计算平均换产时间，评估是否满足产线排程需求（如平均换产时间≤15min）。",
+                  "method": "评价：满足要求得100分；不满足0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "产线换型测试规范 v1.0",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "超时不满足",
+                    "full": "平均换产时间≤15min"
+                  },
+                  "metricId": null
+                },
+                {
+                  "id": "i_30",
+                  "name": "生产辅助时间指标",
+                  "weight": 17,
+                  "desc": "记录8小时连续生产过程中，各非生产工序的耗时（物料准备30min、如设备调整20min、质量检测15min），计算生产辅助时间占总生产时间的比例（辅助时间占比=辅助总时长/8h×100%），检查辅助时间是否满足要求。",
+                  "method": "评价：满足要求得100分；不满足0分。",
+                  "evidenceType": "standard",
+                  "evidence": "",
+                  "standards": "产线效率测试规范 v1.0",
+                  "files": [],
+                  "protocols": [],
+                  "scoring": {
+                    "0": "占比过高",
+                    "full": "辅助时间占比符合要求"
+                  },
+                  "metricId": null
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "updatedAt": ""
+    },
+    "version": 1,
+    "categoryWeights": {
+      "l1_1": 40,
+      "l1_2": 30,
+      "l1_3": 30
+    },
+    "subCategoryWeights": {
+      "l2_1_1": 70,
+      "l2_1_2": 30,
+      "l2_2_1": 100,
+      "l2_3_1": 100
+    },
+    "scores": {
+      "i_1": 2,
+      "i_2": 1,
+      "i_3": 4,
+      "i_4": 7,
+      "i_5": null,
+      "i_6": null,
+      "i_7": null,
+      "i_8": null,
+      "i_9": null,
+      "i_10": null,
+      "i_11": null,
+      "i_12": null,
+      "i_13": null,
+      "i_14": null,
+      "i_15": null,
+      "i_16": null,
+      "i_17": null,
+      "i_18": null,
+      "i_19": null,
+      "i_20": null,
+      "i_21": null,
+      "i_22": null,
+      "i_23": null,
+      "i_24": null,
+      "i_25": null,
+      "i_26": null,
+      "i_27": null,
+      "i_28": null,
+      "i_29": null,
+      "i_30": null
+    },
+    "weights": {
+      "i_1": 8.3,
+      "i_2": 8.3,
+      "i_3": 8.3,
+      "i_4": 8.3,
+      "i_5": 8.3,
+      "i_6": 8.3,
+      "i_7": 8.3,
+      "i_8": 8.3,
+      "i_9": 8.3,
+      "i_10": 8.3,
+      "i_11": 8.3,
+      "i_12": 8.7,
+      "i_13": 20,
+      "i_14": 20,
+      "i_15": 20,
+      "i_16": 20,
+      "i_17": 20,
+      "i_18": 15,
+      "i_19": 15,
+      "i_20": 14,
+      "i_21": 14,
+      "i_22": 14,
+      "i_23": 14,
+      "i_24": 14,
+      "i_25": 17,
+      "i_26": 17,
+      "i_27": 17,
+      "i_28": 16,
+      "i_29": 16,
+      "i_30": 17
+    },
+    "testResults": {
+      "i_18": "1/5 种",
+      "i_19": "成功率 0%",
+      "i_20": "0 个成功连接",
+      "i_21": "1 种",
+      "i_22": "0%（0/2 个文件往返一致）",
+      "i_23": "12.67 MB/s",
+      "i_24": "20.71 MB"
+    },
+    "remarks": {
+      "i_18": "已配置协议：OpcUa\nprotocol=OpcUa",
+      "i_19": "探测 1 个目标 × 3 轮：成功 0，失败 3，中断次数 0，丢包率 100%\n1111 第1轮：FAIL 连接失败：由于目标计算机积极拒绝，无法连接。\n1111 第2轮：FAIL 连接失败：由于目标计算机积极拒绝，无法连接。\n1111 第3轮：FAIL 连接失败：由于目标计算机积极拒绝，无法连接。",
+      "i_20": "目标 1111，最大满额通过 0 路，最高成功 0 路，最终平均 RTT 0ms\ntarget=127.0.0.1:502\n10路：成功 0/10，成功率 0%，平均RTT 0ms\n127.0.0.1:502#1: 由于目标计算机积极拒绝，无法连接。\n127.0.0.1:502#10: 由于目标计算机积极拒绝，无法连接。\n127.0.0.1:502#2: 由于目标计算机积极拒绝，无法连接。",
+      "i_21": "已配置传输协议：SMB\ntransferProtocol=SMB",
+      "i_22": "主动测试：生成随机文件上传至 1111 后回读比对（大小 + SHA256）\n目标设备：1111（SMB）\nverify-integrity-102400.bin: 回读下载失败 HTTP 500\nverify-integrity-1048576.bin: 回读下载失败 HTTP 500",
+      "i_23": "实测留痕：可计算速度记录 7 条，平均 12.67 MB/s\n1079daae92b74d499301bde3903a8ec8/: Failed, fileSize=0, bytes=0, durationMs=253.67\n1079daae92b74d499301bde3903a8ec8/verify-integrity-1048576.bin: Completed, fileSize=1048576, bytes=1048576, durationMs=360.098\n1079daae92b74d499301bde3903a8ec8/: Failed, fileSize=0, bytes=0, durationMs=222.061\n1079daae92b74d499301bde3903a8ec8/verify-integrity-102400.bin: Completed, fileSize=102400, bytes=102400, durationMs=404.128\n1079daae92b74d499301bde3903a8ec8/DB.Browser.for.SQLite-v3.13.1-win64.zip: Completed, fileSize=21720951, bytes=21720951, durationMs=439.551\n1079daae92b74d499301bde3903a8ec8/事件动作.docx: Completed, fileSize=18214, bytes=18214, durationMs=77.322\n1079daae92b74d499301bde3903a8ec8/事件动作.docx: Failed, fileSize=18214, bytes=0, durationMs=7.557\n1079daae92b74d499301bde3903a8ec8/事件动作.docx: Failed, fileSize=18214, bytes=0, durationMs=10.104\n1079daae92b74d499301bde3903a8ec8/伺服加载系统软件_修改版.docx: Failed, fileSize=2456412, bytes=0, durationMs=65.94\n1079daae92b74d499301bde3903a8ec8/2020FEM软件应用习题.doc: Completed, fileSize=1440256, bytes=1440256, durationMs=63.463",
+      "i_24": "实测留痕：最大成功传输文件 20.71 MB\n1079daae92b74d499301bde3903a8ec8/: Failed, fileSize=0, bytes=0, durationMs=253.67\n1079daae92b74d499301bde3903a8ec8/verify-integrity-1048576.bin: Completed, fileSize=1048576, bytes=1048576, durationMs=360.098\n1079daae92b74d499301bde3903a8ec8/: Failed, fileSize=0, bytes=0, durationMs=222.061\n1079daae92b74d499301bde3903a8ec8/verify-integrity-102400.bin: Completed, fileSize=102400, bytes=102400, durationMs=404.128\n1079daae92b74d499301bde3903a8ec8/DB.Browser.for.SQLite-v3.13.1-win64.zip: Completed, fileSize=21720951, bytes=21720951, durationMs=439.551\n1079daae92b74d499301bde3903a8ec8/事件动作.docx: Completed, fileSize=18214, bytes=18214, durationMs=77.322\n1079daae92b74d499301bde3903a8ec8/事件动作.docx: Failed, fileSize=18214, bytes=0, durationMs=7.557\n1079daae92b74d499301bde3903a8ec8/事件动作.docx: Failed, fileSize=18214, bytes=0, durationMs=10.104\n1079daae92b74d499301bde3903a8ec8/伺服加载系统软件_修改版.docx: Failed, fileSize=2456412, bytes=0, durationMs=65.94\n1079daae92b74d499301bde3903a8ec8/2020FEM软件应用习题.doc: Completed, fileSize=1440256, bytes=1440256, durationMs=63.463"
+    },
+    "conclusion": "",
+    "suggestion": "",
+    "syncTaskId": "2a43b06f47444fceb10ced377f4cfe56",
+    "syncRunId": "92b15cd521b34cefbb9af23198d9f611",
+    "createdAt": "2026-09-28T13:10:53.4320435+00:00",
+    "updatedAt": "2026-09-28T13:10:53.4320435+00:00",
+    "totalScore": null
+  }
+]

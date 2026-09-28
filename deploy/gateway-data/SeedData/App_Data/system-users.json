@@ -1,0 +1,15 @@
+[
+  {
+    "id": "6351abc121e04f1d83166d0fb59c05a7",
+    "username": "admin",
+    "name": "系统管理员",
+    "password": null,
+    "role": "admin",
+    "status": "启用",
+    "permissions": [
+      "all"
+    ],
+    "lastLogin": "2026-09-29 05:44:22",
+    "passwordHash": null
+  }
+]

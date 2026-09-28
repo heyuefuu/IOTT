@@ -1,0 +1,93 @@
+[
+  {
+    "id": "industrial-protocol",
+    "code": "5.2.1",
+    "name": "工控协议覆盖率",
+    "category": "compatibility",
+    "unit": "种",
+    "statusLabel": "待验证",
+    "statusType": "info",
+    "description": "统计已配置协议；正式验收需验证至少 3 类协议实际收发。",
+    "reference": "",
+    "threshold": 1,
+    "createdAt": "2026-09-28T15:29:52.2411493+08:00"
+  },
+  {
+    "id": "communication-stability",
+    "code": "5.2.2",
+    "name": "通讯稳定性",
+    "category": "stability",
+    "unit": "%",
+    "statusLabel": "待验证",
+    "statusType": "info",
+    "description": "当前为短时连通性探测，不能替代连续 2 小时通讯验收。",
+    "reference": "",
+    "threshold": 90,
+    "createdAt": "2026-09-28T15:29:52.2411493+08:00"
+  },
+  {
+    "id": "max-connections",
+    "code": "5.2.3",
+    "name": "最大并发连接数",
+    "category": "performance",
+    "unit": "台",
+    "statusLabel": "待验证",
+    "statusType": "info",
+    "description": "当前自动压测上限 100，尚未满足至少 200 台的验收要求。",
+    "reference": "100",
+    "threshold": 100,
+    "createdAt": "2026-09-28T15:29:52.2411493+08:00"
+  },
+  {
+    "id": "transfer-protocol",
+    "code": "5.2.4",
+    "name": "传输协议覆盖率",
+    "category": "compatibility",
+    "unit": "种",
+    "statusLabel": "待验证",
+    "statusType": "info",
+    "description": "统计传输协议配置；正式验收需验证至少 3 类协议上下传。",
+    "reference": "",
+    "threshold": 1,
+    "createdAt": "2026-09-28T15:29:52.2411493+08:00"
+  },
+  {
+    "id": "file-integrity",
+    "code": "5.2.5",
+    "name": "文件完整性",
+    "category": "function",
+    "unit": "%",
+    "statusLabel": "待验证",
+    "statusType": "info",
+    "description": "",
+    "reference": "",
+    "threshold": 100,
+    "createdAt": "2026-09-28T15:29:52.2411493+08:00"
+  },
+  {
+    "id": "transfer-speed",
+    "code": "5.2.6",
+    "name": "传输速度",
+    "category": "performance",
+    "unit": "MB/s",
+    "statusLabel": "待验证",
+    "statusType": "info",
+    "description": "当前统计历史记录，不能替代约 100MB 文件达到 50MB/s 的实测。",
+    "reference": "",
+    "threshold": 1,
+    "createdAt": "2026-09-28T15:29:52.2411493+08:00"
+  },
+  {
+    "id": "file-size",
+    "code": "5.2.7",
+    "name": "文件大小",
+    "category": "performance",
+    "unit": "MB",
+    "statusLabel": "待验证",
+    "statusType": "info",
+    "description": "当前统计历史最大文件，尚需完成至少 100MB 文件实际传输验收。",
+    "reference": "",
+    "threshold": 200,
+    "createdAt": "2026-09-28T15:29:52.2411493+08:00"
+  }
+]

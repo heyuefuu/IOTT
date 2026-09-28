@@ -1,0 +1,1041 @@
+{
+  "formatVersion": 1,
+  "createdAtUtc": "2026-09-28T22:24:50.667046+00:00",
+  "source": "Running gateway AppContext.BaseDirectory/App_Data and upstream device registry",
+  "gatewayDeviceCount": 20,
+  "upstreamDeviceCount": 81,
+  "mergedDeviceCount": 81,
+  "recordCounts": {
+    "cs-connectivity.json": 1,
+    "devices.json": 81,
+    "evaluation-indicators.json": 2,
+    "evaluation-records.json": 1,
+    "metrics.json": 7,
+    "report-templates.json": 1,
+    "system-logs.json": 135,
+    "system-users.json": 1,
+    "verify-task-completions.json": 0,
+    "verify-tasks.json": 5
+  },
+  "redactions": {
+    "cs-connectivity.json/gatewayPasswords": 1,
+    "cs-connectivity.json/serverPasswords": 1,
+    "devices.json/16/transfer/password": 1,
+    "system-logs.json/0/detail": 1,
+    "system-users.json/0/password": 1,
+    "system-users.json/0/passwordHash": 1
+  },
+  "changes": [
+    {
+      "kind": "file-write-permission-reset",
+      "id": "4da9b37035ad4bb3ad509543267b9306"
+    },
+    {
+      "kind": "file-write-permission-reset",
+      "id": "22b509122ed247a2a89aa0105c753a63"
+    },
+    {
+      "kind": "server-root-reset",
+      "id": "svc-3f895d04",
+      "previous": "F:\\"
+    }
+  ],
+  "programs": [
+    {
+      "id": "033c0df8a9fb495495a1c9c05a688cdb",
+      "fileName": "00068.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\33a3fb64c37441b897b15d487031f8ef_00068.nc"
+    },
+    {
+      "id": "04fa2671c3f94bbe8ab02a9dd8a4cf20",
+      "fileName": "O4649.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\3c4e25bfd9d44f2da95553e39d13aa06_O4649.nc"
+    },
+    {
+      "id": "05dd475c7ebe4d9ba9597ec7d7ee0327",
+      "fileName": "verify-integrity-102400.bin",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\b4fdf87b02b34dbba0c63bce29d37a3d_verify-integrity-102400.bin"
+    },
+    {
+      "id": "0cdeb8406aa64c75a93bfd13ff3c6a4d",
+      "fileName": "tmp-upload-o1237.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\17cb1fd2817141afb6f79f6942ad714d_tmp-upload-o1237.nc"
+    },
+    {
+      "id": "0d81fd27990f4d8ebcdd0c3706e614aa",
+      "fileName": "tmp-upload-o1236.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\d683f66faa854027b7d35e16d37bb50e_tmp-upload-o1236.nc"
+    },
+    {
+      "id": "0f8ca236bdd7487398e1cc1d160e54fb",
+      "fileName": "upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\3b24421628b941f684e3dddf888479d5_upload-test.nc"
+    },
+    {
+      "id": "159c65cde0df4983b607a0ea874ea035",
+      "fileName": "tmp-upload-path.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\4734d76810e647b0bd2d9dad7c2c770f_tmp-upload-path.nc"
+    },
+    {
+      "id": "16c063e091c54dc0bf51f172a6b1b06e",
+      "fileName": "tmp-upload-path.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\69b94e42dbd54ac689d2a8ca4ae53cc4_tmp-upload-path.nc"
+    },
+    {
+      "id": "199b83a8f7c84ccebabf11327498d54e",
+      "fileName": "O1001.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\faee1d1ada0c4132b4010c4a8dc778ac_O1001.nc"
+    },
+    {
+      "id": "1a7c0054d57a4fad9c89886af7d18e09",
+      "fileName": "tmp-upload-o1236.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\19598329cd5641759e5deace446b6a29_tmp-upload-o1236.nc"
+    },
+    {
+      "id": "1afd6054d2c6496bacddf4ba0fdb673f",
+      "fileName": "tmp-upload-o1236.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\315195844a434cb7942e4b8ac67bbf86_tmp-upload-o1236.nc"
+    },
+    {
+      "id": "1b51c75d82e4459291f2c46a4a14f093",
+      "fileName": "verify-integrity-1048576.bin",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\9dae480e987e4fbab763af3f28b8e83f_verify-integrity-1048576.bin"
+    },
+    {
+      "id": "1b6ec902909c402ea92fc7870dd0525c",
+      "fileName": "111.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\e7fb811e10304ea2aaf10d45f3c9f2cb_111.nc"
+    },
+    {
+      "id": "1bca26a9aee146818a91cdd049bb9af0",
+      "fileName": "O4115.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\37713c73dfeb47af90654bdfccf01fa4_O4115.nc"
+    },
+    {
+      "id": "1c3de666ca7f4b8ca6116fa7e7fb9e65",
+      "fileName": "O8203.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\77f6168f27334401824d9b15d9331a75_O8203.nc"
+    },
+    {
+      "id": "2390134a99b247df87dd1287b1c25912",
+      "fileName": "conflict-o1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\d045583b0ae44e82a2d3d472a5f46d56_conflict-o1234.nc"
+    },
+    {
+      "id": "24d04678d50642d1a338698da4c5e06c",
+      "fileName": "O1001.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\9b04240610e14fb6a6770c05e089990a_O1001.nc"
+    },
+    {
+      "id": "28911c1b36d04b69a30cef54bdc333fe",
+      "fileName": "tmp-upload-o1235.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\97ce43d6f42d4bd1885d00750d337cda_tmp-upload-o1235.nc"
+    },
+    {
+      "id": "296c4c317f2a480e9ddaa0a0b1019157",
+      "fileName": "hnc-files-list.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\167f7f5c368446b9b3d20c8f3752a28e_hnc-files-list.nc"
+    },
+    {
+      "id": "2bd1117f0f104d3aa49b6d3e1e87dc61",
+      "fileName": "tmp-upload-o1235.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\34b75d8c3df34354bab4ccd615bf065b_tmp-upload-o1235.nc"
+    },
+    {
+      "id": "2cb7f58d421b46909b6d2ccc2f7f4524",
+      "fileName": "O1001.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\dd5cb42262db4cceb947ecd445ca6fc0_O1001.nc"
+    },
+    {
+      "id": "2cce04e4aad041dbb98abc606b16a5f3",
+      "fileName": "00068.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\b5dc1c5ef998492d92a64b32d3dd84db_00068.nc"
+    },
+    {
+      "id": "2e36da2bbd40460ea8208edf3d39287a",
+      "fileName": "tmp-upload-o1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\f30db1dbab564d93a7dd5ffd7bb50c3b_tmp-upload-o1234.nc"
+    },
+    {
+      "id": "3204b2d6f1c14b5abc82f5a7367e641c",
+      "fileName": "O9033.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\d391601cee76454981c7aeff03eb838e_O9033.nc"
+    },
+    {
+      "id": "336a2a24ea3541e6ab17ba5bd42dc681",
+      "fileName": "frontend-ftps-upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\80849e1a69624e59b8cef8d62496153b_frontend-ftps-upload-test.nc"
+    },
+    {
+      "id": "34958f4f72a549659a109234b016265d",
+      "fileName": "ftp-direct-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\cc25fb6723f74955a9382a94ef78965b_ftp-direct-test.nc"
+    },
+    {
+      "id": "366891f667a4466cb20e6f4e1da466ff",
+      "fileName": "tmp-upload-o1235.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\304ebb58db2445d6855251514fb2d4cf_tmp-upload-o1235.nc"
+    },
+    {
+      "id": "3ca0556610044af2bc122b83a2e776ea",
+      "fileName": "O9031.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\5542923bbefc4bb1a25121f7c974a4b2_O9031.nc"
+    },
+    {
+      "id": "43b2cf342555481fbefcac661928f32c",
+      "fileName": "TMPB1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\3785d87ad63c4d269704d8cc3a1b7ae9_TMPB1234.nc"
+    },
+    {
+      "id": "469627989d044dbebb601d28b292c6f4",
+      "fileName": "verify-integrity-102400.bin",
+      "available": true,
+      "path": "program-files/469627989d044dbebb601d28b292c6f4.bin",
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\101a7ced8f634e8f9e8237ec3ca8651f_verify-integrity-102400.bin"
+    },
+    {
+      "id": "49eb47628ea24239b8f5a2b5eb300ce3",
+      "fileName": "tmp-upload-path.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\93bca69cd37b4af2a85d9c121506589b_tmp-upload-path.nc"
+    },
+    {
+      "id": "49ebfa2e0bf4418e993b8382f67ea0fe",
+      "fileName": "iot-ftps-upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\291147661a744f07b509dfe2b5eb797b_iot-ftps-upload-test.nc"
+    },
+    {
+      "id": "4ab3f57c7d6d40b5816df4674750d04c",
+      "fileName": "hnc-files-list.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\1f88975f2f414469b2c88bf0fc5c6528_hnc-files-list.nc"
+    },
+    {
+      "id": "4cbc39ffd6e44b7ebd1a7bc4c4db74ef",
+      "fileName": "demo.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\75076b1ee14941609e6a15f71eae8638_demo.nc"
+    },
+    {
+      "id": "4cbe4d69f582486faeac28a6b1303452",
+      "fileName": "frontend-smb-upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\2a889d8124ac4588b4293cb49a5b4514_frontend-smb-upload-test.nc"
+    },
+    {
+      "id": "52d289bbbf6a44ab971188baab397e50",
+      "fileName": "ftp-direct-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\030f2a79cf3240ddbdfbb321657d7cb2_ftp-direct-test.nc"
+    },
+    {
+      "id": "5565d151bf034a678aad956c763adccb",
+      "fileName": "tmp-upload-o9043.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\b034be286c2c44769ef8212b2afb60c2_tmp-upload-o9043.nc"
+    },
+    {
+      "id": "55bdb03254b8496c9b9fc09ca0cb6412",
+      "fileName": "upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\72299f8f065043c3bce863338f12a1c2_upload-test.nc"
+    },
+    {
+      "id": "59bbac33c97e4428956025c6cdfdc3c9",
+      "fileName": "O2027.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\792755e6cd614dd39858eb6fd07a1f15_O2027.nc"
+    },
+    {
+      "id": "5a6bdeeba5a543cc89b0dae2655bb260",
+      "fileName": "tmp-upload-o1238.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\16706f877eeb4d438d57e25f575fbac5_tmp-upload-o1238.nc"
+    },
+    {
+      "id": "5b6313b91bf441b58513d240c25439c8",
+      "fileName": "tmp-upload-o1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\228950ca45c5434fb4d7b2bf8736bcc0_tmp-upload-o1234.nc"
+    },
+    {
+      "id": "5c5d8c2f7fad4c24a5aa9c2cf7942bde",
+      "fileName": "伺服加载系统软件_修改版.docx",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\e273383de4b44db2b16fca391052ffc7_伺服加载系统软件_修改版.docx"
+    },
+    {
+      "id": "5dee645132fd4b3f9b03361f9bff9f20",
+      "fileName": "hnc-resume.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\92966084c7a44c20a25a06fd4b2d48cb_hnc-resume.nc"
+    },
+    {
+      "id": "5eed0cbabb9040e1a1602dcfe82428f5",
+      "fileName": "O8631.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\e0b10af472614ea381475cfa9908ec3f_O8631.nc"
+    },
+    {
+      "id": "63a35b5900534f30bce1495d91eb3c7e",
+      "fileName": "tmp-upload-o9043.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\d1923e958cfd48f681023483108a619d_tmp-upload-o9043.nc"
+    },
+    {
+      "id": "6628fc0647d344c0b67fd800b7829607",
+      "fileName": "verify-integrity-102400.bin",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\8da333b39d214a1889777d6ed90e8ee0_verify-integrity-102400.bin"
+    },
+    {
+      "id": "6978c4b384534362a9e5aa6ddae53318",
+      "fileName": "tmp-upload-path.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\8516b5ab57f54ae2aa4f42926005c508_tmp-upload-path.nc"
+    },
+    {
+      "id": "6f2e5259aba94e86b62b131acf091786",
+      "fileName": "tmp-O0034.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\56fcde8e1cfe476fb2f2589bdc61d78a_tmp-O0034.nc"
+    },
+    {
+      "id": "6f6da801062944f1b75844224ceb8798",
+      "fileName": "事件动作.docx",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\e3efdd91500b4acc97a44d439115384a_事件动作.docx"
+    },
+    {
+      "id": "71120012eb3647ddae5c3c6c0f807edb",
+      "fileName": "tmp-upload-o1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\d32bab85e5814840a9354270492c41cf_tmp-upload-o1234.nc"
+    },
+    {
+      "id": "7509ed3db67740c0b5bc74d1fd20fbf4",
+      "fileName": "conflict-o1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\b8121d9f01124e4d972b5244e3d792b0_conflict-o1234.nc"
+    },
+    {
+      "id": "758f035974f44aa99645fda169c516ad",
+      "fileName": "O8123.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\475dffa7c3a9463eb7a350c212d0e518_O8123.nc"
+    },
+    {
+      "id": "7d2dd181283a4eaf874b0e29d25ec652",
+      "fileName": "tmp-upload-o9043.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\521f4d05a1b249c5a3c3d19ba5837bfa_tmp-upload-o9043.nc"
+    },
+    {
+      "id": "7d4f54961cce467a8c29c27f1f61966a",
+      "fileName": "ftp-upload-20260408-111638-1.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\3130bf9b455940da988baed3d8cfee92_ftp-upload-20260408-111638-1.nc"
+    },
+    {
+      "id": "7db332674dd34b4b99aa20a2a2a92228",
+      "fileName": "O9028.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\aa8d52249ac24be1b71ab68cb3d540f4_O9028.nc"
+    },
+    {
+      "id": "7e71f732b4824b409e55c0642bc0a0e5",
+      "fileName": "O9044.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\9557b01413a3421fa28797d6138197e3_O9044.nc"
+    },
+    {
+      "id": "7f7e8b07ab174af3ba15fb763133d778",
+      "fileName": "project.uasim.autosave",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\21eb6b0c5f854ebf980350f3474b3aae_project.uasim.autosave"
+    },
+    {
+      "id": "852dd75cd66e41de96112134a9855c75",
+      "fileName": "tmp-upload-o9043.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\1e45ab758ca9413cadf78c56ab3ac346_tmp-upload-o9043.nc"
+    },
+    {
+      "id": "85543d5ef38445dc8d7db9e12e9e85e7",
+      "fileName": "hnc-full-upload.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\b67455bda98c43bfa8567a9281a7083e_hnc-full-upload.nc"
+    },
+    {
+      "id": "855c9a3b09f243f3a876aa7e670a025f",
+      "fileName": "hnc-files-list.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\5868bfbf3ed648a9b78d8bc38cfd2559_hnc-files-list.nc"
+    },
+    {
+      "id": "8733dd3b59fc49fdb41065d1b21f5900",
+      "fileName": "tmp-upload-o1238.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\de7c1e684f994670a789992ffe81112b_tmp-upload-o1238.nc"
+    },
+    {
+      "id": "8cc85e321ea14cfcac14d26f6c369b5e",
+      "fileName": "upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\4fe80902fb4f4755b87b50cda8ff6273_upload-test.nc"
+    },
+    {
+      "id": "8f1b5ed27e9a4348ac50a2b0617e96b2",
+      "fileName": "verify-integrity-1048576.bin",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\d87d4cfd5cbe42cebd5a4556bf3fe155_verify-integrity-1048576.bin"
+    },
+    {
+      "id": "9376ec690978447b91a6ba4ceb3b5282",
+      "fileName": "verify-integrity-102400.bin",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\d9c2d67e35e14ed3a24d9f67576dad1a_verify-integrity-102400.bin"
+    },
+    {
+      "id": "93a73693a7e7445981ff5d68c4bda4d8",
+      "fileName": "O2031.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\fe3095c8cec54eabb89e3ffcb637bd54_O2031.nc"
+    },
+    {
+      "id": "94a409275af64d6b96b6b61429e8f907",
+      "fileName": "tmp-upload-o1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\fe71493d2fbd4bb2b14bd9fe3eb0de80_tmp-upload-o1234.nc"
+    },
+    {
+      "id": "9516b7895abe462da7812c9599390d4f",
+      "fileName": "O9000.CNC",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\8fc6652fe0744f58aa44dd6f4ee1d9ef_O9000.CNC"
+    },
+    {
+      "id": "97557304932e4a48b81fb502d8b5c7c5",
+      "fileName": "upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\2ffeb91ee3c3472cbfdec2b9af2fcada_upload-test.nc"
+    },
+    {
+      "id": "994aa03c5eab4536974f6ae1a1c09215",
+      "fileName": "frontend-smb-upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\76e0a0579b224733a46809f91aea2944_frontend-smb-upload-test.nc"
+    },
+    {
+      "id": "99bfc177abb3476aa2cb261250af207c",
+      "fileName": "tmp-upload-o1235.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\ab17e3637c294d0f9b2f4ef715b8b58c_tmp-upload-o1235.nc"
+    },
+    {
+      "id": "9c38b5fc4c6741cba73ed71d32179427",
+      "fileName": "O1001.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\90a33f15bd764017b7aa80aa103fc5a3_O1001.nc"
+    },
+    {
+      "id": "9c9591b2f668449b912ea3a445e4448a",
+      "fileName": "tmp-upload-o9043.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\6ed1351664e74587b711800ff3d3eb01_tmp-upload-o9043.nc"
+    },
+    {
+      "id": "9e08379415ed4d2ead78af4c58e5c04e",
+      "fileName": "tmp-upload-o1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\de384ef6d66a4550b81f4ca83c7bc3b5_tmp-upload-o1234.nc"
+    },
+    {
+      "id": "9e1286a6e0184f888fbdb67145142d35",
+      "fileName": "iot-ftps-upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\b7263850145c4eae8a61fbad31f7fc64_iot-ftps-upload-test.nc"
+    },
+    {
+      "id": "9e92201d0d60414ca0c9dc487c6c890f",
+      "fileName": "frontend-ftps-upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\0ce00be7d67b46ad969b9486623777a2_frontend-ftps-upload-test.nc"
+    },
+    {
+      "id": "9f1c22939d82474cbdc0d7355cbe715b",
+      "fileName": "hnc-files-list.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\0bf29116f22a473680bb5a8509359086_hnc-files-list.nc"
+    },
+    {
+      "id": "a04db8cdb3814c76b631e2d2a7719c93",
+      "fileName": "tmp-upload-o1237.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\8d6d31898b1c4188b61b6c82c04d85e1_tmp-upload-o1237.nc"
+    },
+    {
+      "id": "a06b69f5787c40cba444951ea421851e",
+      "fileName": "O2031.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\6b9b75b27eea4951ac8329f754575385_O2031.nc"
+    },
+    {
+      "id": "a30bac9b5ddf48429be298d01c8446e3",
+      "fileName": "tmp-upload-o9043.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\1c08d97925a94fd3bd81062fbf3e205c_tmp-upload-o9043.nc"
+    },
+    {
+      "id": "a42ca913e37e4a12987cc21dd203b667",
+      "fileName": "tmp-upload-path.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\d36f243c4dba4e0fad8d84e0c46a9e77_tmp-upload-path.nc"
+    },
+    {
+      "id": "a502a77a451f4b928f45407f0eed6837",
+      "fileName": "tmp-O0034.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\4b975d68236146ac909214d52e3ad403_tmp-O0034.nc"
+    },
+    {
+      "id": "a8416e50df874fd98f64cc4618c371ea",
+      "fileName": "upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\26865f48925f40fd96fc850aac856daf_upload-test.nc"
+    },
+    {
+      "id": "a8bd7299129c4d8f9f92f2dca93ea687",
+      "fileName": "verify-integrity-1048576.bin",
+      "available": true,
+      "path": "program-files/a8bd7299129c4d8f9f92f2dca93ea687.bin",
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\7b652b9742844d7f900aa04eb9024959_verify-integrity-1048576.bin"
+    },
+    {
+      "id": "abeb508abec44a1db94355339b02b55e",
+      "fileName": "O8899.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\67ec8934a4244551b21e0862a99ff796_O8899.nc"
+    },
+    {
+      "id": "ac04ee42636849bebdaeaa28ebcd215e",
+      "fileName": "hnc-files-list.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\090fd5fe29b045289daceace33fdbf5c_hnc-files-list.nc"
+    },
+    {
+      "id": "ac4ac40a85814bacbc18511f44cc4a1a",
+      "fileName": "frontend-smb-upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\4cfddfba7c254db592692d3e81564794_frontend-smb-upload-test.nc"
+    },
+    {
+      "id": "ae68231f7d26460780eb93ac27b3495c",
+      "fileName": "tmp-O0034.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\2eac04c25ad546589e003c6f744ecafb_tmp-O0034.nc"
+    },
+    {
+      "id": "b063f7ec1e2647b3adad66c9eb4996ca",
+      "fileName": "O1001.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\03ad2b3509454192a90c942062ddcb49_O1001.nc"
+    },
+    {
+      "id": "b22f2f8ebb4648efa06aa824b8987103",
+      "fileName": "tmp-upload-path.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\189a027109cc4cfda309f80586e8de3a_tmp-upload-path.nc"
+    },
+    {
+      "id": "b34df117e87c429d861c4a6e9597c4df",
+      "fileName": "O9044.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\c431df25546a4cae9e9cd662df29dc77_O9044.nc"
+    },
+    {
+      "id": "b3799dc6b5df436f8be047d52d462b6e",
+      "fileName": "iot-smb-upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\aa100d72c23148b99fd85131a9cab106_iot-smb-upload-test.nc"
+    },
+    {
+      "id": "bb224ab16cb54f3fac4e55ef6ae429a5",
+      "fileName": "upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\060f7734049d494faf8ed3bf92ca7ac2_upload-test.nc"
+    },
+    {
+      "id": "bcbfc052c14941ae909648915b29a9e7",
+      "fileName": "事件动作.docx",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\fe3ab38646ea40ec8e14bd4c98c2f25b_事件动作.docx"
+    },
+    {
+      "id": "bcd024dcc93f4b93b8af451bb59cbcbc",
+      "fileName": "iot-smb-upload-test-2.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\4f3df449857d45df8963b82b90e5deb9_iot-smb-upload-test-2.nc"
+    },
+    {
+      "id": "beaaa12558654896a9bfd7fbc6a149f0",
+      "fileName": "tmp-upload-o1238.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\3fc9640d05f544cfad88a8a28f1fe7e5_tmp-upload-o1238.nc"
+    },
+    {
+      "id": "bf392c43fc904db08e9d7140fcb62551",
+      "fileName": "tmp-upload-o1238.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\bfa69e83d7b744a8827be6eadb229167_tmp-upload-o1238.nc"
+    },
+    {
+      "id": "c0640f7a79224e5381cc7a33ef345267",
+      "fileName": "upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\3e96c4b644ad4b99ad978de73acf7011_upload-test.nc"
+    },
+    {
+      "id": "c560a4b8d1524d7b999480ce604fb06d",
+      "fileName": "iot-ftps-upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\8b8bb5436009400bb340492b612d2e95_iot-ftps-upload-test.nc"
+    },
+    {
+      "id": "c782b66a52434ddb99158e7bb2249911",
+      "fileName": "tmp-upload-o1236.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\e18523eaed6147cea8bb301ec2be5f4d_tmp-upload-o1236.nc"
+    },
+    {
+      "id": "c85a9b963aea416388e2fba1d95ce73b",
+      "fileName": "ftp-diag-upload.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\c7df58e8014748faa104a2ba8b472cc6_ftp-diag-upload.nc"
+    },
+    {
+      "id": "ca6b0be9d18e459285218e8e3d45bfd7",
+      "fileName": "tmp-upload-o1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\6662f6368dbc4a0f8857dbc13968a96f_tmp-upload-o1234.nc"
+    },
+    {
+      "id": "cd23faed98224c848a5d4e8cfd0bc5a9",
+      "fileName": "tmp-upload-o1236.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\a788a4aa146c4eaf889fa06353746087_tmp-upload-o1236.nc"
+    },
+    {
+      "id": "cecfa98346c040af8102607001eacc57",
+      "fileName": "upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\2132245362714c48af2c779206324137_upload-test.nc"
+    },
+    {
+      "id": "d37ee55ee45448aebc49108a8303e488",
+      "fileName": "iot-ftps-upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\a06776db29fd45db9c4b9303eeba270a_iot-ftps-upload-test.nc"
+    },
+    {
+      "id": "d5f5a1dc870b45e584b9b712ba7f80dc",
+      "fileName": "tmp-upload-o1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\e80cd458bf4a4dd89c0c5081f8ca3ed5_tmp-upload-o1234.nc"
+    },
+    {
+      "id": "d6f2b43761764d3088563240622fc7f4",
+      "fileName": "事件动作.docx",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\d22888622ccc4bd7962765392f0758a3_事件动作.docx"
+    },
+    {
+      "id": "d6fdb841321b438dbf9d07bcddfd0b47",
+      "fileName": "conflict-o1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\fce023391f0d4fe0a47c7b755a317638_conflict-o1234.nc"
+    },
+    {
+      "id": "d780d279131e4714b8af606a660a3331",
+      "fileName": "TMPA1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\693911d866294ef7a61b0f1563956fe2_TMPA1234.nc"
+    },
+    {
+      "id": "d7f888380ad04670b7066c4b54797f97",
+      "fileName": "tmp-upload-o1237.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\17f4fcd70d1d4a6db666409992acf60c_tmp-upload-o1237.nc"
+    },
+    {
+      "id": "da6fa96ede2b4adcaf669db40c46ca74",
+      "fileName": "tmp-upload-o1236.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\1e0881fc2e924e1f8c0c03d2707875fe_tmp-upload-o1236.nc"
+    },
+    {
+      "id": "dcb0de7ba17f46d58d5a6c766c9c12bf",
+      "fileName": "tmp-upload-path.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\63169436729c48e79d95169559cbc8ab_tmp-upload-path.nc"
+    },
+    {
+      "id": "dde62763600641a68eae919df0a5ccd4",
+      "fileName": "O9034.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\6e9e23ccf3134dd981f7dff826810cad_O9034.nc"
+    },
+    {
+      "id": "dec36d634dd549b5a8f7de8a69c80435",
+      "fileName": "tmp-upload-o1238.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\7867c35aab3849278b798cfee24ad572_tmp-upload-o1238.nc"
+    },
+    {
+      "id": "df447358a115403596dfb907d82a6d5d",
+      "fileName": "conflict-o1234.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\e55bbc9b80914b97b58fea6745b95b78_conflict-o1234.nc"
+    },
+    {
+      "id": "e022da97540c4cc4be6950193084ff05",
+      "fileName": "00068.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\ecae789d8c6a44fca4867c6909aaed66_00068.nc"
+    },
+    {
+      "id": "e11f2e9c71534d2b9df432eda797bbcb",
+      "fileName": "ftp-fixed-upload.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\65b1c20b8d5542ae9fef6134ca23ce61_ftp-fixed-upload.nc"
+    },
+    {
+      "id": "e1aa5ffcf87f4661b5143fcf16537b47",
+      "fileName": "verify-integrity-1048576.bin",
+      "available": true,
+      "path": "program-files/e1aa5ffcf87f4661b5143fcf16537b47.bin",
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\7a1353fbceb847e79a1bdcfeaab7dd93_verify-integrity-1048576.bin"
+    },
+    {
+      "id": "e281cfa75004457787fe8c78f1b37791",
+      "fileName": "upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\656a11f0774f4bf5981a78e3366107b6_upload-test.nc"
+    },
+    {
+      "id": "e285636ec31e4eb5b1bfb8fe017d5c81",
+      "fileName": "verify-integrity-1048576.bin",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\81527630d30a45dc826325c2b41938e8_verify-integrity-1048576.bin"
+    },
+    {
+      "id": "e35bd01313c54a6480b6038d3c8b2144",
+      "fileName": "00068.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\ce6e736f4fdb46a490bfe2250922cd95_00068.nc"
+    },
+    {
+      "id": "e47c36c7800d4cd6947e585b07c1100b",
+      "fileName": "tmp-upload-o1238.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\378608dcfa48407b8fd0902d7a31061a_tmp-upload-o1238.nc"
+    },
+    {
+      "id": "e50c473724c34dc8a2f90bd7347666cd",
+      "fileName": "tmp-upload-o1238.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\2808e1e37d7b45499a09a88da2927c67_tmp-upload-o1238.nc"
+    },
+    {
+      "id": "e5914039de074b9a872fc916f8a62a97",
+      "fileName": "伺服加载系统软件_修改版.docx",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\c08645e323e64f81bad66bf60b096d11_伺服加载系统软件_修改版.docx"
+    },
+    {
+      "id": "e7484624c50346f68af7d81c2b6966b8",
+      "fileName": "tmp-upload-o9043.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\f2124544182e44cd87cccfddcb6a8500_tmp-upload-o9043.nc"
+    },
+    {
+      "id": "e8b32ca413e3401f830386b2f6c50841",
+      "fileName": "tmp-upload-o1238.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\360f00601ff140f2a9f145bd1ab8e7d9_tmp-upload-o1238.nc"
+    },
+    {
+      "id": "e9f58d1671cd4bfc9649e155ff0ca801",
+      "fileName": "verify-integrity-102400.bin",
+      "available": true,
+      "path": "program-files/e9f58d1671cd4bfc9649e155ff0ca801.bin",
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\316b3b0a28f640009ecbc3a479f7d92c_verify-integrity-102400.bin"
+    },
+    {
+      "id": "eda64944082b4d66ace5879db00f9403",
+      "fileName": "tmp-upload-o1236.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\565ef5f5974c428b86022fc5dde4d8d7_tmp-upload-o1236.nc"
+    },
+    {
+      "id": "f793f0dc22414dacac7962033c2d03ac",
+      "fileName": "tmp-upload-o1239.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\fcaca38afdae4bc4a69170fde8d6f1a9_tmp-upload-o1239.nc"
+    },
+    {
+      "id": "fb4ea029ef144f55b25ee2d429168d37",
+      "fileName": "O4023.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\77fc88d806214178811e59d137b06c37_O4023.nc"
+    },
+    {
+      "id": "fb58fbc21c5e48e59580138a7aae4161",
+      "fileName": "tmp-upload-o1238.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\6c1a6edb2ef3490ca74ae907ff673e00_tmp-upload-o1238.nc"
+    },
+    {
+      "id": "fe194921831b47129fddcd58e04028ec",
+      "fileName": "frontend-smb-upload-test.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\13e9199d625e4b8d8d82c3c6b8c75333_frontend-smb-upload-test.nc"
+    },
+    {
+      "id": "fec77a93dc3a48cb9c098f586628afaa",
+      "fileName": "O6143.nc",
+      "available": false,
+      "path": null,
+      "sourcePath": "C:\\Users\\Hannah\\AppData\\Local\\Temp\\IndustrialIoT\\uploads\\c91b9de61cb94a5ebdcb12d048c1d9b3_O6143.nc"
+    }
+  ],
+  "files": [
+    {
+      "path": "App_Data/cs-connectivity.json",
+      "bytes": 1203,
+      "sha256": "822f20ec19b463697ca8bb79bdd89073c3f2da99ba9822b37d283fbb8e67e81d"
+    },
+    {
+      "path": "App_Data/devices.json",
+      "bytes": 54105,
+      "sha256": "33ff46266b1879bc88f57041c2e85d9bd0f4b9e723b15a355e8a1c2ce889f1f6"
+    },
+    {
+      "path": "App_Data/evaluation-indicators.json",
+      "bytes": 84507,
+      "sha256": "b2c36e79fa1a2f682ba86f0ee1c9661aafdbb68852b991035bfe6754496d68f1"
+    },
+    {
+      "path": "App_Data/evaluation-records.json",
+      "bytes": 37729,
+      "sha256": "2d9e5773e4ff510cda0d6764e37b068ef03dae23f1e9993307ab7489cfcf685a"
+    },
+    {
+      "path": "App_Data/metrics.json",
+      "bytes": 2703,
+      "sha256": "cb710cef464c1b4090eb95cafc1ab1fc4c8b443cc44721ff73a83e43dbe1b5cb"
+    },
+    {
+      "path": "App_Data/report-templates.json",
+      "bytes": 193,
+      "sha256": "cd209b3396a988bbe2dae52bc37d54f4cb6644574eed99bef47f09939019c690"
+    },
+    {
+      "path": "App_Data/system-logs.json",
+      "bytes": 33330,
+      "sha256": "e1cf9ccb821a1f213df858b8ce793de7086f3565379f1b9a09039a352dd20fb1"
+    },
+    {
+      "path": "App_Data/system-users.json",
+      "bytes": 286,
+      "sha256": "e83a3f320ebf98c3f2a7ac13f0d89d09597561b112c413d62fe0375499385f1b"
+    },
+    {
+      "path": "App_Data/verify-task-completions.json",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "App_Data/verify-tasks.json",
+      "bytes": 136831,
+      "sha256": "5bb3fa562a5327300baf5bc1a6c756ef82e4e18da0bc9d925ac75792a2d25d37"
+    },
+    {
+      "path": "program-files/469627989d044dbebb601d28b292c6f4.bin",
+      "bytes": 102400,
+      "sha256": "209fe377c5f39fc5f6c8358a99e858f677dce2de06fd938a7fb964601c57b53b"
+    },
+    {
+      "path": "program-files/a8bd7299129c4d8f9f92f2dca93ea687.bin",
+      "bytes": 1048576,
+      "sha256": "de7813db709e863d29ebf6a7e955f76174306201fc6309eafc73ed346bbca139"
+    },
+    {
+      "path": "program-files/e1aa5ffcf87f4661b5143fcf16537b47.bin",
+      "bytes": 1048576,
+      "sha256": "66e1032cc4b0dc7aa5a27357dd8e0950b1dbe131adc5cf8889afd8524a916453"
+    },
+    {
+      "path": "program-files/e9f58d1671cd4bfc9649e155ff0ca801.bin",
+      "bytes": 102400,
+      "sha256": "9e3099daba5d03436850e8e3292e08edde335b1f4b575cc6df6f5b4d2ca3d652"
+    }
+  ]
+}
