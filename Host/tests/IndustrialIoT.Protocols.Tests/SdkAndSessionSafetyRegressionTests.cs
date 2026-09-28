@@ -33,7 +33,7 @@ internal static class SdkAndSessionSafetyRegressionTests
         builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
         builder.Logging.ClearProviders();
         await using var app = builder.Build();
-        app.MapGet("/health", () => Results.Ok());
+        app.MapGet("/health", () => Results.Json(new { status = "ok", service = "jingdiao", protocolVersion = 1, architecture = "x86" }));
         foreach (var prefix in new[] { "/api/hnc-sdk", "/api/jingdiao" })
         {
             app.MapPost(prefix + "/connect", () => Results.Json(new { returnCode = 0, sessionId = "fixture" }));

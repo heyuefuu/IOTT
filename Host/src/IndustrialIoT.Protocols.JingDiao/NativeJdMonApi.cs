@@ -81,72 +81,72 @@ public sealed class NativeJdMonApi : IJdMonApi
         return ok;
     }
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_CreateJDMachMon@0", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern IntPtr CreateJDMachMon();
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_DeleteJDMachMon@4", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern void DeleteJDMachMon(ref IntPtr handle);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_ConnectJDMach@24", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, ExactSpelling = true)]
     private static extern int ConnectJDMach(IntPtr handle, [MarshalAs(UnmanagedType.LPStr)] string host,
         ushort rpcPort, ushort callbackPort, ushort uploadPort, ushort downloadPort);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_DisconnectJDMach@4", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int DisconnectJDMach(IntPtr handle);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_IsConnect@4", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int IsConnect(IntPtr handle);
 
-    [DllImport(DllName, EntryPoint = "SetConnectionTimeout", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_SetConnectionTimeout@8", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern void SetConnectionTimeoutNative(IntPtr handle, int timeoutMs);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_SetRPCTimeout@8", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern void SetRPCTimeout(IntPtr handle, int timeoutMs);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_GetLastErr@4", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern uint GetLastErr(IntPtr handle);
 
-    [DllImport(DllName, EntryPoint = "GetMachPos", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_GetMachPos@16", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int GetMachPosNative(IntPtr handle, [Out] double[] machine, [Out] double[] absolute, [Out] double[] relative);
 
-    [DllImport(DllName, EntryPoint = "GetProgState", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_GetProgState@8", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int GetProgStateNative(IntPtr handle, out int state);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_GetMachAlmInfo@8", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int GetMachAlmInfo(IntPtr handle, out int alarm);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_GetBasicModalInfo@32", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int GetBasicModalInfo(IntPtr handle, ref int workCoordinate, ref float feedrate,
         ref int spindleSpeed, ref int toolNo, ref float machiningTime, ref int programNo, ref int mainProgramNo);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_GetSpindleInfo@8", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int GetSpindleInfo(IntPtr handle, [Out] double[] spindle);
 
-    [DllImport(DllName, EntryPoint = "GetRate", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_GetRate@8", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int GetRateNative(IntPtr handle, [Out] int[] rates);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_GetMacroVarValue@16", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int GetMacroVarValue(IntPtr handle, int count, [In] int[] numbers, [Out] double[] values);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_GetCurLineNo@8", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int GetCurLineNo(IntPtr handle, [Out] int[] lineNo);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_GetMachinedWorkpieceCount@8", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int GetMachinedWorkpieceCount(IntPtr handle, out int count);
 
-    [DllImport(DllName, EntryPoint = "GetMachFileList", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_GetMachFileList@16", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, ExactSpelling = true)]
     private static extern int GetMachFileListNative(
         IntPtr handle, [MarshalAs(UnmanagedType.LPStr)] string directory, int bufferSize, [Out] byte[] fileList);
 
-    [DllImport(DllName, EntryPoint = "SendNcFile", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_SendNcFile@28", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, ExactSpelling = true)]
     private static extern int SendNcFileNative(IntPtr handle, [MarshalAs(UnmanagedType.LPStr)] string fileName,
         int addToTask, int setMainProgram, IntPtr progressControl, IntPtr progressCallback, int fileThread);
 
-    [DllImport(DllName, EntryPoint = "ReceiveFile", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_ReceiveFile@20", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, ExactSpelling = true)]
     private static extern int ReceiveFileNative(IntPtr handle, [MarshalAs(UnmanagedType.LPStr)] string sourceFileName,
         [MarshalAs(UnmanagedType.LPStr)] string destinationFileName, IntPtr progressControl, IntPtr progressCallback);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, ExactSpelling = true)]
+    [DllImport(DllName, EntryPoint = "_DelMachFile@12", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, ExactSpelling = true)]
     private static extern int DelMachFile(IntPtr handle, [MarshalAs(UnmanagedType.LPStr)] string directory,
         [MarshalAs(UnmanagedType.LPStr)] string fileName);
 }

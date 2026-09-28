@@ -23,7 +23,7 @@ public interface IJingDiaoClient
     Task<Stream> DownloadAsync(JingDiaoDownloadRequest request, CancellationToken ct);
 }
 
-public sealed class JingDiaoIpcClient : IJingDiaoClient
+public sealed class JingDiaoIpcClient : IJingDiaoClient, IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -31,9 +31,15 @@ public sealed class JingDiaoIpcClient : IJingDiaoClient
     };
 
     private readonly HttpClient httpClient;
+    private readonly bool ownsHttpClient;
 
     public JingDiaoIpcClient(HttpClient httpClient) => this.httpClient = httpClient;
-    public JingDiaoIpcClient(Uri baseAddress) : this(new HttpClient { BaseAddress = baseAddress }) { }
+    public JingDiaoIpcClient(Uri baseAddress) : this(new HttpClient { BaseAddress = baseAddress }) => ownsHttpClient = true;
+
+    public void Dispose()
+    {
+        if (ownsHttpClient) httpClient.Dispose();
+    }
 
     public Task<JingDiaoConnectResult> ConnectAsync(JingDiaoConnectRequest request, CancellationToken ct)
         => PostAsync<JingDiaoConnectResult>("api/jingdiao/connect", request, ct);

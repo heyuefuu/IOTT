@@ -7,7 +7,17 @@ builder.Services.AddSingleton<IJdMonApi, NativeJdMonApi>();
 builder.Services.AddSingleton<JingDiaoSessionStore>();
 
 var app = builder.Build();
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+var sdkHealth = JingDiaoSdkHealth.Probe(app.Services.GetRequiredService<IJdMonApi>());
+if (!sdkHealth.IsHealthy)
+    app.Logger.LogError("JingDiao SDK readiness failed: {Error}", sdkHealth.Error);
+app.MapGet("/health", () => Results.Json(new
+{
+    status = sdkHealth.IsHealthy ? "ok" : "error",
+    service = "jingdiao",
+    protocolVersion = 1,
+    architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant(),
+    error = sdkHealth.Error
+}, statusCode: sdkHealth.IsHealthy ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable));
 
 var group = app.MapGroup("/api/jingdiao");
 
@@ -16,18 +26,26 @@ group.MapPost("/connect", (JingDiaoConnectRequest request, IJdMonApi api, JingDi
     var handle = api.Create();
     if (handle == IntPtr.Zero)
         return Results.Ok(new JingDiaoConnectResult { ReturnCode = -1, ErrorMessage = "CreateJDMachMon returned null." });
-    if (request.TimeoutMs > 0)
+    try
     {
-        api.SetConnectionTimeout(handle, request.TimeoutMs);
-        api.SetRpcTimeout(handle, request.TimeoutMs);
+        if (request.TimeoutMs > 0)
+        {
+            api.SetConnectionTimeout(handle, request.TimeoutMs);
+            api.SetRpcTimeout(handle, request.TimeoutMs);
+        }
+        if (!api.Connect(handle, request.Host, request.RpcPort, request.CallbackPort, request.FileUploadPort, request.FileDownloadPort))
+        {
+            var error = api.GetLastError(handle);
+            return Results.Ok(new JingDiaoConnectResult { ReturnCode = (int)(error == 0 ? 1 : error), ErrorMessage = $"ConnectJDMach failed: {error}" });
+        }
+        var sessionId = store.Add(handle);
+        handle = IntPtr.Zero;
+        return Results.Ok(new JingDiaoConnectResult { ReturnCode = 0, SessionId = sessionId });
     }
-    if (!api.Connect(handle, request.Host, request.RpcPort, request.CallbackPort, request.FileUploadPort, request.FileDownloadPort))
+    finally
     {
-        var error = api.GetLastError(handle);
-        api.Delete(ref handle);
-        return Results.Ok(new JingDiaoConnectResult { ReturnCode = (int)(error == 0 ? 1 : error), ErrorMessage = $"ConnectJDMach failed: {error}" });
+        if (handle != IntPtr.Zero) api.Delete(ref handle);
     }
-    return Results.Ok(new JingDiaoConnectResult { ReturnCode = 0, SessionId = store.Add(handle) });
 });
 
 group.MapPost("/disconnect", (JingDiaoSessionRequest request, IJdMonApi api, JingDiaoSessionStore store) =>

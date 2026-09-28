@@ -1,3 +1,9 @@
+if (args.Length == 2 && args[0] == "--urls")
+{
+    await JingDiaoLifecycleRegressionTests.RunFixtureAsync(args[1]);
+    return 0;
+}
+
 var checks = new (string Name, Func<Task> Run)[]
 {
     ("Protocol safety: Modbus writes, lengths and point isolation", ModbusSafetyRegressionTests.RunAsync),
@@ -26,6 +32,8 @@ var checks = new (string Name, Func<Task> Run)[]
     ("FANUC CRX capabilities", CncRegressionTests.FanucMetadataAsync),
     ("GSK WebSocket frame timestamps and disconnect", GskRealtimeRegressionTests.RunAsync),
     ("HTTP status, transfers and MTConnect nesting", HttpRegressionTests.RunAsync),
+    ("JingDiao shared shim crash recovery and cleanup", JingDiaoLifecycleRegressionTests.SharedProcessAsync),
+    ("JingDiao external shim ownership and health validation", JingDiaoLifecycleRegressionTests.ExternalHealthAsync),
     ("NCLink per-device routing, rejected writes and file keys", NCLinkApiRoutingRegressionTests.RunAsync),
     ("Modbus and Profibus independent wire byte order", ModbusRegressionTests.ByteOrderAsync),
     ("Huazhong robot health address", ModbusRegressionTests.RobotHealthAddressAsync),
@@ -34,6 +42,9 @@ var checks = new (string Name, Func<Task> Run)[]
 };
 if (args.Contains("--protocol-safety"))
     checks = checks.Where(check => check.Name.StartsWith("Protocol safety:", StringComparison.Ordinal)).ToArray();
+if (args.Contains("--jingdiao"))
+    checks = checks.Where(check => check.Name.StartsWith("JingDiao", StringComparison.Ordinal)
+        || check.Name.StartsWith("HNC and JingDiao", StringComparison.Ordinal)).ToArray();
 if (args.Contains("--plc-collection"))
     checks = checks.Where(check => check.Name.StartsWith("PLC collection", StringComparison.Ordinal)).ToArray();
 if (args.Contains("--collection-config"))

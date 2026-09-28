@@ -16,8 +16,10 @@ public sealed partial class JingDiaoDriver :
     private readonly IJingDiaoClient? injectedClient;
     private readonly SemaphoreSlim gate = new(1, 1);
     private IJingDiaoClient? client;
-    private JingDiaoShimProcess? shimProcess;
+    private JingDiaoShimLease? shimLease;
     private JingDiaoOptions? options;
+    private JingDiaoConnectRequest? connectRequest;
+    private int disposed;
     private string sessionId = "";
     private ConnectionState state = ConnectionState.Disconnected;
 
@@ -40,27 +42,20 @@ public sealed partial class JingDiaoDriver :
         await gate.WaitAsync(ct);
         try
         {
+            ObjectDisposedException.ThrowIf(disposed != 0, this);
             if (state == ConnectionState.Connected) return new() { Success = true };
+            await ReleaseConnectionAsync(CancellationToken.None);
             options = JingDiaoOptions.From(config);
             SetState(ConnectionState.Connecting);
 
-            if (injectedClient is null && options.AutoStartShim)
-            {
-                var alive = await ProbeShimAsync(options.ShimBaseUri, TimeSpan.FromSeconds(1), ct);
-                if (!alive)
-                {
-                    var shimPath = options.ShimPath ?? JingDiaoShimProcess.ResolveDefaultPath()
-                        ?? throw new InvalidOperationException(
-                            $"JingDiao shim is not reachable at {options.ShimBaseUri} and {JingDiaoShimProcess.ExecutableName} was not found.");
-                    shimProcess = JingDiaoShimProcess.Start(options.ShimBaseUri.ToString().TrimEnd('/'), shimPath);
-                }
-            }
+            if (injectedClient is null)
+                shimLease = await JingDiaoShimLease.AcquireAsync(options.ShimBaseUri, options.ShimPath,
+                    config.ConnectTimeout, ct, options.AutoStartShim);
 
             client = injectedClient ?? new JingDiaoIpcClient(options.ShimBaseUri);
-            if (injectedClient is null)
-                await WaitForShimReadyAsync(options.ShimBaseUri, config.ConnectTimeout, ct);
-            var result = await client.ConnectAsync(new(config.Host, options.RpcPort, options.CallbackPort,
-                options.FileUploadPort, options.FileDownloadPort, options.TimeoutMs), ct);
+            connectRequest = new(config.Host, options.RpcPort, options.CallbackPort,
+                options.FileUploadPort, options.FileDownloadPort, options.TimeoutMs);
+            var result = await client.ConnectAsync(connectRequest, ct);
             if (result.ReturnCode != 0 || string.IsNullOrWhiteSpace(result.SessionId))
                 throw new InvalidOperationException(result.ErrorMessage ?? $"JingDiao connect failed: {result.ReturnCode}");
 
@@ -70,6 +65,7 @@ public sealed partial class JingDiaoDriver :
         }
         catch (Exception ex)
         {
+            await ReleaseConnectionAsync(CancellationToken.None);
             var message = $"JingDiao shim connection failed: {ex.Message}";
             logger.LogError(ex, "{Message}", message);
             SetState(ConnectionState.Faulted, message);
@@ -80,23 +76,39 @@ public sealed partial class JingDiaoDriver :
 
     public async Task DisconnectAsync(CancellationToken ct = default)
     {
+        if (disposed == 2) return;
         await gate.WaitAsync(ct);
         try
         {
-            if (!string.IsNullOrEmpty(sessionId) && client is not null)
-                await client.DisconnectAsync(sessionId, ct);
-            sessionId = "";
-            SetState(ConnectionState.Disconnected);
+            await ReleaseConnectionAsync(ct);
         }
         finally { gate.Release(); }
     }
 
     public async Task<bool> PingAsync(CancellationToken ct = default)
     {
-        if (state != ConnectionState.Connected || client is null || string.IsNullOrEmpty(sessionId))
+        await gate.WaitAsync(ct);
+        try
+        {
+            if (disposed != 0 || state != ConnectionState.Connected || client is null || connectRequest is null)
+                return false;
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(TimeSpan.FromMilliseconds(connectRequest.TimeoutMs + 5000L));
+            try
+            {
+                if (!string.IsNullOrEmpty(sessionId)
+                    && (await client.PingAsync(sessionId, deadline.Token)).ReturnCode == 0) return true;
+            }
+            catch (HttpRequestException) { }
+            return await RestoreSessionAsync(deadline.Token);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception error)
+        {
+            logger.LogWarning(error, "JingDiao session recovery failed");
             return false;
-        try { return (await client.PingAsync(sessionId, ct)).ReturnCode == 0; }
-        catch { return false; }
+        }
+        finally { gate.Release(); }
     }
 
     public Task<WriteResult> WriteTagAsync(string address, DataType dataType, object value, CancellationToken ct = default)
@@ -108,40 +120,9 @@ public sealed partial class JingDiaoDriver :
 
     public async ValueTask DisposeAsync()
     {
-        await DisconnectAsync();
-        shimProcess?.Dispose();
-        shimProcess = null;
-        gate.Dispose();
-    }
-
-    private static async Task<bool> ProbeShimAsync(Uri baseUri, TimeSpan timeout, CancellationToken ct)
-    {
-        using var http = new HttpClient { BaseAddress = baseUri, Timeout = timeout };
-        try
-        {
-            using var response = await http.GetAsync("/health", ct);
-            return response.IsSuccessStatusCode;
-        }
-        catch { return false; }
-    }
-
-    private static async Task WaitForShimReadyAsync(Uri baseUri, TimeSpan connectTimeout, CancellationToken ct)
-    {
-        var timeout = connectTimeout > TimeSpan.Zero ? connectTimeout : TimeSpan.FromSeconds(10);
-        var deadline = DateTime.UtcNow + timeout;
-        using var http = new HttpClient { BaseAddress = baseUri, Timeout = TimeSpan.FromMilliseconds(800) };
-        Exception? last = null;
-        while (DateTime.UtcNow < deadline)
-        {
-            try
-            {
-                using var response = await http.GetAsync("/health", ct);
-                if (response.IsSuccessStatusCode) return;
-            }
-            catch (Exception ex) { last = ex; }
-            await Task.Delay(200, ct);
-        }
-        throw new TimeoutException($"JingDiao shim at {baseUri} did not respond on /health: {last?.Message}");
+        if (Interlocked.CompareExchange(ref disposed, 1, 0) != 0) return;
+        try { await DisconnectAsync(); }
+        finally { Volatile.Write(ref disposed, 2); }
     }
 
     private void EnsureConnected()

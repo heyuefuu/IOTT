@@ -12,6 +12,8 @@ public sealed class JingDiaoShimProcess : IDisposable
 
     private JingDiaoShimProcess(Process? process) => this.process = process;
 
+    public bool HasExited => process is null || process.HasExited;
+
     public static JingDiaoShimProcess Start(string baseUrl, string executablePath)
     {
         if (string.IsNullOrWhiteSpace(executablePath))
@@ -23,13 +25,16 @@ public sealed class JingDiaoShimProcess : IDisposable
 
         var startInfo = new ProcessStartInfo
         {
-            FileName = executablePath,
-            Arguments = $"--urls {baseUrl}",
+            FileName = Path.GetFullPath(executablePath),
+            WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(executablePath))!,
             UseShellExecute = false,
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden,
         };
-        return new JingDiaoShimProcess(Process.Start(startInfo));
+        startInfo.ArgumentList.Add("--urls");
+        startInfo.ArgumentList.Add(baseUrl);
+        return new JingDiaoShimProcess(Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Failed to start JingDiao shim."));
     }
 
     public static string? ResolveDefaultPath()
