@@ -16,24 +16,33 @@ public sealed class VerifyTaskAlreadyRunningException : InvalidOperationExceptio
     public VerifyTaskAlreadyRunningException() : base("任务正在执行，请勿重复提交") { }
 }
 
+public sealed class VerifyTaskCapacityException(string message) : InvalidOperationException(message);
+
 /// <summary>手动运行（控制器）与定时调度共用的任务执行入口。</summary>
 public sealed class VerifyTaskRunner : IVerifyTaskRunner
 {
+    public const int MaxConcurrentTasks = 7;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IVerifyTaskStore _store;
     private readonly IVerifyAutomationService _verifyService;
     private readonly ISystemActivityLog _activityLog;
     private readonly ConcurrentDictionary<string, byte> _runningTasks = new();
+    private readonly object _executionGate = new();
+    private readonly Dictionary<string, string?> _activeDevices = new();
+    private readonly int _maxConcurrentTasks;
 
     public VerifyTaskRunner(
         IVerifyTaskStore store,
         IVerifyAutomationService verifyService,
-        ISystemActivityLog activityLog)
+        ISystemActivityLog activityLog,
+        IConfiguration? configuration = null)
     {
         _store = store;
         _verifyService = verifyService;
         _activityLog = activityLog;
+        _maxConcurrentTasks = Math.Clamp(configuration?.GetValue<int?>("VerifyTasks:MaxConcurrentTasks")
+            ?? MaxConcurrentTasks, 1, MaxConcurrentTasks);
     }
 
     public async Task<VerifyTaskDto?> RunTaskAsync(string taskId, string trigger, CancellationToken ct)
@@ -46,25 +55,33 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
         }
         finally
         {
+            lock (_executionGate) _activeDevices.Remove(taskId);
             _runningTasks.TryRemove(taskId, out _);
         }
     }
 
     private async Task<VerifyTaskDto?> RunTaskCoreAsync(string taskId, string trigger, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         var started = DateTimeOffset.Now;
+        string? deviceId = null;
+        ArgumentException? selectionError = null;
         var task = _store.Update<VerifyTaskDto?>(rows =>
         {
             var index = rows.FindIndex(x => x.Id == taskId);
             if (index < 0) return null;
             var current = rows[index];
+            try { deviceId = ResolveDeviceId(current); }
+            catch (ArgumentException ex) { selectionError = ex; return current; }
+            ReserveExecution(taskId, deviceId);
             rows[index] = current with
             {
-                Status = "running", ExecutionTime = "", Result = "", Detail = "",
+                Status = "running", CompletedAt = null, ExecutionTime = "", Result = "", Detail = "",
             };
             return current;
         });
         if (task is null) return null;
+        if (selectionError is not null) return PersistFailure(task, started, trigger, selectionError);
 
         VerifyRunResponse response;
         try
@@ -73,7 +90,7 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
             {
                 TaskId = task.Id,
                 TaskName = task.Name,
-                DeviceId = ResolveDeviceId(task),
+                DeviceId = deviceId,
                 EvaluationCategory = task.EvaluationCategory,
                 MetricIds = task.MetricIds,
             }, ct);
@@ -143,6 +160,21 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
         if (updated is null) return null;
         _activityLog.Write("error", $"执行验证任务（{trigger}）", $"{task.Name}：{ex.Message}");
         return updated;
+    }
+
+    private void ReserveExecution(string taskId, string? deviceId)
+    {
+        var selectedDevice = string.IsNullOrEmpty(deviceId) ? null : deviceId;
+        lock (_executionGate)
+        {
+            if (_activeDevices.Count > 0 && (selectedDevice is null || _activeDevices.Values.Contains(null)))
+                throw new VerifyTaskCapacityException("全设备验证需要独占执行，请等待当前任务完成后重试");
+            if (_activeDevices.Values.Contains(selectedDevice))
+                throw new VerifyTaskCapacityException("该机床已有验证任务正在执行，请等待完成后重试");
+            if (_activeDevices.Count >= _maxConcurrentTasks)
+                throw new VerifyTaskCapacityException($"同时执行的验证任务已达上限（{_maxConcurrentTasks} 个），请稍后重试");
+            _activeDevices.Add(taskId, selectedDevice);
+        }
     }
 
     private static string? ResolveDeviceId(VerifyTaskDto task)
@@ -243,9 +275,9 @@ public sealed class VerifyTaskSchedulerHostedService : BackgroundService
     private async Task RunDueTasksAsync(CancellationToken ct)
     {
         var now = DateTimeOffset.Now;
-        foreach (var task in _store.ReadAll())
+        var dueTasks = _store.ReadAll().Where(task => IsDue(task, now));
+        await Task.WhenAll(dueTasks.Select(async task =>
         {
-            if (!IsDue(task, now)) continue;
             _logger.LogInformation("定时执行验证任务 {TaskName}（{Time}）", task.Name, task.ScheduleTime);
             try
             {
@@ -255,11 +287,15 @@ public sealed class VerifyTaskSchedulerHostedService : BackgroundService
             {
                 throw;
             }
+            catch (Exception ex) when (ex is VerifyTaskCapacityException or VerifyTaskAlreadyRunningException)
+            {
+                _logger.LogDebug("定时验证任务 {TaskId} 等待下次扫描：{Reason}", task.Id, ex.Message);
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "定时执行验证任务 {TaskId} 失败", task.Id);
             }
-        }
+        }));
     }
 
     private static bool IsDue(VerifyTaskDto task, DateTimeOffset now)

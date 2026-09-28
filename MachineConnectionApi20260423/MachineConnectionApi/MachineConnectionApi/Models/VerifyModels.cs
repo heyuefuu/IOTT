@@ -1,5 +1,7 @@
 namespace MachineConnectionApi.Models;
 
+public sealed record VerifyTaskRunResult(string TaskId, VerifyTaskDto? Task, string? Error = null);
+
 public sealed class VerifyRunRequest
 {
     public string? TaskId { get; set; }

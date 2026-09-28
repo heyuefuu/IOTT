@@ -29,10 +29,10 @@ public interface ICsConnectivityService
     Task<CsParallelTestResult> RunSameTargetParallelTestAsync(CsSameTargetParallelTestRequest request, CancellationToken ct, TimeSpan? gateWait = null);
 }
 
-/// <summary>并发压测互斥闸被占用（同一时间仅允许一个压测在跑）。</summary>
+/// <summary>目标的并发压测互斥闸被占用（不同目标允许同时压测）。</summary>
 public sealed class CsParallelTestBusyException : InvalidOperationException
 {
-    public CsParallelTestBusyException() : base("已有并发压测正在运行，请稍后重试") { }
+    public CsParallelTestBusyException() : base("该目标已有并发压测正在运行，请稍后重试") { }
 }
 
 /// <summary>
@@ -44,7 +44,6 @@ public sealed partial class CsConnectivityService : ICsConnectivityService, IDis
     private readonly ILogger<CsConnectivityService> _logger;
     private readonly object _configurationGate = new();
     private readonly string _configurationPath;
-    private readonly SemaphoreSlim _parallelTestGate = new(1, 1);
     private readonly object _ftpStorageGate = new();
     private readonly SemaphoreSlim _ftpUploadSlots = new(4, 4);
     private long _ftpStoredBytes;

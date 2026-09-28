@@ -59,10 +59,10 @@ public sealed partial class CsConnectivityService
 
     public async Task<CsParallelTestResult> RunParallelTestAsync(CsParallelTestRequest request, CancellationToken ct)
     {
-        if (!await _parallelTestGate.WaitAsync(0, ct))
-            throw new CsParallelTestBusyException();
+        var targets = GetParallelTestTargets(request);
+        await AcquireParallelTestTargetsAsync(targets, TimeSpan.Zero, ct);
         try { return await RunWithDeadlineAsync(token => RunParallelTestCoreAsync(request, token), ct); }
-        finally { _parallelTestGate.Release(); }
+        finally { ReleaseParallelTestTargets(targets); }
     }
 
     private async Task<CsParallelTestResult> RunParallelTestCoreAsync(
@@ -105,10 +105,10 @@ public sealed partial class CsConnectivityService
     public async Task<CsParallelTestResult> RunSameTargetParallelTestAsync(
         CsSameTargetParallelTestRequest request, CancellationToken ct, TimeSpan? gateWait = null)
     {
-        if (!await _parallelTestGate.WaitAsync(gateWait ?? TimeSpan.Zero, ct))
-            throw new CsParallelTestBusyException();
+        var targets = new[] { NormalizeParallelTestTarget(request.Host, request.Port) };
+        await AcquireParallelTestTargetsAsync(targets, gateWait ?? TimeSpan.Zero, ct);
         try { return await RunWithDeadlineAsync(token => RunSameTargetParallelTestCoreAsync(request, token), ct); }
-        finally { _parallelTestGate.Release(); }
+        finally { ReleaseParallelTestTargets(targets); }
     }
 
     private async Task<CsParallelTestResult> RunSameTargetParallelTestCoreAsync(

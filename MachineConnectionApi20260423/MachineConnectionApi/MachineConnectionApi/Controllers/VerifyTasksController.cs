@@ -46,10 +46,16 @@ public sealed class VerifyTasksController : ControllerBase
     [HttpPut("{id}")]
     public ActionResult<VerifyTaskDto> Update(string id, [FromBody] VerifyTaskDto input)
     {
+        var running = false;
         var item = _store.Update<VerifyTaskDto?>(rows =>
         {
             var index = rows.FindIndex(x => x.Id == id);
             if (index < 0) return null;
+            if (rows[index].Status == "running")
+            {
+                running = true;
+                return null;
+            }
             // 编辑保存不得抹掉运行留痕（前端提交体不携带这些字段）
             rows[index] = input with
             {
@@ -60,13 +66,24 @@ public sealed class VerifyTasksController : ControllerBase
             };
             return rows[index];
         });
+        if (running) return Conflict(new { error = "任务正在执行，请完成后再编辑" });
         return item is null ? NotFound() : Ok(item);
     }
 
     [HttpDelete("{id}")]
     public IActionResult Delete(string id)
     {
-        var removed = _store.Update(rows => rows.RemoveAll(x => x.Id == id) > 0);
+        var running = false;
+        var removed = _store.Update(rows =>
+        {
+            if (rows.Any(task => task.Id == id && task.Status == "running"))
+            {
+                running = true;
+                return false;
+            }
+            return rows.RemoveAll(x => x.Id == id) > 0;
+        });
+        if (running) return Conflict(new { error = "任务正在执行，请完成后再删除" });
         return removed ? NoContent() : NotFound();
     }
 
@@ -82,6 +99,35 @@ public sealed class VerifyTasksController : ControllerBase
         {
             return Conflict(new { error = ex.Message });
         }
+        catch (VerifyTaskCapacityException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("run-batch")]
+    public async Task<ActionResult<IReadOnlyList<VerifyTaskRunResult>>> RunBatch(
+        [FromBody] string[] taskIds, CancellationToken ct)
+    {
+        if (taskIds.Length is < 1 or > VerifyTaskRunner.MaxConcurrentTasks
+            || taskIds.Any(string.IsNullOrWhiteSpace)
+            || taskIds.Distinct(StringComparer.Ordinal).Count() != taskIds.Length)
+            return BadRequest(new { error = "请选择 1–7 个不同的验证任务" });
+
+        var results = await Task.WhenAll(taskIds.Select(async taskId =>
+        {
+            try
+            {
+                var task = await _runner.RunTaskAsync(taskId, "手动", ct);
+                return new VerifyTaskRunResult(taskId, task, task is null ? "验证任务不存在" : null);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                return new VerifyTaskRunResult(taskId, null, ex.Message);
+            }
+        }));
+        return Ok(results);
     }
 
     /// <summary>

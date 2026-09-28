@@ -75,6 +75,12 @@ export interface VerifyTaskDto {
 
 const enc = encodeURIComponent;
 
+export interface VerifyTaskRunResult {
+    taskId: string;
+    task: VerifyTaskDto | null;
+    error: string | null;
+}
+
 export const machineConnectionVerifyApi = {
     async run(body: VerifyRunRequest): Promise<VerifyRunResponse> {
         const res = await client.post<VerifyRunResponse>("/api/verify/run", body);
@@ -102,6 +108,11 @@ export const machineConnectionVerifyApi = {
 
     async runTask(id: string): Promise<VerifyTaskDto> {
         const res = await client.post<VerifyTaskDto>(`/api/verify/tasks/${enc(id)}/run`);
+        return res.data;
+    },
+
+    async runTasks(taskIds: string[]): Promise<VerifyTaskRunResult[]> {
+        const res = await client.post<VerifyTaskRunResult[]>("/api/verify/tasks/run-batch", taskIds);
         return res.data;
     },
 

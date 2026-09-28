@@ -2,13 +2,15 @@
   <div class="task-workbench">
     <h2 class="page-title">验证任务管理</h2>
     <el-card shadow="never">
-      <template #header><div class="card-header"><span>任务列表</span><div><el-button :icon="Refresh" :loading="loading" @click="loadPage">刷新</el-button><el-button type="primary" :icon="Plus" @click="addTask">创建任务</el-button></div></div></template>
+      <template #header><div class="card-header"><span>任务列表</span><div><el-button :icon="Refresh" :loading="loading" @click="loadPage">刷新</el-button><el-button type="success" :disabled="!selectedTaskIds.length" @click="executeSelectedTasks">并行执行{{ selectedTaskIds.length ? `（${selectedTaskIds.length}）` : '' }}</el-button><el-button type="primary" :icon="Plus" @click="addTask">创建任务</el-button></div></div></template>
       <el-form :inline="true" :model="filters" class="task-filters" @submit.prevent="search">
         <el-form-item label="任务状态"><el-select v-model="filters.status" placeholder="全部" clearable><el-option label="全部" value="" /><el-option v-for="status in ['pending', 'running', 'completed', 'failed']" :key="status" :value="status" :label="taskStatusLabels[status]" /></el-select></el-form-item>
         <el-form-item label="关键词"><el-input v-model="filters.keyword" clearable placeholder="任务名称、编号或机床" @keyup.enter="search" /></el-form-item>
         <el-form-item><el-button type="primary" :icon="Search" @click="search">搜索</el-button><el-button @click="resetSearch">重置</el-button></el-form-item>
       </el-form>
-      <el-table v-loading="loading" :data="filteredTasks" row-key="id" :expand-row-keys="expandedRows" border empty-text="暂无验证任务" @expand-change="onExpand">
+      <p class="execution-hint">勾选不同目标的任务后点击“并行执行”，最多同时运行 {{ maxParallelTasks }} 个；当前运行 {{ runningTaskCount }} / {{ maxParallelTasks }} 个。同一目标请分开执行。</p>
+      <el-table v-loading="loading" :data="filteredTasks" row-key="id" :expand-row-keys="expandedRows" border empty-text="暂无验证任务" @expand-change="onExpand" @selection-change="onSelectionChange">
+        <el-table-column type="selection" width="48" reserve-selection :selectable="canSelectTask" />
         <el-table-column type="expand"><template #default="scope"><task-results :task="scope.row" :machine="machineFor(scope.row)" /></template></el-table-column>
         <el-table-column prop="id" label="任务ID" width="135" show-overflow-tooltip />
         <el-table-column prop="name" label="任务名称" min-width="180" show-overflow-tooltip />
@@ -20,7 +22,7 @@
           <template #default="scope">
             <div class="row-actions">
               <el-button type="primary" link :disabled="scope.row.status === 'running'" @click="editTask(scope.row)">编辑</el-button>
-              <el-button type="success" link :loading="executingId === scope.row.id" :disabled="Boolean(executingId) || scope.row.status === 'running'" @click="executeTask(scope.row)">{{ scope.row.lastRunJson ? '重新执行' : '执行' }}</el-button>
+              <el-button type="success" link :loading="executingIds.has(scope.row.id)" :disabled="executingIds.has(scope.row.id) || scope.row.status === 'running'" @click="executeTask(scope.row)">{{ scope.row.lastRunJson ? '重新执行' : '执行' }}</el-button>
               <el-button type="primary" link :disabled="!scope.row.lastRunJson" @click="viewResult(scope.row)">查看结果</el-button>
               <el-button type="warning" link :loading="exportingId === scope.row.id" :disabled="!scope.row.lastRunJson || scope.row.status === 'running'" @click="exportTask(scope.row)">导出Excel</el-button>
               <el-tooltip :disabled="canImport(scope.row)" content="需先执行任务，旧版结果需重新执行以保存机床和指标快照"><span><el-button type="primary" link :disabled="!canImport(scope.row) || scope.row.status === 'running'" @click="importKnowledge(scope.row)">导入知识库</el-button></span></el-tooltip>
@@ -46,7 +48,8 @@ import taskEditor from './taskEditor.vue';
 import taskResults from './taskResults.vue';
 import { taskMetricSummary, taskStatusLabels, taskStatusType, taskTime } from './taskModel';
 import { useTaskWorkbench } from './taskState';
-const { tasks, machines, metrics, loading, saving, executingId, exportingId, editorVisible, resultVisible,
+const { tasks, machines, metrics, loading, saving, executingIds, selectedTaskIds, runningTaskCount, maxParallelTasks,
+  isTaskRunning, onSelectionChange, executeSelectedTasks, exportingId, editorVisible, resultVisible,
   draft, selectedTask, expandedRows, machineFor, metricsFor, selectCategory, loadPage, addTask, editTask, saveTask, executeTask, deleteTask, viewResult, exportTask, canImport, importKnowledge } = useTaskWorkbench();
 const filters = reactive({ status: '', keyword: '' });
 const applied = ref({ status: '', keyword: '' });
@@ -59,6 +62,7 @@ const filteredTasks = computed(() => tasks.value.filter(task => {
 function search() { applied.value = { ...filters }; expandedRows.value = []; }
 function resetSearch() { Object.assign(filters, { status: '', keyword: '' }); search(); }
 function onExpand(_row: VerifyTaskDto, expanded: VerifyTaskDto[]) { expandedRows.value = expanded.map(task => task.id); }
+function canSelectTask(task: VerifyTaskDto) { return !isTaskRunning(task); }
 onMounted(loadPage);
 </script>
 
@@ -67,6 +71,7 @@ onMounted(loadPage);
 .card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .task-filters .el-select { width: 150px; }
 .task-filters .el-input { width: 240px; }
+.execution-hint { margin: 0 0 14px; color: var(--el-text-color-secondary); font-size: 13px; }
 .row-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .row-actions .el-button + .el-button { margin-left: 0; }
 .result-dialog { max-height: 72vh; overflow-y: auto; }
