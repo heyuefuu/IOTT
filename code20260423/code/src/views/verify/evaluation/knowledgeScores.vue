@@ -39,13 +39,10 @@
           <el-table-column label="得分 (0–100)" width="210">
             <template #default="scope">
               <span v-if="readonly">{{ formatScore(record.scores[scope.row.id]) }}</span>
-              <div v-else class="score-inputs">
-                <el-select :model-value="record.scores[scope.row.id] ?? undefined" clearable placeholder="快捷评分 / 待评分" aria-label="文字评分档位" @update:model-value="setScore(scope.row.id, $event)">
-                  <el-option v-for="option in scoreOptions" :key="option.value" :value="option.value" :label="option.label" />
-                  <el-option v-if="isCustomScore(record.scores[scope.row.id])" :value="record.scores[scope.row.id]!" :label="`${record.scores[scope.row.id]} · 自定义`" />
-                </el-select>
-                <el-input-number :model-value="record.scores[scope.row.id] ?? undefined" :min="0" :max="100" controls-position="right" placeholder="自定义小数分 / 留空" aria-label="自定义得分" @update:model-value="setScore(scope.row.id, $event)" />
-              </div>
+              <el-select v-else :model-value="record.scores[scope.row.id] ?? undefined" clearable placeholder="待评分" aria-label="得分" @update:model-value="setScore(scope.row.id, $event)">
+                <el-option v-for="option in scoreOptions" :key="option.value" :value="option.value" :label="option.label" />
+                <el-option v-if="isCustomScore(record.scores[scope.row.id])" :value="record.scores[scope.row.id]!" :label="`${record.scores[scope.row.id]} 分`" />
+              </el-select>
             </template>
           </el-table-column>
           <el-table-column label="权重 (%)" width="140">
@@ -96,7 +93,6 @@ function isCustomScore(value: number | null | undefined) { return value != null 
 .subtotal { margin-left: auto; color: var(--el-text-color-secondary); font-size: 13px; }
 .score-table { width: 100%; }
 .score-table :deep(.el-input-number) { width: 100%; }
-.score-inputs { display: grid; gap: 6px; }
 .item-name { text-decoration: underline dotted var(--el-border-color); text-underline-offset: 4px; }
 .item-threshold { margin-top: 4px; color: var(--el-text-color-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .multiline { white-space: pre-wrap; overflow-wrap: anywhere; }
