@@ -390,7 +390,7 @@ const quickAccessItems = ref([
 	{ title: "设备配置", description: "PLC 真实设备配置", icon: Cpu, path: "/plc/device", color: "#409EFF" },
 	{ title: "状态监控", description: "机器人真实设备状态", icon: Operation, path: "/robot/status", color: "#67C23A" },
 	{ title: "数据采集", description: "CNC 设备、点位、读写和采集", icon: Monitor, path: "/industrial/device", color: "#E6A23C" },
-	{ title: "任务管理", description: "连接并发能力验证", icon: Connection, path: "/parallel", color: "#F56C6C" },
+	{ title: "任务管理", description: "创建并执行指标验证任务", icon: Connection, path: "/verify/task", color: "#F56C6C" },
 ]);
 
 const modules = ref([
@@ -398,7 +398,7 @@ const modules = ref([
 	{ title: "PLC 通讯", description: "PLC 设备配置、地址浏览和读写", icon: Cpu, path: "/plc/device", status: "active", features: ["真实接口"] },
 	{ title: "机器人通讯", description: "机器人设备配置、数据浏览和读写", icon: Operation, path: "/robot/device", status: "active", features: ["真实接口"] },
 	{ title: "Client/Server", description: "客户端数据源和服务端管理", icon: Files, path: "/cs/client", status: "active", features: ["真实接口"] },
-	{ title: "验证管理", description: "验证任务、指标、模板和数据可视化", icon: Document, path: "/verify/task", status: "active", features: ["任务持久化", "指标管理", "报表模板"] },
+	{ title: "验证管理", description: "机床设备、验证任务和指标管理", icon: Document, path: "/verify/task", status: "active", features: ["机床设备", "任务管理", "指标管理"] },
 	{ title: "系统管理", description: "日志查询、导出与用户权限管理", icon: Setting, path: "/system/log", status: "active", features: ["日志审计", "权限管理"] },
 ]);
 
@@ -457,7 +457,7 @@ const handleDeviceConfig = (device: { type: string }) => {
 	else if (device.type === "robot") router.push("/robot/device");
 	else router.push("/industrial/device");
 };
-const handleDeviceReport = () => router.push("/verify/report");
+const handleDeviceReport = () => router.push("/verify/task");
 
 onMounted(() => {
 	void loadDashboard();

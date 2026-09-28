@@ -153,12 +153,9 @@ const rawMenuItems = [
 		label: "验证管理",
 		icon: Document,
 		subItems: [
-			{ path: "/industrial/property", label: "机床属性" },
-			{ path: "/parallel", label: "并行连接验证" },
+			{ path: "/industrial/property", label: "机床设备" },
 			{ path: "/verify/task", label: "任务管理" },
 			{ path: "/verify/metric", label: "指标管理" },
-			{ path: "/verify/report", label: "报表模板" },
-			{ path: "/verify/visualization", label: "数据可视化" },
 		],
 	},
 	{
