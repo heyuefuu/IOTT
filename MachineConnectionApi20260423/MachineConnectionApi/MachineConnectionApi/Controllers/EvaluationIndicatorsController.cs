@@ -20,7 +20,7 @@ public sealed class EvaluationIndicatorsController : ControllerBase
     [HttpPost("attachments")]
     [RequestSizeLimit(MaxAttachmentBytes + 65536)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxAttachmentBytes + 65536)]
-    public async Task<ActionResult<EvaluationFile>> Upload([FromForm] IFormFile file, CancellationToken cancellationToken)
+    public async Task<ActionResult<EvaluationFile>> Upload(IFormFile file, CancellationToken cancellationToken)
     {
         if (file is null || file.Length <= 0 || file.Length > MaxAttachmentBytes)
             return BadRequest(new { message = "请选择有效测试文件，单个文件不超过 100 MB。" });
