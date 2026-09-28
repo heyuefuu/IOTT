@@ -9,6 +9,7 @@ public sealed class KnowledgeConflictException(string message) : Exception(messa
 public sealed partial class EvaluationKnowledgeStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const int MaxTextCharacters = 10000;
     private readonly JsonFileStore<KnowledgeRecord> _records;
     private readonly EvaluationIndicatorStore _indicators;
     private readonly IVerifyTaskStore _tasks;
@@ -75,6 +76,13 @@ public sealed partial class EvaluationKnowledgeStore
         if (!DateOnly.TryParseExact(input.TestDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
             throw new ArgumentException("测试日期格式应为 YYYY-MM-DD。");
         if (input.DataSource is not ("manual" or "sync" or "import")) throw new ArgumentException("数据来源无效。");
+        if (input.DataSource == "sync")
+        {
+            if (string.IsNullOrWhiteSpace(input.SyncTaskId) || string.IsNullOrWhiteSpace(input.SyncRunId))
+                throw new ArgumentException("任务同步记录必须包含任务及运行来源。");
+        }
+        else if (!string.IsNullOrEmpty(input.SyncTaskId) || !string.IsNullOrEmpty(input.SyncRunId))
+            throw new ArgumentException("非任务同步记录不能指定任务运行来源。");
         if (input.CategoryWeights is null || input.SubCategoryWeights is null || input.Weights is null
             || input.Scores is null || input.TestResults is null || input.Remarks is null)
             throw new ArgumentException("评价评分数据不完整。");
@@ -95,7 +103,7 @@ public sealed partial class EvaluationKnowledgeStore
             throw new ArgumentException("评分数据包含不属于当前快照的指标。");
         if (input.Scores.Values.Any(score => score.HasValue && (!double.IsFinite(score.Value) || score < 0 || score > 100)))
             throw new ArgumentException("评分应为 0 到 100 之间的数字或留空。");
-        if (input.TestResults.Values.Concat(input.Remarks.Values).Any(value => value is null || value.Length > 10000))
+        if (input.TestResults.Values.Concat(input.Remarks.Values).Any(value => value is null || value.Length > MaxTextCharacters))
             throw new ArgumentException("测试结果及备注最多支持 10000 个字符。");
         double total = 0;
         var complete = true;

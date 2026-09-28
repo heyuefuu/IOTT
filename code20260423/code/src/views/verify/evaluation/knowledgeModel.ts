@@ -13,6 +13,43 @@ export const basicFields = [
 ] as const;
 
 export const sourceLabels = { manual: '手工录入', sync: '任务同步', import: 'Excel导入' };
+export const categoryLabels = { machine: '机床评价', machining: '加工评价' };
+export const scoreOptions = [
+  { value: 100, label: '100 · 完全满足' },
+  { value: 80, label: '80 · 基本满足' },
+  { value: 60, label: '60 · 部分满足' },
+  { value: 0, label: '0 · 不满足' },
+];
+
+/** Build a new record from the new run; never carry a historical snapshot or provenance forward. */
+export function mergeTaskDraft(previous: KnowledgeRecord, synced: KnowledgeRecord) {
+  const target = structuredClone(synced);
+  target.id = '';
+  target.version = 0;
+  target.createdAt = '';
+  target.updatedAt = '';
+  for (const field of basicFields) {
+    if (previous[field.key]?.trim()) target[field.key] = previous[field.key];
+  }
+  target.conclusion = previous.conclusion;
+  target.suggestion = previous.suggestion;
+  const oldManualItems = previous.snapshot.indicators.flatMap(section => section.children)
+    .flatMap(child => child.items).filter(item => !item.metricId);
+  const newItems = target.snapshot.indicators.flatMap(section => section.children).flatMap(child => child.items);
+  const manualIds = new Set(newItems.filter(item => !item.metricId).map(item => item.id));
+  const lostItems: string[] = [];
+  for (const item of oldManualItems) {
+    if (manualIds.has(item.id)) {
+      target.scores[item.id] = previous.scores[item.id] ?? null;
+      target.testResults[item.id] = previous.testResults[item.id] ?? '';
+      target.remarks[item.id] = previous.remarks[item.id] ?? '';
+    } else if (previous.scores[item.id] != null || previous.testResults[item.id] || previous.remarks[item.id]) {
+      lostItems.push(item.name);
+    }
+  }
+  const syncedCount = newItems.filter(item => item.metricId && Object.prototype.hasOwnProperty.call(target.testResults, item.id)).length;
+  return { target, syncedCount, lostItems };
+}
 
 export function createDraft(config: EvaluationConfig): KnowledgeRecord {
   const now = new Date();
@@ -42,6 +79,7 @@ export function createDraft(config: EvaluationConfig): KnowledgeRecord {
 export function scoreSummary(record: KnowledgeRecord) {
   const subScores: Record<string, number | null> = {};
   const categoryScores: Record<string, number | null> = {};
+  const categoryContributions: Record<string, number | null> = {};
   let total = 0;
   let pending = false;
   for (const category of record.snapshot.indicators) {
@@ -66,9 +104,10 @@ export function scoreSummary(record: KnowledgeRecord) {
     categoryScores[category.id] = categoryPending ? null : categoryScore;
     const weight = record.categoryWeights[category.id] ?? category.weight;
     if (weight > 0 && categoryPending) pending = true;
+    categoryContributions[category.id] = weight === 0 ? 0 : categoryPending ? null : categoryScore * weight / 100;
     total += categoryScore * weight / 100;
   }
-  return { total: pending ? null : Math.round(total * 10) / 10, subScores, categoryScores };
+  return { total: pending ? null : Math.round(total * 10) / 10, subScores, categoryScores, categoryContributions };
 }
 
 export function weightErrors(record: KnowledgeRecord): string[] {
@@ -90,8 +129,8 @@ export function weightErrors(record: KnowledgeRecord): string[] {
   return errors;
 }
 
-export function formatScore(score: number | null | undefined): string {
-  return score == null ? '待评分' : score.toFixed(1);
+export function formatScore(score: number | null | undefined, digits = 1): string {
+  return score == null || !Number.isFinite(score) ? '待评分' : score.toFixed(digits);
 }
 
 export function gradeLabel(score: number | null | undefined): string {

@@ -12,7 +12,7 @@ using IndustrialIoT.Protocols.Registration;
 using Microsoft.Extensions.Logging;
 
 [ProtocolDriver(ProtocolType.FTP, "FTP", "*")]
-public class FtpTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSpaceBrowser
+public partial class FtpTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSpaceBrowser
 {
     private readonly ILogger<FtpTransferDriver> _logger;
     private AsyncFtpClient? _client;

@@ -32,7 +32,7 @@
 						<el-button type="primary" :icon="Plus" :disabled="!config || saving" @click="add('section')">添加一级分类</el-button>
 						<el-button :disabled="!config" @click="setExpanded(true)">全部展开</el-button>
 						<el-button :disabled="!config" @click="setExpanded(false)">全部折叠</el-button>
-					</div><span class="muted">同级权重合计应为 100%</span>
+					</div><span class="muted">同级权重差值 &lt; 2 时补足最后一项；显著不平衡可保存为草稿</span>
 				</div></template>
 				<el-alert v-if="weightIssues.length" type="warning" :closable="false" show-icon class="weight-alert"
 					:title="`${weightIssues.length} 组同级权重未达到 100%，请调整后用于评价`">
@@ -50,9 +50,21 @@
 							<div v-if="!weightBalanced(row.siblingWeight)" class="weight-warning">同级合计 {{ row.siblingWeight }}%</div>
 						</template>
 					</el-table-column>
+					<el-table-column label="达标阈值" min-width="170">
+						<template #default="{ row }">
+							<el-button v-if="row.level === 'item'" link type="primary" :disabled="saving" @click="edit(row)">
+								{{ thresholdSummary(row.node) }}
+							</el-button>
+							<span v-else class="muted">—</span>
+						</template>
+					</el-table-column>
 					<el-table-column label="项目描述 / 评价方法" min-width="340">
 						<template #default="{ row }">
-							<template v-if="row.level === 'item'"><div class="metric-description">{{ row.node.desc || '—' }}</div><div class="scoring-method"><strong>评分标准：</strong>{{ row.node.method || '—' }}</div></template>
+							<template v-if="row.level === 'item'">
+								<div class="metric-description">{{ row.node.desc || '—' }}</div>
+								<div class="scoring-method"><strong>文字说明（不执行）：</strong>{{ row.node.method || '—' }}</div>
+								<div class="scoring-method"><strong>当前结构化规则：</strong>{{ ruleSummary(row.node) }}</div>
+							</template>
 							<span v-else class="muted">{{ row.level === 'section' ? '一级分类' : `二级分类（归属：${row.parentName}）` }}</span>
 						</template>
 					</el-table-column>
@@ -82,7 +94,7 @@
 			</el-card>
 		</div>
 		<MetricEditor :target="editing" @close="editing = null" @save="saveEdit" />
-		<el-dialog v-model="standardVisible" title="程序识别标准（JSON）" width="min(800px, 94vw)">
+		<el-dialog v-model="standardVisible" title="评价规则与测试依据（JSON）" width="min(800px, 94vw)">
 			<pre class="standard-json">{{ standardJson }}</pre>
 			<template #footer><el-button @click="standardVisible = false">关闭</el-button><el-button type="primary" @click="copyStandard">复制 JSON</el-button></template>
 		</el-dialog>
@@ -97,7 +109,8 @@ import { Download, Plus } from "@element-plus/icons-vue";
 import { isAxiosError } from "axios";
 import { evaluationApi, type EvaluationCategory, type EvaluationConfig, type EvaluationFile, type EvaluationItem } from "@/api/evaluation";
 import MetricEditor from "./evaluation/metricEditor.vue";
-import { clone, createMetric, metricRows, removeMetric, sumWeights, updateMetric, weightBalanced, type MetricEdit, type MetricLevel, type MetricRow } from "./evaluation/metricTree";
+import { clone, createMetric, metricRows, normalizeWeights, removeMetric, sumWeights, updateMetric, weightBalanced, type MetricEdit, type MetricLevel, type MetricRow } from "./evaluation/metricTree";
+import { ruleSummary, thresholdSummary } from "./evaluation/automationRules";
 
 const category = ref<EvaluationCategory>("machine");
 const configs = ref<Partial<Record<EvaluationCategory, EvaluationConfig>>>({});
@@ -160,12 +173,17 @@ async function saveConfig() {
 	const currentCategory = category.value;
 	saving.value = true;
 	try {
+		normalizeWeights(config.value.indicators);
 		configs.value[currentCategory] = await evaluationApi.saveConfig(clone(config.value));
 		dirty.value[currentCategory] = false;
 		errorMessage.value = "";
 		ElMessage.success("评价指标配置已保存");
 	} catch (error) {
-		errorMessage.value = isAxiosError(error) && error.response?.status === 409 ? "配置已被其他操作更新，当前草稿已保留；请先导出草稿，再刷新后重新修改" : "配置保存失败，当前草稿已保留，请重试保存";
+		errorMessage.value = isAxiosError(error) && error.response?.status === 409
+			? "配置已被其他操作更新，当前草稿已保留；请先导出草稿，再刷新后重新修改"
+			: isAxiosError(error) && typeof error.response?.data?.message === "string"
+				? `${error.response.data.message} 当前草稿已保留。`
+				: "配置保存失败，当前草稿已保留，请重试保存";
 	} finally { saving.value = false; }
 }
 function add(level: MetricLevel, parentId?: string) {
@@ -187,6 +205,7 @@ async function saveEdit(target: MetricEdit) {
 }
 
 async function weightChanged(row: MetricRow) {
+	if (saving.value || loading.value) return;
 	if (!Number.isFinite(row.node.weight)) row.node.weight = 0;
 	dirty.value[category.value] = true;
 	await saveConfig();
@@ -229,10 +248,12 @@ async function download(file: EvaluationFile) {
 
 function viewStandard(item: EvaluationItem) {
 	standardJson.value = JSON.stringify({
-		indicator_id: item.id, indicator_name: item.name, category: category.value,
-		test_type: item.evidenceType, test_files: item.files.map(file => file.name),
-		selected_protocols: item.protocols, standards: item.standards,
-		scoring_rules: item.scoring, weight: item.weight,
+		indicator_id: item.id, indicator_name: item.name, category: category.value, metricId: item.metricId ?? null,
+		test_type: item.evidenceType, test_files: item.files,
+		selected_protocols: item.protocols, protocols_note: "待评价标准集合，不代表已支持或已通信成功", standards: item.standards,
+		automation: item.automation ?? null, automation_summary: ruleSummary(item),
+		manual_pass_rule: item.manualPassRule ?? null, threshold_summary: thresholdSummary(item),
+		legacy_scoring_text: item.scoring, legacy_text_note: "仅展示，不解析为自动测试规则", weight: item.weight,
 	}, null, 2);
 	standardVisible.value = true;
 }

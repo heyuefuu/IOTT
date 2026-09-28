@@ -34,6 +34,13 @@ public sealed record KnowledgeRecord
 public sealed record KnowledgeTask(
     string Id, string Name, string MachineName, string MachineNo,
     string MachineModel, string ControlSystem, string TestDate, string Status, string Result,
-    string Category = "machine");
+    string Category = "machine")
+{
+    public IReadOnlyList<VerifyMetricResult> Metrics { get; init; } = [];
+    /// <summary>Simple mean of the selected run metrics, not the knowledge record's weighted score.</summary>
+    public double? TotalScore { get; init; }
+    /// <summary>0–100; null if any selected metric has no configured, evidenced acceptance decision.</summary>
+    public double? PassRate { get; init; }
+}
 
 public sealed record KnowledgeImportResult(int Total, int Success, int Failed, IReadOnlyList<string> Errors);

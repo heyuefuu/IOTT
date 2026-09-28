@@ -22,15 +22,20 @@
         <div class="card-header">
           <span>评价记录列表</span>
           <div class="record-actions">
+            <el-select :model-value="currentCategory" :disabled="categoryLoading || syncing || saving" aria-label="新增评价及模板类别" style="width: 135px" @change="changeCategory">
+              <el-option v-for="(label, category) in categoryLabels" :key="category" :value="category" :label="label" />
+            </el-select>
             <el-button :icon="Refresh" :loading="loading" @click="loadRecords">刷新</el-button>
-            <el-button :icon="Download" :loading="exporting" @click="downloadTemplate">下载模板</el-button>
+            <el-button :icon="Download" :loading="exporting" @click="downloadTemplate(currentCategory)">下载模板</el-button>
             <el-button :icon="Upload" @click="importVisible = true">Excel导入</el-button>
-            <el-button type="success" plain @click="addRecord(true)">同步测试任务结果</el-button>
-            <el-button type="primary" :icon="Plus" @click="addRecord()">新增评价记录</el-button>
+            <el-button type="success" plain :disabled="categoryLoading || syncing" @click="addRecord(true)">同步测试任务结果</el-button>
+            <el-button type="primary" :icon="Plus" :loading="categoryLoading" @click="addRecord()">新增评价记录</el-button>
           </div>
         </div>
       </template>
-      <el-table v-loading="loading" :data="pageRecords" border row-key="id" empty-text="暂无评价记录，可新增记录或同步测试任务结果">
+      <el-table v-loading="loading" :data="pageRecords" border row-key="id" empty-text="暂无评价记录，可新增记录或同步测试任务结果" @selection-change="selectedRecords = $event">
+        <el-table-column type="selection" width="48" :reserve-selection="true" />
+        <el-table-column label="评价类别" width="100"><template #default="scope">{{ categoryLabels[scope.row.category as keyof typeof categoryLabels] }}</template></el-table-column>
         <el-table-column prop="machineName" label="机床名称" min-width="140" show-overflow-tooltip />
         <el-table-column prop="machineNo" label="机床编号" min-width="160" show-overflow-tooltip />
         <el-table-column prop="machineModel" label="机床型号" min-width="120" show-overflow-tooltip />
@@ -48,11 +53,11 @@
           </template>
         </el-table-column>
       </el-table>
-      <div class="pagination-bar"><el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next" :total="filteredRecords.length" /></div>
+      <div class="pagination-bar"><span class="selection-count">已选 {{ selectedCount }} 条（表头可全选本页）</span><el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next" :total="filteredRecords.length" /></div>
     </el-card>
-    <knowledge-editor v-model:visible="editorVisible" :draft="draft" :saving="saving" @save="saveRecord" @sync="taskVisible = true" />
+    <knowledge-editor v-model:visible="editorVisible" :draft="draft" :saving="saving" :busy="syncing || categoryLoading" @save="saveRecord" @sync="taskVisible = true" @category-change="changeCategory" />
     <knowledge-details v-model:visible="detailVisible" :record="detail" :exporting="exporting" @export="format => exportRecord(detail, format)" />
-    <knowledge-transfer v-model:task-visible="taskVisible" v-model:import-visible="importVisible" :syncing="syncing" :category="draft?.category" @sync="syncTask" @imported="loadRecords" />
+    <knowledge-transfer v-model:task-visible="taskVisible" v-model:import-visible="importVisible" :syncing="syncing" :category="editorVisible ? draft?.category : currentCategory" :resyncing="Boolean(draft?.id)" @sync="syncTask" @imported="loadRecords" />
   </div>
 </template>
 
@@ -63,10 +68,13 @@ import { Download, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue
 import knowledgeEditor from './evaluation/knowledgeEditor.vue';
 import knowledgeDetails from './evaluation/knowledgeDetails.vue';
 import knowledgeTransfer from './evaluation/knowledgeTransfer.vue';
-import { basicFields, formatScore, sourceLabels } from './evaluation/knowledgeModel';
+import { basicFields, categoryLabels, formatScore, sourceLabels } from './evaluation/knowledgeModel';
+import type { KnowledgeRecord } from '@/api/evaluation';
 import { useKnowledgeRecords } from './evaluation/knowledgeState';
-const { records, loading, saving, exporting, syncing, editorVisible, detailVisible, taskVisible, importVisible,
-  draft, detail, loadRecords, addRecord, editRecord, viewRecord, openTaskDraft, saveRecord, deleteRecord, downloadTemplate, exportRecord, syncTask } = useKnowledgeRecords();
+const { records, loading, saving, exporting, syncing, categoryLoading, currentCategory, editorVisible, detailVisible, taskVisible, importVisible,
+  draft, detail, loadRecords, changeCategory, addRecord, editRecord, viewRecord, openTaskDraft, saveRecord, deleteRecord, downloadTemplate, exportRecord, syncTask } = useKnowledgeRecords();
+const selectedRecords = ref<KnowledgeRecord[]>([]);
+const selectedCount = computed(() => selectedRecords.value.filter(selected => records.value.some(record => record.id === selected.id)).length);
 const route = useRoute();
 watch(() => route.query.taskId, taskId => { if (typeof taskId === 'string' && taskId) void openTaskDraft(taskId); }, { immediate: true });
 const searchFields = basicFields.slice(0, 6);
@@ -113,7 +121,8 @@ onMounted(loadRecords);
 .card-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .record-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .record-actions .el-button + .el-button { margin-left: 0; }
-.pagination-bar { margin-top: 20px; overflow-x: auto; }
+.pagination-bar { margin-top: 20px; overflow-x: auto; align-items: center; gap: 16px; }
+.selection-count { margin-right: auto; color: var(--el-text-color-secondary); font-size: 13px; white-space: nowrap; }
 @media (max-width: 1400px) { .filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .stats-grid, .filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

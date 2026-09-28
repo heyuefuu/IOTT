@@ -6,24 +6,29 @@ using IndustrialIoT.Domain.Interfaces;
 using IndustrialIoT.Host.Services;
 using IndustrialIoT.Protocols.Abstractions;
 using IndustrialIoT.Protocols.Models;
+using IndustrialIoT.Protocols.Registration;
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
 [Route("api/data")]
-public class DataReadWriteController : ControllerBase
+public partial class DataReadWriteController : ControllerBase
 {
     private readonly IPooledDriverAccessor _drivers;
     private readonly IDeviceRepository _deviceRepo;
     private readonly ILogger<DataReadWriteController> _logger;
+    private readonly VerificationDriverExecutor? _verification;
 
     public DataReadWriteController(
         IPooledDriverAccessor drivers,
         IDeviceRepository deviceRepo,
-        ILogger<DataReadWriteController> logger)
+        ILogger<DataReadWriteController> logger,
+        IProtocolDriverFactory? verificationFactory = null,
+        IServiceScopeFactory? scopes = null)
     {
         _drivers = drivers;
         _deviceRepo = deviceRepo;
         _logger = logger;
+        _verification = verificationFactory is null ? null : new VerificationDriverExecutor(deviceRepo, verificationFactory, scopes);
     }
 
     /// <summary>从设备读取点位数据</summary>
@@ -52,14 +57,27 @@ public class DataReadWriteController : ControllerBase
             });
         }
 
-        // Reuse the pooled long-lived connection — see PooledDriverAccessor
+        // Validation requests use a server-checked snapshot, never the ID-only pooled accessor.
+        if (request.Verification is not null)
+            return await ReadVerifiedTags(deviceId, request.Verification, tagRequests, ct);
+
+        // Ordinary development/collection reads retain their pooled connection and simulator use.
+        var evidence = new VerificationEvidence { Operation = "application-read" };
         var outcome = await _drivers.ExecuteAsync(
             deviceId,
-            driver => driver.ReadTagsAsync(tagRequests, ct),
+            driver =>
+            {
+                evidence = evidence with
+                {
+                    OperationAttempted = true, Protocol = driver.Protocol.ToString(),
+                    Simulated = VerificationConfiguration.IsSimulated(driver),
+                };
+                return driver.ReadTagsAsync(tagRequests, ct);
+            },
             ct);
 
         if (!outcome.Success)
-            return StatusCode(502, new { error = $"Read failed: {outcome.ErrorMessage}" });
+            return StatusCode(502, new { deviceId, error = $"Read failed: {outcome.ErrorMessage}", evidence });
 
         var values = outcome.Value!;
 
@@ -70,6 +88,7 @@ public class DataReadWriteController : ControllerBase
         return Ok(new ReadTagsResponse
         {
             DeviceId = deviceId,
+            Evidence = evidence,
             Tags = values.Select(v => new TagValueDto
             {
                 Address = v.Address,
@@ -256,6 +275,7 @@ public class DataReadWriteController : ControllerBase
 public record ReadTagsRequest
 {
     public required IReadOnlyList<TagReadRequestDto> Tags { get; init; }
+    public VerificationExpectation? Verification { get; init; }
 }
 
 public record TagReadRequestDto
@@ -268,6 +288,7 @@ public record ReadTagsResponse
 {
     public required string DeviceId { get; init; }
     public required IReadOnlyList<TagValueDto> Tags { get; init; }
+    public VerificationEvidence? Evidence { get; init; }
 }
 
 public record TagValueDto

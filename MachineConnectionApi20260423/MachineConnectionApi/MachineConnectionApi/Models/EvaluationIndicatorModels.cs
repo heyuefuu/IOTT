@@ -38,6 +38,43 @@ public sealed record EvaluationItem
     public List<string> Protocols { get; init; } = [];
     public Dictionary<string, string> Scoring { get; init; } = [];
     public string? MetricId { get; init; }
+    public EvaluationAutomationRule? Automation { get; init; }
+    public EvaluationPassRule? ManualPassRule { get; init; }
+}
+
+/// <summary>Executable rules included in snapshots; legacy scoring prose is never parsed.</summary>
+public sealed record EvaluationAutomationRule
+{
+    public string Unit { get; init; } = "";
+    public EvaluationPassRule? PassRule { get; init; }
+    public string ScoringMode { get; init; } = "bands";
+    public List<EvaluationScoreBand> ScoreBands { get; init; } = [];
+    public EvaluationTestSettings Test { get; init; } = new();
+}
+
+public sealed record EvaluationPassRule
+{
+    public string Comparison { get; init; } = "gte";
+    public double Threshold { get; init; }
+    public string Unit { get; init; } = "";
+}
+
+public sealed record EvaluationScoreBand
+{
+    public double Min { get; init; }
+    public double Score { get; init; }
+}
+
+public sealed record EvaluationTestSettings
+{
+    public double DurationMinutes { get; init; } = 30;
+    public double SampleIntervalSeconds { get; init; } = 5;
+    public int MaxConnections { get; init; } = 4;
+    public int FailureLimit { get; init; } = 3;
+    public string ConcurrencyMode { get; init; } = "devices";
+    public string ReadAddress { get; init; } = "";
+    public string ReadDataType { get; init; } = "String";
+    public string TargetDirectory { get; init; } = "/";
 }
 
 public sealed record EvaluationFile

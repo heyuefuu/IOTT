@@ -16,18 +16,36 @@ export interface VerifyRunRequest {
     deviceId?: string;
     evaluationCategory?: EvaluationCategory;
     metricIds: string[];
+    options?: VerifyRunOptions;
+}
+
+export interface VerifyRunOptions {
+    communicationRounds?: number;
+    probeTimeoutMs?: number;
+    maxParallelTargets?: number;
+    requiredMinConcurrentSuccess?: number;
+    concurrentDeviceIds?: string[] | null;
+    /** Explicit permission for isolated file-test writes; never authorizes NC execution. */
+    allowFileWrites?: boolean;
 }
 
 export interface VerifyMetricResult {
     metricId: string;
     code: string;
     name: string;
-    status: "passed" | "failed" | "pending" | "running";
+    status: "passed" | "failed" | "unrated" | "error" | "pending" | "running";
     result: string;
     value: string;
     reference: string;
     detail: string;
     evidence: string[];
+    measurement?: number | null;
+    unit?: string;
+    score?: number | null;
+    scoreReason?: string;
+    measurementSource?: string;
+    executionStatus?: "pending" | "running" | "completed" | "error" | "skipped";
+    progressPercent?: number;
 }
 
 export interface VerifyRunResponse {
@@ -40,6 +58,13 @@ export interface VerifyRunResponse {
     startedAt: string;
     completedAt: string;
     metrics: VerifyMetricResult[];
+    totalScore?: number | null;
+    scoreSummary?: string;
+    progressPercent?: number;
+    currentMetricId?: string | null;
+    completedMetricCount?: number;
+    totalMetricCount?: number;
+    optionsSnapshot?: VerifyRunOptions | null;
     evaluationSnapshot?: EvaluationConfig;
     deviceId?: string;
     machineSnapshot?: {
@@ -58,6 +83,10 @@ export interface VerifyTaskDto {
     machineId: string;
     evaluationCategory?: EvaluationCategory;
     metricIds: string[];
+    options?: VerifyRunOptions | null;
+    /** 本轮运行快照；不得用 lastRunJson 的上一轮数据冒充实时进度。 */
+    currentRunJson?: string;
+    activeRunId?: string | null;
     params: string;
     description: string;
     createdAt: string;
@@ -83,12 +112,12 @@ export interface VerifyTaskRunResult {
 
 export const machineConnectionVerifyApi = {
     async run(body: VerifyRunRequest): Promise<VerifyRunResponse> {
-        const res = await client.post<VerifyRunResponse>("/api/verify/run", body);
+        const res = await client.post<VerifyRunResponse>("/api/verify/run", body, { timeout: 2 * 60 * 60_000 });
         return res.data;
     },
 
-    async listTasks(): Promise<VerifyTaskDto[]> {
-        const res = await client.get<VerifyTaskDto[]>("/api/verify/tasks");
+    async listTasks(signal?: AbortSignal): Promise<VerifyTaskDto[]> {
+        const res = await client.get<VerifyTaskDto[]>("/api/verify/tasks", { signal, timeout: 30_000 });
         return res.data ?? [];
     },
 
@@ -107,16 +136,25 @@ export const machineConnectionVerifyApi = {
     },
 
     async runTask(id: string): Promise<VerifyTaskDto> {
-        const res = await client.post<VerifyTaskDto>(`/api/verify/tasks/${enc(id)}/run`);
+        const res = await client.post<VerifyTaskDto>(`/api/verify/tasks/${enc(id)}/run`, undefined, { timeout: 2 * 60 * 60_000 });
         return res.data;
     },
 
     async runTasks(taskIds: string[]): Promise<VerifyTaskRunResult[]> {
-        const res = await client.post<VerifyTaskRunResult[]>("/api/verify/tasks/run-batch", taskIds);
+        const res = await client.post<VerifyTaskRunResult[]>("/api/verify/tasks/run-batch", taskIds, { timeout: 2 * 60 * 60_000 });
         return res.data;
     },
 
-    /** 导出最近一次运行结果为 Excel（含实测值/参考值对比与空白「人工评分」列） */
+    /** 只等待后台预约，不随浏览器断开中断长时间测试。状态由 listTasks 轮询读取。 */
+    async startTask(id: string): Promise<VerifyTaskDto> {
+        return (await client.post<VerifyTaskDto>(`/api/verify/tasks/${enc(id)}/start`, undefined, { timeout: 30_000 })).data;
+    },
+
+    async startTasks(taskIds: string[]): Promise<VerifyTaskRunResult[]> {
+        return (await client.post<VerifyTaskRunResult[]>("/api/verify/tasks/start-batch", taskIds, { timeout: 30_000 })).data;
+    },
+
+    /** 导出最近一次已结束运行的实测、评分、配置快照及证据。 */
     async exportTaskResult(id: string): Promise<{ blob: Blob; fileName: string }> {
         const res = await client.get(`/api/verify/tasks/${enc(id)}/export`, {
             responseType: "blob",

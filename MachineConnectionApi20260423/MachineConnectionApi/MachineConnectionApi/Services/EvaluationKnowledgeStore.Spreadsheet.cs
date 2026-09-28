@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using MachineConnectionApi.Models;
 
@@ -26,14 +27,29 @@ public sealed partial class EvaluationKnowledgeStore
                         headers.Add($"{field}:{item.Id}:{item.Name}");
             }
         }
+        foreach (var section in config.Indicators)
+        {
+            headers.Add($"分类得分:{section.Id}:{section.Name}");
+            headers.Add($"分类加权贡献:{section.Id}:{section.Name}");
+            foreach (var child in section.Children)
+            {
+                headers.Add($"二级小计:{child.Id}:{child.Name}");
+                headers.Add($"二级分类内贡献:{child.Id}:{child.Name}");
+                headers.Add($"二级总分贡献:{child.Id}:{child.Name}");
+            }
+        }
+        headers.Add("评分口径");
+        var snapshotParts = SnapshotParts(config);
+        for (var index = 1; index < snapshotParts.Count; index++) headers.Add($"指标快照JSON分段:{index + 1}");
         return headers;
     }
 
     private static IReadOnlyList<object?> SpreadsheetRow(KnowledgeRecord record)
     {
+        var snapshotParts = SnapshotParts(record.Snapshot);
         var row = new List<object?> { record.MachineName, record.MachineNo, record.MachineModel, record.ControlSystem,
             record.PartName, record.PartFeature, record.TestLocation, record.TestDate, record.Tester, record.Category,
-            record.Conclusion, record.Suggestion, record.TotalScore, JsonSerializer.Serialize(record.Snapshot, JsonOptions) };
+            record.Conclusion, record.Suggestion, record.TotalScore, snapshotParts[0] };
         foreach (var section in record.Snapshot.Indicators)
         {
             row.Add(record.CategoryWeights.GetValueOrDefault(section.Id, section.Weight));
@@ -49,7 +65,30 @@ public sealed partial class EvaluationKnowledgeStore
                 }
             }
         }
+        foreach (var section in CategorySummaries(record))
+        {
+            row.Add(section.Score);
+            row.Add(section.Contribution);
+            foreach (var child in section.Children)
+            {
+                row.Add(child.Score);
+                row.Add(child.Contribution);
+                row.Add(WeightedContribution(child.Contribution, section.Weight));
+            }
+        }
+        row.Add(KnowledgeScoringBasis);
+        row.AddRange(snapshotParts.Skip(1));
         return row;
+    }
+
+    private static List<string> SnapshotParts(EvaluationConfig snapshot)
+    {
+        // Rules and long evidence can exceed Excel's per-cell limit. Keep the original column
+        // and append numbered continuation columns; old single-cell exports still import unchanged.
+        var json = JsonSerializer.Serialize(snapshot, JsonOptions);
+        const int size = EvaluationSpreadsheetReader.MaxCellCharacters;
+        return Enumerable.Range(0, (json.Length + size - 1) / size)
+            .Select(index => json.Substring(index * size, Math.Min(size, json.Length - index * size))).ToList();
     }
 
     public byte[] Template(string category = "machine")
@@ -97,14 +136,29 @@ public sealed partial class EvaluationKnowledgeStore
     {
         string Text(string name) => values.GetValueOrDefault(name, "").Trim();
         var category = Text("评价类别") is "" ? "machine" : Text("评价类别");
-        var snapshotText = Text("指标快照JSON");
+        var snapshotText = values.GetValueOrDefault("指标快照JSON", "");
+        if (string.IsNullOrWhiteSpace(snapshotText)) snapshotText = "";
+        var continuations = values.Where(pair => pair.Key.StartsWith("指标快照JSON分段:", StringComparison.Ordinal))
+            .Select(pair => (Number: int.TryParse(pair.Key.AsSpan("指标快照JSON分段:".Length), NumberStyles.None,
+                CultureInfo.InvariantCulture, out var number) ? number : -1, pair.Value)).OrderBy(pair => pair.Number).ToList();
+        var snapshotBuilder = new StringBuilder(snapshotText);
+        for (var index = 0; index < continuations.Count; index++)
+        {
+            if (continuations[index].Number != index + 2 || snapshotText.Length == 0)
+                throw new ArgumentException("指标快照 JSON 分段缺失或编号无效，请重新导出完整模板。");
+            // Do not trim fragments: spaces inside a JSON string can span cell boundaries.
+            snapshotBuilder.Append(continuations[index].Value);
+        }
+        snapshotText = snapshotBuilder.ToString();
         var snapshot = snapshotText.Length == 0 ? _indicators.Get(category)
             : JsonSerializer.Deserialize<EvaluationConfig>(snapshotText, JsonOptions) ?? throw new ArgumentException("指标快照为空。");
         var date = Text("测试日期");
         if (double.TryParse(date, NumberStyles.Number, CultureInfo.InvariantCulture, out var serialDate))
         {
-            if (serialDate < 1 || serialDate > 2958465) throw new ArgumentException("测试日期无效。");
-            date = DateTime.FromOADate(serialDate).ToString("yyyy-MM-dd");
+            if (!double.IsFinite(serialDate) || serialDate < 1 || serialDate > 2958465) throw new ArgumentException("测试日期无效。");
+            // Excel's 1900 date system inserts a fictitious 1900-02-29 (serial 60).
+            if (serialDate is >= 60 and < 61) throw new ArgumentException("测试日期无效（Excel 序号 60 对应不存在的日期）。");
+            date = DateTime.FromOADate(serialDate < 60 ? serialDate + 1 : serialDate).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         }
         var result = new KnowledgeRecord { MachineName = Text("机床名称"), MachineNo = Text("机床编号"),
             MachineModel = Text("机床型号"), ControlSystem = Text("数控系统"), PartName = Text("零件名称"),

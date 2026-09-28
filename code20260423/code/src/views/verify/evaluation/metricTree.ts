@@ -19,9 +19,26 @@ export interface MetricEdit {
 }
 export const protocolOptions = ["GSK", "Modbus", "OPC UA", "Profibus", "S7", "NC-Link", "MTConnect", "FOCAS", "EtherNet/IP", "Profinet", "MQTT", "FTP", "NFS", "SMB"];
 export const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
-export const sumWeights = (nodes: MetricNode[]) => Math.round(nodes.reduce((sum, node) => sum + node.weight, 0) * 10) / 10;
+export const sumWeights = (nodes: MetricNode[]) => Number(nodes.reduce((sum, node) => sum + node.weight, 0).toFixed(10));
 export const weightBalanced = (weight: number) => Math.abs(weight - 100) < 0.05;
 export const levelLabels: Record<MetricLevel, string> = { section: "一级分类", subcategory: "二级分类", item: "评价项目" };
+
+// Called only for an explicit edit/save, never from a computed value or watcher.
+export function normalizeWeights(sections: EvaluationSection[]): void {
+	const balance = (nodes: MetricNode[]) => {
+		if (!nodes.length || nodes.some(node => !Number.isFinite(node.weight) || node.weight < 0 || node.weight > 100)) return;
+		const difference = 100 - nodes.reduce((sum, node) => sum + node.weight, 0);
+		if (!difference || Math.abs(difference) >= 2) return;
+		const last = nodes[nodes.length - 1]!;
+		const adjusted = Number((last.weight + difference).toFixed(10));
+		if (adjusted >= 0 && adjusted <= 100) last.weight = adjusted;
+	};
+	balance(sections);
+	for (const section of sections) {
+		balance(section.children);
+		for (const child of section.children) balance(child.items);
+	}
+}
 
 export function createMetric(level: MetricLevel): MetricNode {
 	const base = { id: crypto.randomUUID(), name: "", weight: 0 };

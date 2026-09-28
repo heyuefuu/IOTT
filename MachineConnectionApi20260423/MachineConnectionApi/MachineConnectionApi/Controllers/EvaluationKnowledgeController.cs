@@ -36,13 +36,13 @@ public sealed class EvaluationKnowledgeController(EvaluationKnowledgeStore store
         File(store.Template(category), SpreadsheetType, "评价记录导入模板.xlsx"));
 
     [HttpPost("records/import")]
-    [RequestSizeLimit(5 * 1024 * 1024)]
-    [RequestFormLimits(MultipartBodyLengthLimit = 5 * 1024 * 1024)]
+    [RequestSizeLimit(EvaluationSpreadsheetReader.MaxInputBytes + 64 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = EvaluationSpreadsheetReader.MaxInputBytes + 64 * 1024)]
     public IActionResult Import(IFormFile file) => Execute(() =>
     {
-        if (file is null || file.Length == 0 || file.Length > 5 * 1024 * 1024
-            || !Path.GetExtension(file.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("请选择不超过 5MB 的 XLSX 文件。");
+        if (file is null || file.Length == 0 || file.Length > EvaluationSpreadsheetReader.MaxInputBytes
+            || !new[] { ".xls", ".xlsx" }.Contains(Path.GetExtension(file.FileName), StringComparer.OrdinalIgnoreCase))
+            throw new ArgumentException("请选择不超过 5MiB 的 XLS 或 XLSX 文件（不支持加密文件）。");
         using var stream = file.OpenReadStream();
         return Ok(store.Import(stream));
     });
@@ -65,7 +65,7 @@ public sealed class EvaluationKnowledgeController(EvaluationKnowledgeStore store
         catch (KnowledgeConflictException error) { return Conflict(new { error = error.Message }); }
         catch (KeyNotFoundException error) { return NotFound(new { error = error.Message }); }
         catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
-        catch (InvalidDataException) { return BadRequest(new { error = "文件内容损坏或不是有效的 XLSX 文件。" }); }
+        catch (InvalidDataException) { return BadRequest(new { error = "文件内容损坏或不是有效的 XLS/XLSX 文件。" }); }
         catch (System.Xml.XmlException) { return BadRequest(new { error = "Excel 文件包含无效的 XML 内容。" }); }
     }
 }

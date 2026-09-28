@@ -82,6 +82,11 @@ public sealed record VerifyTaskDto
     public string MachineId { get; init; } = "";
     public string EvaluationCategory { get; init; } = "machine";
     public IReadOnlyList<string> MetricIds { get; init; } = [];
+    /// <summary>任务级安全许可及显式并发目标；null 等同只读、无额外并发目标。</summary>
+    public VerifyRunOptions? Options { get; init; }
+    /// <summary>本次运行快照；运行中不覆盖 LastRunJson 中的上一轮完整结果。</summary>
+    public string CurrentRunJson { get; init; } = "";
+    public string? ActiveRunId { get; init; }
     public string Params { get; init; } = "";
     public string Description { get; init; } = "";
     public required DateTimeOffset CreatedAt { get; init; }
