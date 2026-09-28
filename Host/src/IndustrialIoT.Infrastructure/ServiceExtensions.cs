@@ -13,8 +13,10 @@ public static class InfrastructureServiceExtensions
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString, IConfiguration configuration)
     {
+        var serverVersion = new MySqlServerVersion(
+            Version.Parse(configuration["Database:ServerVersion"] ?? "8.4.0"));
         services.AddDbContext<IoTDbContext>(options =>
-            options.UseSqlServer(connectionString));
+            options.UseMySql(connectionString, serverVersion));
 
         services.AddScoped<IDeviceRepository, EfDeviceRepository>();
         services.AddScoped<INCProgramRepository, EfNCProgramRepository>();

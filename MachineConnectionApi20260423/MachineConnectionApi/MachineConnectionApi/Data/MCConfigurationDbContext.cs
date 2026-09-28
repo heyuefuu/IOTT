@@ -14,6 +14,7 @@ public class MCConfigurationDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasCharSet("utf8mb4");
         modelBuilder.Entity<Datacollection>(e =>
         {
             e.ToTable("datacollection");

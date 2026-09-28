@@ -1,6 +1,7 @@
 namespace IndustrialIoT.Infrastructure.Persistence;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using IndustrialIoT.Domain.Entities;
 using IndustrialIoT.Domain.ValueObjects;
 using System.Text.Json;
@@ -24,6 +25,8 @@ public class IoTDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasCharSet("utf8mb4");
+
         modelBuilder.Entity<Device>(e =>
         {
             e.HasKey(d => d.Id);
@@ -38,12 +41,12 @@ public class IoTDbContext : DbContext
                 .HasConversion(
                     v => JsonSerializer.Serialize(v, ConnectionConfigJsonOptions),
                     v => JsonSerializer.Deserialize<DeviceConnectionConfig>(v, ConnectionConfigJsonOptions)!)
-                .HasColumnType("nvarchar(max)");
+                .HasColumnType("longtext");
             e.Property(d => d.Metadata)
                 .HasConversion(
                     v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
                     v => JsonSerializer.Deserialize<Dictionary<string, string>>(v, (JsonSerializerOptions?)null)!)
-                .HasColumnType("nvarchar(max)");
+                .HasColumnType("longtext");
             e.HasMany(d => d.CollectionProfiles).WithOne().HasForeignKey(p => p.DeviceId);
         });
 
@@ -95,8 +98,21 @@ public class IoTDbContext : DbContext
             e.Property(r => r.Id).HasMaxLength(32);
             e.Property(r => r.DeviceId).HasMaxLength(32).IsRequired();
             e.Property(r => r.GroupName).HasMaxLength(100).IsRequired();
-            e.Property(r => r.PayloadJson).HasColumnType("nvarchar(max)");
+            e.Property(r => r.PayloadJson).HasColumnType("longtext");
             e.HasIndex(r => new { r.DeviceId, r.CollectedAt });
         });
+
+        // MySQL datetime stores no offset. Normalize writes and restore UTC on reads.
+        var utcConverter = new ValueConverter<DateTimeOffset, DateTime>(
+            value => value.UtcDateTime,
+            value => new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc)));
+        foreach (var property in modelBuilder.Model.GetEntityTypes().SelectMany(entity => entity.GetProperties()))
+        {
+            if ((Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType) != typeof(DateTimeOffset))
+                continue;
+
+            property.SetValueConverter(utcConverter);
+            property.SetColumnType("datetime(6)");
+        }
     }
 }

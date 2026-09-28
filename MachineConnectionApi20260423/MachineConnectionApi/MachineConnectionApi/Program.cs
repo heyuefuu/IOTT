@@ -7,6 +7,10 @@ using Serilog;
 using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration
+    .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false)
+    .AddEnvironmentVariables()
+    .AddCommandLine(args);
 builder.Host.UseSerilog((context, services, loggerConfiguration) =>
 {
     loggerConfiguration
@@ -27,7 +31,8 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
 });
 
 builder.Services.AddDbContext<MCConfigurationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("MachineCollection")));
+    options.UseMySql(builder.Configuration.GetConnectionString("MachineCollection"),
+        new MySqlServerVersion(Version.Parse(builder.Configuration["Database:ServerVersion"] ?? "8.4.0"))));
 
 builder.Services.Configure<InfluxDbOptions>(
     builder.Configuration.GetSection(InfluxDbOptions.SectionName));
@@ -84,13 +89,14 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var database = scope.ServiceProvider.GetRequiredService<MCConfigurationDbContext>().Database;
+    await database.EnsureCreatedAsync();
+}
+
 if (app.Environment.IsDevelopment())
 {
-    using var scope = app.Services.CreateScope();
-    var database = scope.ServiceProvider.GetRequiredService<MCConfigurationDbContext>().Database;
-    if (database.GetDbConnection().DataSource.StartsWith("(localdb)\\", StringComparison.OrdinalIgnoreCase))
-        await database.EnsureCreatedAsync();
-
     app.UseSwagger();
     app.UseSwaggerUI();
 }

@@ -206,7 +206,7 @@ public partial class DatacollectionController : ControllerBase
             return BadRequest(new { error = "items 和 visiblePaths 不能同时为空" });
 
         var deviceId = request.DeviceId.Trim();
-        var today = DateTime.Now.Date;
+        var today = DateTime.SpecifyKind(DateTime.Now.Date, DateTimeKind.Unspecified);
 
         try
         {

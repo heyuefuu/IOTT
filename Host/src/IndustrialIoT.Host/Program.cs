@@ -15,6 +15,9 @@ using Serilog;
 using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables()
+    .AddCommandLine(args);
 
 // 注册 CodePages 编码提供程序（GBK/GB2312/Big5 等），FANUC 中文报警 / 华中机床 中文程序文件需要
 System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
@@ -57,7 +60,7 @@ builder.Services.AddApplication();
 
 // Infrastructure (EF Core + Repositories + Background Services)
 var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? "Server=(localdb)\\mssqllocaldb;Database=IndustrialIoT;Trusted_Connection=true;";
+    ?? throw new InvalidOperationException("ConnectionStrings:Default must specify a MySQL connection.");
 builder.Services.AddInfrastructure(connectionString, builder.Configuration);
 
 // Protocol driver registry + factory
