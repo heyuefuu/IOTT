@@ -5,6 +5,7 @@ public sealed class VerifyRunRequest
     public string? TaskId { get; set; }
     public string? TaskName { get; set; }
     public string? DeviceId { get; set; }
+    public string EvaluationCategory { get; set; } = "machine";
     public IReadOnlyList<string>? MetricIds { get; set; }
     public VerifyRunOptions? Options { get; set; }
 }
@@ -28,6 +29,23 @@ public sealed class VerifyRunResponse
     public string StartedAt { get; set; } = "";
     public string CompletedAt { get; set; } = "";
     public List<VerifyMetricResult> Metrics { get; set; } = [];
+    public string? DeviceId { get; set; }
+    public EvaluationConfig? EvaluationSnapshot { get; set; }
+    public EvaluationMachineSnapshot? MachineSnapshot { get; set; }
+}
+
+public sealed record EvaluationMachineSnapshot
+{
+    public string Id { get; init; } = "";
+    public string Name { get; init; } = "";
+    public string DeviceCode { get; init; } = "";
+    public string Model { get; init; } = "";
+    public string ControlSystem { get; init; } = "";
+    public string Host { get; init; } = "";
+    public int Port { get; init; }
+    public string Protocol { get; init; } = "";
+    public int ConnectTimeoutMs { get; init; }
+    public int ReadTimeoutMs { get; init; }
 }
 
 public sealed class VerifyMetricResult

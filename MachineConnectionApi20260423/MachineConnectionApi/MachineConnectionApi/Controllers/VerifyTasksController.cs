@@ -89,8 +89,9 @@ public sealed class VerifyTasksController : ControllerBase
     /// 按设计方案 2.5：仅导出实测值与指标参考值对比，含空白「人工评分」列，最终评价由人工填写。
     /// </summary>
     [HttpGet("{id}/export")]
-    public IActionResult Export(string id)
+    public IActionResult Export(string id, [FromQuery] string format = "xlsx")
     {
+        if (format is not ("xlsx" or "pdf")) return BadRequest(new { error = "请选择 Excel 或 PDF 格式" });
         var task = _store.ReadAll().FirstOrDefault(x => x.Id == id);
         if (task is null) return NotFound();
         if (string.IsNullOrWhiteSpace(task.LastRunJson))
@@ -114,6 +115,7 @@ public sealed class VerifyTasksController : ControllerBase
             new object?[] { "任务名称", run.TaskName, "", "运行编号", run.RunId },
             new object?[] { "开始时间", run.StartedAt, "", "完成时间", run.CompletedAt },
             new object?[] { "总体结论", run.Result, "", "说明", run.Detail },
+            new object?[] { "测试机床", run.MachineSnapshot?.Name, "", "设备编号", run.MachineSnapshot?.DeviceCode },
             new object?[] { },
             new object?[] { "指标编码", "指标名称", "实测结果", "结果说明", "指标参考值", "达标标注", "人工评分" },
         };
@@ -138,6 +140,11 @@ public sealed class VerifyTasksController : ControllerBase
                 rows.Add(new object?[] { metric.Code, metric.Name, evidence });
         }
 
+        if (format == "pdf")
+        {
+            var pdf = EvaluationPdfBuilder.Build(rows.Select(row => string.Join(" | ", row.Select(value => value?.ToString() ?? ""))));
+            return File(pdf, "application/pdf", $"{task.Name}-验证报告.pdf");
+        }
         var bytes = ExcelBuilder.Build("验证报告", rows, columnWidths: [12, 20, 26, 48, 40, 10, 12]);
         var fileName = $"{task.Name}-验证报告-{DateTimeOffset.Now:yyyyMMddHHmmss}.xlsx";
         return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);

@@ -398,7 +398,7 @@ const modules = ref([
 	{ title: "PLC 通讯", description: "PLC 设备配置、地址浏览和读写", icon: Cpu, path: "/plc/device", status: "active", features: ["真实接口"] },
 	{ title: "机器人通讯", description: "机器人设备配置、数据浏览和读写", icon: Operation, path: "/robot/device", status: "active", features: ["真实接口"] },
 	{ title: "Client/Server", description: "客户端数据源和服务端管理", icon: Files, path: "/cs/client", status: "active", features: ["真实接口"] },
-	{ title: "验证管理", description: "机床设备、验证任务和指标管理", icon: Document, path: "/verify/task", status: "active", features: ["机床设备", "任务管理", "指标管理"] },
+	{ title: "验证管理", description: "管理机床与评价指标，执行测试并归档评价结果", icon: Document, path: "/verify/task", status: "active", features: ["评价指标管理", "验证任务管理", "评价知识库"] },
 	{ title: "系统管理", description: "日志查询、导出与用户权限管理", icon: Setting, path: "/system/log", status: "active", features: ["日志审计", "权限管理"] },
 ]);
 

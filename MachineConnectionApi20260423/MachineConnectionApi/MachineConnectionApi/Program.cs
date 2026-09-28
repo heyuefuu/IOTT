@@ -53,6 +53,8 @@ builder.Services.AddSingleton<ISystemActivityLog, SystemActivityLog>();
 builder.Services.AddSingleton<IUserStore, UserStore>();
 builder.Services.AddSingleton<IAuthService, AuthService>();
 builder.Services.AddSingleton<IMetricStore, MetricStore>();
+builder.Services.AddSingleton<EvaluationIndicatorStore>();
+builder.Services.AddSingleton<EvaluationKnowledgeStore>();
 builder.Services.AddSingleton<IVerifyTaskStore, VerifyTaskStore>();
 builder.Services.AddSingleton<IVerifyTaskRunner, VerifyTaskRunner>();
 builder.Services.AddHostedService<VerifyTaskSchedulerHostedService>();

@@ -74,6 +74,7 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
                 TaskId = task.Id,
                 TaskName = task.Name,
                 DeviceId = ResolveDeviceId(task),
+                EvaluationCategory = task.EvaluationCategory,
                 MetricIds = task.MetricIds,
             }, ct);
         }

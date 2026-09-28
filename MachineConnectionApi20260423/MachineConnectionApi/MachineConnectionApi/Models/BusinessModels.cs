@@ -80,6 +80,7 @@ public sealed record VerifyTaskDto
     public string Priority { get; init; } = "中";
     public string DeviceId { get; init; } = "";
     public string MachineId { get; init; } = "";
+    public string EvaluationCategory { get; init; } = "machine";
     public IReadOnlyList<string> MetricIds { get; init; } = [];
     public string Params { get; init; } = "";
     public string Description { get; init; } = "";

@@ -9,6 +9,24 @@ internal static class Program
 {
     private static async Task Main(string[] args)
     {
+        if (args.Contains("--evaluation-knowledge"))
+        {
+            MachineConnectionApi.Tests.EvaluationKnowledgeRegressionTests.RunAll();
+            Console.WriteLine("Evaluation knowledge regression tests passed.");
+            return;
+        }
+        if (args.Contains("--evaluation-pipeline"))
+        {
+            await MachineConnectionApi.Tests.EvaluationPipelineRegressionTests.RunAll();
+            Console.WriteLine("Evaluation pipeline regression tests passed.");
+            return;
+        }
+        if (args.Contains("--evaluation-indicators"))
+        {
+            await MachineConnectionApi.Tests.EvaluationIndicatorRegressionTests.RunAll();
+            Console.WriteLine("Evaluation indicator regression tests passed.");
+            return;
+        }
         if (args.Contains("--metric-store"))
         {
             MetricStoreInitializesEmptyLibraryAndPreservesExistingData();

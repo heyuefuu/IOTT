@@ -36,6 +36,7 @@ public sealed class BusinessApiAuthorizationFilter(IAuthService auth) : IAuthori
         ("SystemUsers", _) => ["permission_manage"],
         ("SystemLogs", _) => ["log_manage"],
         ("Verify" or "VerifyTasks" or "Metrics" or "ReportTemplates" or "ConnectionVerification", _) => ["report_manage"],
+        ("EvaluationIndicators" or "EvaluationKnowledge", _) => ["report_manage"],
         ("Cs", "ParallelTest" or "ParallelTestReport") => ["config_manage", "report_manage"],
         ("Cs", _) => ["config_manage"],
         ("InfluxSettings", _) => ["config_manage"],

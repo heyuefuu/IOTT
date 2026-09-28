@@ -154,8 +154,9 @@ const rawMenuItems = [
 		icon: Document,
 		subItems: [
 			{ path: "/industrial/property", label: "机床设备" },
-			{ path: "/verify/task", label: "任务管理" },
-			{ path: "/verify/metric", label: "指标管理" },
+			{ path: "/verify/metric", label: "评价指标管理" },
+			{ path: "/verify/task", label: "验证任务管理" },
+			{ path: "/verify/knowledge", label: "评价知识库" },
 		],
 	},
 	{

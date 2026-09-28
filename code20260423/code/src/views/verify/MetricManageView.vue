@@ -1,402 +1,288 @@
 <template>
 	<div class="metric-manage-view">
-		<h2 class="page-title">指标管理</h2>
-
-		<el-alert
-			type="info"
-			:closable="false"
-			show-icon
-			style="margin-bottom: 16px"
-			title="本页验收指标定义已接入业务后端，新增、编辑、删除会持久化到业务服务。"
-		/>
-
-		<!-- 指标列表 -->
-		<el-card class="metric-list-card">
-			<template #header>
-				<div class="card-header">
-					<span>指标列表</span>
-					<el-button type="primary" @click="openAddMetricDialog">
-						<el-icon><Plus /></el-icon>
-						新增指标
-					</el-button>
-				</div>
-			</template>
-
-			<!-- 搜索和筛选 -->
-			<div class="search-filter-bar">
-				<el-input
-					v-model="searchQuery"
-					placeholder="搜索指标名称或描述"
-					prefix-icon="Search"
-					style="width: 300px; margin-right: 10px"
-				/>
-				<el-select
-					v-model="filterCategory"
-					placeholder="筛选类别"
-					style="width: 150px; margin-right: 10px"
-				>
-					<el-option label="全部" value="" />
-					<el-option label="性能" value="performance" />
-					<el-option label="功能" value="function" />
-					<el-option label="稳定性" value="stability" />
-				</el-select>
-				<el-button type="primary" @click="refreshMetricList">
-					<el-icon><Refresh /></el-icon>
-					刷新
-				</el-button>
+		<h2 class="page-title">评价指标管理</h2>
+		<div class="metric-topbar">
+			<div><p class="page-description">三级指标体系 · 权重自动校验 · 测试依据管理</p></div>
+			<div class="toolbar-actions">
+				<el-button :loading="loading" :disabled="saving" @click="refresh">刷新</el-button>
+				<el-button :icon="Download" :disabled="!config" @click="exportConfig">导出配置 JSON</el-button>
+				<el-button type="primary" :loading="saving" :disabled="!config || !dirty[category]" @click="saveConfig">保存配置</el-button>
 			</div>
-
-			<!-- 指标表格 -->
-			<el-table :data="filteredMetrics" style="width: 100%" border>
-				<el-table-column prop="code" label="指标ID" width="80" />
-				<el-table-column prop="name" label="指标名称" />
-				<el-table-column prop="category" label="类别" width="120">
-					<template #default="scope">
-						<el-tag :type="getCategoryType(scope.row.category)">
-							{{ getCategoryLabel(scope.row.category) }}
-						</el-tag>
-					</template>
-				</el-table-column>
-				<el-table-column prop="unit" label="单位" width="100" />
-				<el-table-column label="达标阈值" width="110">
-					<template #default="scope">
-						{{ scope.row.threshold ?? "-" }}
-					</template>
-				</el-table-column>
-				<el-table-column
-					prop="createdAt"
-					label="创建时间"
-					width="180"
-				/>
-				<el-table-column label="操作" width="180">
-					<template #default="scope">
-						<el-button
-							type="primary"
-							size="small"
-							@click="openEditMetricDialog(scope.row)"
-						>
-							编辑
-						</el-button>
-						<el-button
-							type="danger"
-							size="small"
-							@click="deleteMetric(scope.row.id)"
-						>
-							删除
-						</el-button>
-					</template>
-				</el-table-column>
-			</el-table>
-
-			<!-- 分页 -->
-			<div class="pagination-bar">
-				<el-pagination
-					v-model:current-page="currentPage"
-					v-model:page-size="pageSize"
-					:page-sizes="[10, 20, 50, 100]"
-					layout="total, sizes, prev, pager, next, jumper"
-					:total="metrics.length"
-					@size-change="handleSizeChange"
-					@current-change="handleCurrentChange"
-				/>
+		</div>
+		<el-card shadow="never" class="metric-category-card">
+			<div class="category-toolbar">
+				<el-radio-group :model-value="category" :disabled="saving || loading" @change="switchCategory">
+					<el-radio-button value="machine">机床类</el-radio-button>
+					<el-radio-button value="machining">加工中心类</el-radio-button>
+				</el-radio-group>
+				<span class="muted">{{ category === 'machine' ? '适用于普通数控机床评价' : '适用于加工中心设备评价' }}</span>
+				<el-tag v-if="dirty[category]" type="warning">有未保存修改</el-tag>
 			</div>
 		</el-card>
-
-		<!-- 新增/编辑指标对话框 -->
-		<el-dialog
-			v-model="metricDialogVisible"
-			:title="isEditing ? '编辑指标' : '新增指标'"
-			width="500px"
-		>
-			<el-form :model="currentMetric" label-width="120px">
-				<el-form-item label="指标名称" prop="name" required>
-					<el-input
-						v-model="currentMetric.name"
-						placeholder="请输入指标名称"
-					/>
-				</el-form-item>
-				<el-form-item label="指标编码" prop="code">
-					<el-input
-						v-model="currentMetric.code"
-						placeholder="如 5.2.3（与自动验证联动的关键，留空自动生成）"
-					/>
-				</el-form-item>
-				<el-form-item label="指标类别" prop="category" required>
-					<el-select
-						v-model="currentMetric.category"
-						placeholder="请选择指标类别"
-					>
-						<el-option label="性能" value="performance" />
-						<el-option label="功能" value="function" />
-						<el-option label="稳定性" value="stability" />
-						<el-option label="兼容性" value="compatibility" />
-					</el-select>
-				</el-form-item>
-				<el-form-item label="单位" prop="unit">
-					<el-input
-						v-model="currentMetric.unit"
-						placeholder="请输入单位"
-					/>
-				</el-form-item>
-				<el-form-item label="达标阈值" prop="threshold">
-					<el-input-number
-						v-model="currentMetric.threshold"
-						:min="0"
-						:step="1"
-						:precision="2"
-						placeholder="实测值 ≥ 阈值判达标"
-						style="width: 220px"
-					/>
-					<span style="margin-left: 8px; font-size: 12px; color: var(--el-text-color-secondary)">
-						留空则自动验证用内置默认判据；编码需与 5.2.x 对应
-					</span>
-				</el-form-item>
-				<el-form-item label="参考值说明" prop="reference">
-					<el-input
-						v-model="currentMetric.reference"
-						placeholder="如：≥200 并发为优（报表中展示的评价参考标准）"
-					/>
-				</el-form-item>
-				<el-form-item label="描述" prop="description">
-					<el-input
-						v-model="currentMetric.description"
-						type="textarea"
-						:rows="3"
-						placeholder="请输入指标描述"
-					/>
-				</el-form-item>
-			</el-form>
-			<template #footer>
-				<span class="dialog-footer">
-					<el-button @click="metricDialogVisible = false"
-						>取消</el-button
-					>
-					<el-button type="primary" @click="saveMetric"
-						>保存</el-button
-					>
-				</span>
-			</template>
+		<el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="metric-alert" />
+		<div v-loading="loading" class="metric-content">
+			<div class="metric-stats">
+				<el-card v-for="stat in stats" :key="stat.label" shadow="never" :class="['stat-card', stat.status]">
+					<div class="stat-value">{{ stat.value }}</div><div class="muted">{{ stat.label }}</div>
+				</el-card>
+			</div>
+			<el-card shadow="never" class="metric-table-card">
+				<template #header><div class="card-header">
+					<div class="toolbar-actions">
+						<el-button type="primary" :icon="Plus" :disabled="!config || saving" @click="add('section')">添加一级分类</el-button>
+						<el-button :disabled="!config" @click="setExpanded(true)">全部展开</el-button>
+						<el-button :disabled="!config" @click="setExpanded(false)">全部折叠</el-button>
+					</div><span class="muted">同级权重合计应为 100%</span>
+				</div></template>
+				<el-alert v-if="weightIssues.length" type="warning" :closable="false" show-icon class="weight-alert"
+					:title="`${weightIssues.length} 组同级权重未达到 100%，请调整后用于评价`">
+					{{ weightIssues.join('；') }}
+				</el-alert>
+				<el-table ref="table" :data="rows" row-key="id" default-expand-all border
+					:row-class-name="({ row }: { row: MetricRow }) => `metric-${row.level}`" empty-text="暂无评价指标，请添加一级分类">
+					<el-table-column label="分类 / 项目名称" min-width="260">
+						<template #default="{ row }"><span :class="{ 'category-name': row.level !== 'item' }">{{ row.node.name }}</span></template>
+					</el-table-column>
+					<el-table-column label="权重 (%)" width="150">
+						<template #default="{ row }">
+							<el-input-number v-model="row.node.weight" :min="0" :max="100" :precision="1" :step="0.1" controls-position="right"
+								:disabled="saving" :aria-label="`${row.node.name}权重`" class="weight-input" @change="weightChanged(row)" />
+							<div v-if="!weightBalanced(row.siblingWeight)" class="weight-warning">同级合计 {{ row.siblingWeight }}%</div>
+						</template>
+					</el-table-column>
+					<el-table-column label="项目描述 / 评价方法" min-width="340">
+						<template #default="{ row }">
+							<template v-if="row.level === 'item'"><div class="metric-description">{{ row.node.desc || '—' }}</div><div class="scoring-method"><strong>评分标准：</strong>{{ row.node.method || '—' }}</div></template>
+							<span v-else class="muted">{{ row.level === 'section' ? '一级分类' : `二级分类（归属：${row.parentName}）` }}</span>
+						</template>
+					</el-table-column>
+					<el-table-column label="测试依据" min-width="230">
+						<template #default="{ row }">
+							<el-tag v-if="row.level !== 'item'" type="info">{{ row.children?.length || 0 }} 个{{ row.level === 'section' ? '子项' : '项目' }}</el-tag>
+							<template v-else>
+								<el-tag :type="row.node.evidenceType === 'protocol' ? 'primary' : row.node.evidenceType === 'file' ? 'success' : 'info'" size="small">{{ evidenceLabels[row.node.evidenceType as EvaluationItem['evidenceType']] }}</el-tag>
+								<div v-if="row.node.evidenceType === 'protocol'" class="evidence-tags"><el-tag v-for="protocol in row.node.protocols" :key="protocol" size="small" effect="plain">{{ protocol }}</el-tag></div>
+								<div v-if="row.node.evidenceType === 'file'" class="evidence-files"><div v-for="(file, index) in row.node.files" :key="file.id || index">
+									<el-button v-if="file.id" type="primary" link @click="download(file)">{{ file.name }}</el-button><span v-else>{{ file.name }}</span>
+									<small class="muted"> ({{ file.size }}){{ file.id ? '' : ' · 未上传' }}</small>
+								</div></div>
+								<div class="evidence-standard">{{ row.node.standards || '未填写标准规范' }}</div>
+							</template>
+						</template>
+					</el-table-column>
+					<el-table-column label="操作" width="194" fixed="right">
+						<template #default="{ row }"><div class="row-actions">
+							<el-button v-if="row.level === 'item'" type="primary" link @click="viewStandard(row.node)">查看标准</el-button>
+							<el-button v-else type="primary" link :disabled="saving" @click="add(row.level === 'section' ? 'subcategory' : 'item', row.id)">{{ row.level === 'section' ? '添加子项' : '添加项目' }}</el-button>
+							<el-button type="warning" link :disabled="saving" @click="edit(row)">编辑</el-button>
+							<el-button type="danger" link :disabled="saving" @click="remove(row)">删除</el-button>
+						</div></template>
+					</el-table-column>
+				</el-table>
+			</el-card>
+		</div>
+		<MetricEditor :target="editing" @close="editing = null" @save="saveEdit" />
+		<el-dialog v-model="standardVisible" title="程序识别标准（JSON）" width="min(800px, 94vw)">
+			<pre class="standard-json">{{ standardJson }}</pre>
+			<template #footer><el-button @click="standardVisible = false">关闭</el-button><el-button type="primary" @click="copyStandard">复制 JSON</el-button></template>
 		</el-dialog>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
-import { Plus, Refresh } from "@element-plus/icons-vue";
-import { ElMessage, ElMessageBox } from "element-plus";
-import {
-	businessValidationApi,
-	type MetricDto,
-} from "@/api/businessValidation";
+import { computed, nextTick, onMounted, ref } from "vue";
+import { onBeforeRouteLeave } from "vue-router";
+import { ElMessage, ElMessageBox, type TableInstance } from "element-plus";
+import { Download, Plus } from "@element-plus/icons-vue";
+import { isAxiosError } from "axios";
+import { evaluationApi, type EvaluationCategory, type EvaluationConfig, type EvaluationFile, type EvaluationItem } from "@/api/evaluation";
+import MetricEditor from "./evaluation/metricEditor.vue";
+import { clone, createMetric, metricRows, removeMetric, sumWeights, updateMetric, weightBalanced, type MetricEdit, type MetricLevel, type MetricRow } from "./evaluation/metricTree";
 
-type Metric = MetricDto;
-
-// 指标列表
-const metrics = ref<Metric[]>([]);
-
-// 搜索和筛选
-const searchQuery = ref("");
-const filterCategory = ref("");
-
-// 分页
-const currentPage = ref(1);
-const pageSize = ref(10);
-
-// 指标对话框
-const metricDialogVisible = ref(false);
-const isEditing = ref(false);
-const currentMetric = reactive<Metric>({
-	id: "",
-	code: "",
-	name: "",
-	category: "performance",
-	unit: "",
-	statusLabel: "待定义",
-	statusType: "info",
-	description: "",
-	reference: "",
-	threshold: null,
-	createdAt: new Date().toISOString(),
+const category = ref<EvaluationCategory>("machine");
+const configs = ref<Partial<Record<EvaluationCategory, EvaluationConfig>>>({});
+const dirty = ref<Partial<Record<EvaluationCategory, boolean>>>({});
+const config = computed(() => configs.value[category.value]);
+const loading = ref(false);
+const saving = ref(false);
+const errorMessage = ref("");
+const table = ref<TableInstance>();
+const editing = ref<MetricEdit | null>(null);
+const standardVisible = ref(false);
+const standardJson = ref("");
+const rows = computed(() => metricRows(config.value?.indicators ?? []));
+const evidenceLabels = { standard: "标准规范", protocol: "勾选协议", file: "测试文件" };
+const sections = computed(() => config.value?.indicators ?? []);
+const subcategories = computed(() => sections.value.flatMap(section => section.children));
+const stats = computed(() => [
+	{ label: "一级分类权重总和", value: `${sumWeights(sections.value)}%`, status: weightBalanced(sumWeights(sections.value)) ? "balanced" : "unbalanced" },
+	{ label: "一级分类数量", value: sections.value.length, status: "" },
+	{ label: "二级分类数量", value: subcategories.value.length, status: "" },
+	{ label: "评价项目总数", value: subcategories.value.reduce((total, child) => total + child.items.length, 0), status: "" },
+]);
+const weightIssues = computed(() => {
+	if (!config.value) return [];
+	const groups = [{ name: "一级分类", nodes: sections.value }, ...sections.value.map(section => ({ name: section.name, nodes: section.children })), ...subcategories.value.map(child => ({ name: child.name, nodes: child.items }))];
+	return groups.filter(group => !weightBalanced(sumWeights(group.nodes))).map(group => `${group.name} ${sumWeights(group.nodes)}%`);
 });
 
-const createEmptyMetric = (): Metric => ({
-	id: "",
-	code: "",
-	name: "",
-	category: "performance",
-	unit: "",
-	statusLabel: "待定义",
-	statusType: "info",
-	description: "",
-	reference: "",
-	threshold: null,
-	createdAt: new Date().toISOString(),
-});
-
-const loadMetrics = async () => {
+async function load(force = false) {
+	if (config.value && !force) return;
+	loading.value = true;
+	errorMessage.value = "";
 	try {
-		metrics.value = await businessValidationApi.listMetrics();
-	} catch (error) {
-		console.error(error);
-		ElMessage.error("指标列表加载失败，请检查业务后端服务");
+		configs.value[category.value] = await evaluationApi.getConfig(category.value);
+		dirty.value[category.value] = false;
+	} catch {
+		errorMessage.value = "评价指标加载失败，请刷新重试";
+	} finally {
+		loading.value = false;
 	}
-};
+}
 
-// 过滤后的指标列表
-const filteredMetrics = computed(() => {
-	let result = [...metrics.value];
-
-	// 搜索
-	if (searchQuery.value) {
-		const query = searchQuery.value.toLowerCase();
-		result = result.filter(
-			(metric) =>
-				metric.name.toLowerCase().includes(query) ||
-				metric.description.toLowerCase().includes(query) ||
-				metric.statusLabel.toLowerCase().includes(query),
-		);
+async function refresh() {
+	if (dirty.value[category.value]) {
+		try { await ElMessageBox.confirm("刷新将放弃当前分类的未保存修改，是否继续？", "刷新指标", { type: "warning" }); }
+		catch { return; }
 	}
+	await load(true);
+}
 
-	// 类别筛选
-	if (filterCategory.value) {
-		result = result.filter(
-			(metric) => metric.category === filterCategory.value,
-		);
-	}
+async function switchCategory(value: string | number | boolean | undefined) {
+	if (value !== "machine" && value !== "machining") return;
+	category.value = value;
+	errorMessage.value = "";
+	await load();
+}
 
-	// 分页
-	const startIndex = (currentPage.value - 1) * pageSize.value;
-	const endIndex = startIndex + pageSize.value;
-	return result.slice(startIndex, endIndex);
-});
-
-// 打开新增指标对话框
-const openAddMetricDialog = () => {
-	isEditing.value = false;
-	Object.assign(currentMetric, createEmptyMetric());
-	metricDialogVisible.value = true;
-};
-
-// 打开编辑指标对话框
-const openEditMetricDialog = (metric: Metric) => {
-	isEditing.value = true;
-	Object.assign(currentMetric, { ...metric });
-	metricDialogVisible.value = true;
-};
-
-// 保存指标
-const saveMetric = async () => {
-	const payload = {
-		...currentMetric,
-		code: currentMetric.code || `MET-${Date.now()}`,
-		createdAt: currentMetric.createdAt || new Date().toISOString(),
-	};
+async function saveConfig() {
+	if (!config.value || saving.value) return;
+	const currentCategory = category.value;
+	saving.value = true;
 	try {
-		if (isEditing.value) {
-			await businessValidationApi.updateMetric(currentMetric.id, payload);
-		} else {
-			await businessValidationApi.createMetric(payload);
-		}
-		metricDialogVisible.value = false;
-		await loadMetrics();
-		ElMessage.success("指标已保存");
+		configs.value[currentCategory] = await evaluationApi.saveConfig(clone(config.value));
+		dirty.value[currentCategory] = false;
+		errorMessage.value = "";
+		ElMessage.success("评价指标配置已保存");
 	} catch (error) {
-		console.error(error);
-		ElMessage.error("指标保存失败，请检查业务后端服务");
-	}
-};
+		errorMessage.value = isAxiosError(error) && error.response?.status === 409 ? "配置已被其他操作更新，当前草稿已保留；请先导出草稿，再刷新后重新修改" : "配置保存失败，当前草稿已保留，请重试保存";
+	} finally { saving.value = false; }
+}
+function add(level: MetricLevel, parentId?: string) {
+	editing.value = { level, parentId, node: createMetric(level), isNew: true };
+}
 
-// 删除指标
-const deleteMetric = async (id: string) => {
+function edit(row: MetricRow) {
+	editing.value = { level: row.level, parentId: row.parentId, node: clone(row.node), isNew: false };
+}
+
+async function saveEdit(target: MetricEdit) {
+	if (!config.value) return;
+	updateMetric(config.value.indicators, target);
+	editing.value = null;
+	dirty.value[category.value] = true;
+	await saveConfig();
+	await nextTick();
+	setExpanded(true);
+}
+
+async function weightChanged(row: MetricRow) {
+	if (!Number.isFinite(row.node.weight)) row.node.weight = 0;
+	dirty.value[category.value] = true;
+	await saveConfig();
+}
+
+async function remove(row: MetricRow) {
 	try {
-		await ElMessageBox.confirm("确定删除该指标？", "删除确认", {
-			type: "warning",
-		});
-		await businessValidationApi.deleteMetric(id);
-		await loadMetrics();
-		ElMessage.success("指标已删除");
-	} catch (error) {
-		if (error !== "cancel") {
-			console.error(error);
-			ElMessage.error("指标删除失败，请检查业务后端服务");
-		}
+		await ElMessageBox.confirm(`确定删除“${row.node.name}”${row.level === 'item' ? '' : '及其所有下级项目'}？`, "删除确认", { type: "warning" });
+	} catch { return; }
+	if (!config.value) return;
+	config.value.indicators = removeMetric(config.value.indicators, row.id);
+	dirty.value[category.value] = true;
+	await saveConfig();
+}
+
+function setExpanded(expanded: boolean) {
+	for (const row of rows.value) {
+		table.value?.toggleRowExpansion(row, expanded);
+		for (const child of row.children ?? []) table.value?.toggleRowExpansion(child, expanded);
 	}
-};
+}
 
-// 刷新指标列表
-const refreshMetricList = async () => {
-	await loadMetrics();
-};
+function saveBlob(blob: Blob, name: string) {
+	const url = URL.createObjectURL(blob);
+	const link = document.createElement("a");
+	link.href = url; link.download = name; link.click();
+	URL.revokeObjectURL(url);
+}
+function exportConfig() {
+	if (!config.value) return;
+	const data = { ...config.value, exportTime: new Date().toISOString() };
+	saveBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), `评价指标配置_${category.value}_${Date.now()}.json`);
+}
 
-// 获取类别类型
-const getCategoryType = (category: string) => {
-	switch (category) {
-		case "performance":
-			return "primary";
-		case "function":
-			return "success";
-		case "stability":
-			return "warning";
-		case "compatibility":
-			return "info";
-		default:
-			return "default";
-	}
-};
+async function download(file: EvaluationFile) {
+	if (!file.id) return;
+	try { saveBlob(await evaluationApi.downloadAttachment(file.id), file.name); }
+	catch { ElMessage.error("测试文件下载失败，请重试"); }
+}
 
-// 获取类别标签
-const getCategoryLabel = (category: string) => {
-	switch (category) {
-		case "performance":
-			return "性能";
-		case "function":
-			return "功能";
-		case "stability":
-			return "稳定性";
-		case "compatibility":
-			return "兼容性";
-		default:
-			return category;
-	}
-};
+function viewStandard(item: EvaluationItem) {
+	standardJson.value = JSON.stringify({
+		indicator_id: item.id, indicator_name: item.name, category: category.value,
+		test_type: item.evidenceType, test_files: item.files.map(file => file.name),
+		selected_protocols: item.protocols, standards: item.standards,
+		scoring_rules: item.scoring, weight: item.weight,
+	}, null, 2);
+	standardVisible.value = true;
+}
 
-// 分页处理
-const handleSizeChange = (size: number) => {
-	pageSize.value = size;
-	currentPage.value = 1;
-};
+async function copyStandard() {
+	try { await navigator.clipboard.writeText(standardJson.value); ElMessage.success("JSON 已复制"); }
+	catch { ElMessage.error("复制失败，请选择内容后复制"); }
+}
 
-const handleCurrentChange = (current: number) => {
-	currentPage.value = current;
-};
-
-onMounted(() => {
-	void loadMetrics();
+onBeforeRouteLeave(async () => {
+	if (!Object.values(dirty.value).some(Boolean)) return true;
+	try {
+		await ElMessageBox.confirm("还有未保存的评价指标修改，确定离开？", "未保存修改", { type: "warning" });
+		return true;
+	} catch { return false; }
 });
+onMounted(() => { void load(); });
 </script>
 
 <style lang="scss" scoped>
-.metric-manage-view {
-	.metric-list-card {
-		margin-bottom: 20px;
-	}
-
-	.card-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-
-	.search-filter-bar {
-		display: flex;
-		align-items: center;
-		margin-bottom: 20px;
-	}
-
-	.pagination-bar {
-		margin-top: 20px;
-		display: flex;
-		justify-content: flex-end;
-	}
-}
+.metric-manage-view { min-width: 0; }
+.metric-topbar, .category-toolbar, .card-header, .toolbar-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.metric-topbar, .card-header { justify-content: space-between; }
+.metric-topbar { margin-bottom: 20px; }
+.page-description, .muted { color: var(--el-text-color-secondary); font-size: 13px; }
+.metric-category-card, .metric-alert { margin-bottom: 20px; }
+.metric-category-card :deep(.el-card__body) { padding: 16px 20px; }
+.toolbar-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.metric-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; margin-bottom: 20px; }
+.stat-card { border-left: 3px solid var(--el-color-primary); }
+.stat-card.balanced { border-left-color: var(--el-color-success); }
+.stat-card.unbalanced { border-left-color: var(--el-color-warning); }
+.stat-value { font-size: 28px; font-weight: 600; line-height: 1.4; margin-bottom: 4px; }
+.metric-table-card :deep(.el-card__body) { padding: 0; }
+.weight-alert { margin: 16px; width: auto; }
+.category-name { font-weight: 600; }
+.weight-input { width: 115px; }
+.weight-warning { color: var(--el-color-warning); font-size: 12px; margin-top: 4px; }
+.metric-description { line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.scoring-method { line-height: 1.7; white-space: pre-wrap; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--el-border-color-lighter); color: var(--el-text-color-regular); }
+.evidence-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.evidence-files, .evidence-standard { font-size: 12px; line-height: 1.7; margin-top: 8px; overflow-wrap: anywhere; }
+.evidence-files :deep(.el-button) { white-space: normal; text-align: left; height: auto; }
+.evidence-standard { color: var(--el-text-color-secondary); }
+.row-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.row-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.standard-json { background: var(--el-fill-color-light); padding: 16px; border-radius: var(--el-border-radius-base); max-height: 60vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.7 Consolas, monospace; }
+:deep(.metric-section) { --el-table-tr-bg-color: var(--el-color-primary-light-9); }
+:deep(.metric-subcategory) { --el-table-tr-bg-color: var(--el-fill-color-lighter); }
+:deep(.el-table .cell) { padding-top: 7px; padding-bottom: 7px; }
+@media (max-width: 1000px) { .metric-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
+@media (max-width: 600px) { .metric-stats { grid-template-columns: 1fr 1fr; } .stat-value { font-size: 24px; } .metric-topbar { align-items: flex-start; } }
 </style>

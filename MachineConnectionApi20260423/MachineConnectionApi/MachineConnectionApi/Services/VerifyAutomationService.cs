@@ -23,25 +23,34 @@ public sealed class VerifyAutomationService : IVerifyAutomationService
     private readonly IMetricStore _metricStore;
     private readonly IConfiguration _configuration;
     private readonly ILogger<VerifyAutomationService> _logger;
+    private readonly EvaluationIndicatorStore? _evaluationIndicators;
 
     public VerifyAutomationService(
         IHttpClientFactory httpClientFactory,
         ICsConnectivityService csService,
         IMetricStore metricStore,
         IConfiguration configuration,
-        ILogger<VerifyAutomationService> logger)
+        ILogger<VerifyAutomationService> logger,
+        EvaluationIndicatorStore? evaluationIndicators = null)
     {
         _httpClientFactory = httpClientFactory;
         _csService = csService;
         _metricStore = metricStore;
         _configuration = configuration;
         _logger = logger;
+        _evaluationIndicators = evaluationIndicators;
     }
 
     public async Task<VerifyRunResponse> RunAsync(VerifyRunRequest request, CancellationToken ct)
     {
         var options = NormalizeOptions(request.Options);
         var metricIds = NormalizeMetricIds(request.MetricIds);
+        var evaluation = _evaluationIndicators?.Get(request.EvaluationCategory);
+        var evaluationItems = evaluation?.Indicators.SelectMany(section => section.Children)
+            .SelectMany(section => section.Items).Where(item => item.MetricId is not null)
+            .ToDictionary(item => item.MetricId!, StringComparer.Ordinal);
+        if (evaluationItems is not null && metricIds.Any(metricId => !evaluationItems.ContainsKey(metricId)))
+            throw new ArgumentException("所选指标已从评价指标管理中移除，请重新选择任务指标。");
         var devices = await LoadDevicesAsync(ct);
         var response = new VerifyRunResponse
         {
@@ -49,6 +58,8 @@ public sealed class VerifyAutomationService : IVerifyAutomationService
             TaskId = request.TaskId,
             TaskName = string.IsNullOrWhiteSpace(request.TaskName) ? "自动验证任务" : request.TaskName.Trim(),
             StartedAt = Now(),
+            DeviceId = request.DeviceId,
+            EvaluationSnapshot = evaluation,
         };
 
         var deviceId = request.DeviceId?.Trim();
@@ -65,6 +76,9 @@ public sealed class VerifyAutomationService : IVerifyAutomationService
                 return response;
             }
         }
+
+        if (devices.Count == 1)
+            response.MachineSnapshot = SnapshotMachine(devices[0]);
 
         foreach (var metricId in metricIds)
         {
@@ -84,6 +98,8 @@ public sealed class VerifyAutomationService : IVerifyAutomationService
             }
         }
 
+        foreach (var metric in response.Metrics)
+            if (evaluationItems?.TryGetValue(metric.MetricId, out var item) == true) metric.Name = item.Name;
         response.CompletedAt = Now();
         response.Status = response.Metrics.All(x => x.Status == "passed") ? "completed" : "failed";
         var passed = response.Metrics.Count(x => x.Status == "passed");
@@ -495,10 +511,30 @@ public sealed class VerifyAutomationService : IVerifyAutomationService
 
     private sealed record ProbeTarget(string Label, string Host, int Port);
 
+    private static EvaluationMachineSnapshot SnapshotMachine(DeviceSnapshot device)
+    {
+        string Property(params string[] names) => names.Select(name => device.ExtendedProperties.GetValueOrDefault(name))
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "";
+        var code = Property("DeviceCode", "deviceCode", "Code", "code");
+        var system = Property("ControlSystem", "controlSystem", "System", "system");
+        return new EvaluationMachineSnapshot
+        {
+            Id = device.Id, Name = device.Name, DeviceCode = string.IsNullOrEmpty(code) ? device.Id : code,
+            Model = device.Model, ControlSystem = string.IsNullOrEmpty(system) ? device.Brand : system,
+            Host = device.Host, Port = device.Port, Protocol = device.Protocol,
+            ConnectTimeoutMs = device.ConnectTimeoutMs, ReadTimeoutMs = device.ReadTimeoutMs,
+        };
+    }
+
     private sealed class DeviceSnapshot
     {
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string Brand { get; set; } = "";
+        public int ConnectTimeoutMs { get; set; }
+        public int ReadTimeoutMs { get; set; }
+        public Dictionary<string, string> ExtendedProperties { get; set; } = [];
         public string Protocol { get; set; } = "";
         public string Host { get; set; } = "";
         public int Port { get; set; }

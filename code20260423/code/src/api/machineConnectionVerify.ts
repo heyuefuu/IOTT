@@ -1,4 +1,5 @@
 import { createMachineConnectionClient } from "./machineConnectionClient";
+import type { EvaluationCategory, EvaluationConfig } from "./evaluation";
 
 const baseURL =
     import.meta.env.VITE_MACHINE_CONNECTION_API ?? "/machine-connection";
@@ -12,6 +13,8 @@ const client = createMachineConnectionClient({
 export interface VerifyRunRequest {
     taskId?: string;
     taskName?: string;
+    deviceId?: string;
+    evaluationCategory?: EvaluationCategory;
     metricIds: string[];
 }
 
@@ -37,6 +40,12 @@ export interface VerifyRunResponse {
     startedAt: string;
     completedAt: string;
     metrics: VerifyMetricResult[];
+    evaluationSnapshot?: EvaluationConfig;
+    deviceId?: string;
+    machineSnapshot?: {
+        id: string; name: string; deviceCode: string; model: string; controlSystem: string;
+        host: string; port: number; protocol: string; connectTimeoutMs: number; readTimeoutMs: number;
+    };
 }
 
 export interface VerifyTaskDto {
@@ -47,6 +56,7 @@ export interface VerifyTaskDto {
     priority: string;
     deviceId: string;
     machineId: string;
+    evaluationCategory?: EvaluationCategory;
     metricIds: string[];
     params: string;
     description: string;
@@ -107,5 +117,11 @@ export const machineConnectionVerifyApi = {
             ? decodeURIComponent(star[1].trim().replace(/(^"|"$)/g, ""))
             : (plain?.[2]?.trim() ?? `验证报告-${id}.xlsx`);
         return { blob: res.data as Blob, fileName };
+    },
+    async exportTaskPdf(id: string): Promise<{ blob: Blob; fileName: string }> {
+        const res = await client.get(`/api/verify/tasks/${enc(id)}/export`, {
+            params: { format: 'pdf' }, responseType: 'blob',
+        });
+        return { blob: res.data as Blob, fileName: `验证报告-${id}.pdf` };
     },
 };

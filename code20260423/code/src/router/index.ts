@@ -204,12 +204,17 @@ const routes: RouteRecordRaw[] = [
             {
                 path: 'task',
                 name: 'VerifyTask',
-                component: () => import('../views/verify/TaskManageView.vue')
+                component: () => import('../views/verify/evaluation/taskWorkbench.vue')
             },
             {
                 path: 'metric',
                 name: 'VerifyMetric',
                 component: () => import('../views/verify/MetricManageView.vue')
+            },
+            {
+                path: 'knowledge',
+                name: 'EvaluationKnowledge',
+                component: () => import('../views/verify/EvaluationKnowledgeView.vue')
             },
             {
                 path: 'report',
