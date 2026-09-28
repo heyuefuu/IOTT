@@ -31,7 +31,7 @@ export function buildProgramTransferConfig(
 
 	const protocol = String(form.transferProtocol ?? "").trim();
 	if (!protocol) return undefined;
-	if (!["FTP", "SMB", "NFS", "GskrmFileTransfer"].includes(protocol)) return undefined;
+	if (!["FTP", "SMB", "NFS", "GskrmFileTransfer", "Serial"].includes(protocol)) return undefined;
 
 	const extendedProperties: Record<string, string> = {};
 	if (protocol === form.originalTransferProtocol) {
@@ -50,12 +50,19 @@ export function buildProgramTransferConfig(
 		if (mountPoint) extendedProperties.MountPoint = mountPoint;
 	}
 
+	if (protocol === "Serial") {
+		const settings = form.transferExtendedProperties ?? {};
+		for (const [key, fallback] of Object.entries({
+			PortName: "", BaudRate: "9600", DataBits: "8", Parity: "None", StopBits: "One",
+		})) extendedProperties[key] = String(settings[key] ?? fallback).trim();
+	}
+	const localTransport = ["GskrmFileTransfer", "Serial"].includes(protocol);
 	return {
 		protocol,
-		host: String(form.transferHost ?? "").trim(),
-		port: protocol === "GskrmFileTransfer" ? 0 : Number(form.transferPort ?? 0),
-		username: protocol === "GskrmFileTransfer" ? undefined : String(form.transferUsername ?? "").trim() || undefined,
-		password: protocol === "GskrmFileTransfer" ? undefined : String(form.transferPassword ?? "").trim() || undefined,
+		host: protocol === "Serial" ? "localhost" : String(form.transferHost ?? "").trim(),
+		port: localTransport ? 0 : Number(form.transferPort ?? 0),
+		username: localTransport ? undefined : String(form.transferUsername ?? "").trim() || undefined,
+		password: localTransport ? undefined : String(form.transferPassword ?? "").trim() || undefined,
 		connectTimeoutMs:
 			typeof form.transferConnectTimeoutMs === "number" && form.transferConnectTimeoutMs > 0
 				? form.transferConnectTimeoutMs

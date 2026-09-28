@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
-import { reactive, ref, watch } from "vue";
+import { reactive, ref, computed, watch } from "vue";
 import { compileScript, compileTemplate, parse } from "@vue/compiler-sfc";
 
 const source = readFileSync(new URL("../src/utils/tiaSymbolTable.ts", import.meta.url), "utf8");
@@ -60,7 +60,7 @@ test("Import decoding accepts UTF-8, GBK and UTF-16 BOMs", async () => {
 const component = readFileSync(new URL("../src/views/plc/CollectionImportView.vue", import.meta.url), "utf8");
 const script = component.match(/<script[^>]*setup[^>]*>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(script);
-const names = ["fileConfig", "manualConfig", "uploadedFile", "clearUploadedFile", "handleFileChange",
+const names = ["importDeviceType", "fileConfig", "manualConfig", "uploadedFile", "clearUploadedFile", "handleFileChange",
     "handleFileRemove", "parseTiaFile", "getImportFile", "importMethod", "devices", "devicesLoading",
     "getImportError", "loadDevices", "normalizeDataType", "importManualConfig", "importConfig", "openCollectionManage"];
 const parsed = ts.createSourceFile("CollectionImportView.ts", script, ts.ScriptTarget.Latest, true);
@@ -85,7 +85,7 @@ function setup(options = {}) {
     const routes = [];
     let clearCount = 0;
     const context = vm.createContext({
-        reactive, ref, watch, File, parseTiaSymbolTableCsv, readImportFileText, toCollectionImportCsvFile,
+        route: reactive({ meta: { deviceType: options.deviceType ?? "PLC" } }), reactive, ref, computed, watch, File, parseTiaSymbolTableCsv, readImportFileText, toCollectionImportCsvFile,
         router: { push(route) { routes.push(route); } },
         fileType: ref("tia"), uploadRef: ref({ clearFiles() { clearCount++; } }),
         ElMessage: { error(message) { messages.push(message); }, warning(message) { warnings.push(message); },
@@ -287,4 +287,50 @@ test("Opening a device dropdown while options load does not duplicate the reques
     resolveDevices([registeredDevice]);
     await loading;
     assert.equal(fixture.devicesLoading.value, false);
+});
+
+test("CNC import selects CNC IDs and submits CSV or JSON without PLC filtering", async () => {
+    for (const extension of ["csv", "json"]) {
+        const cnc = { ...registeredDevice, id: "cnc-1", type: "CNC", protocol: "HaasMdc" };
+        const fixture = setup({ deviceType: "CNC", list: () => [cnc] });
+        await fixture.loadDevices();
+        assert.deepEqual(fixture.deviceRequests, ["CNC"]);
+        fixture.context.fileType.value = "standard";
+        fixture.fileConfig.deviceId = cnc.id;
+        const contents = extension === "json"
+            ? '[{"Address":"PartCount","DataType":"Int32","GroupName":"Counts","IntervalMs":1000}]'
+            : "Address,DataType,GroupName,IntervalMs\nPartCount,Int32,Counts,1000";
+        fixture.uploadedFile.value = new File([contents], `tags.${extension}`);
+        await fixture.importConfig();
+        assert.equal(fixture.requests[0].deviceId, cnc.id);
+        assert.equal(await fixture.requests[0].file.text(), contents);
+        assert.equal(fixture.successes.length, 1);
+    }
+});
+
+test("Rejected CNC import preserves the file and shows the backend row errors", async () => {
+    const cnc = { ...registeredDevice, id: "cnc-2", type: "CNC" };
+    const fixture = setup({ deviceType: "CNC", list: () => [cnc],
+        import: () => ({ successCount: 0, errorCount: 1, errors: ["Row 2: Invalid DataType"] }) });
+    await fixture.loadDevices();
+    fixture.context.fileType.value = "standard";
+    fixture.fileConfig.deviceId = cnc.id;
+    fixture.uploadedFile.value = new File(["[]"], "tags.json");
+    await fixture.importConfig();
+    assert.equal(fixture.successes.length, 0);
+    assert.deepEqual(fixture.messages, ["Row 2: Invalid DataType"]);
+    assert.ok(fixture.uploadedFile.value);
+});
+
+test("Changing import device type while loading discards the stale device list", async () => {
+    let resolvePlc;
+    const cnc = { ...registeredDevice, id: "cnc-3", type: "CNC" };
+    const fixture = setup({ list: (type) => type === "PLC"
+        ? new Promise(resolve => { resolvePlc = resolve; }) : [cnc] });
+    const pending = fixture.loadDevices();
+    fixture.context.route.meta.deviceType = "CNC";
+    resolvePlc([registeredDevice]);
+    await pending;
+    assert.deepEqual(fixture.deviceRequests, ["PLC", "CNC"]);
+    assert.equal(fixture.devices.value[0].id, cnc.id);
 });

@@ -48,13 +48,8 @@ group.MapPost("/connect", (JingDiaoConnectRequest request, IJdMonApi api, JingDi
     }
 });
 
-group.MapPost("/disconnect", (JingDiaoSessionRequest request, IJdMonApi api, JingDiaoSessionStore store) =>
-{
-    if (!store.Remove(request.SessionId, out var handle)) return Results.Ok(Result(-404, "Unknown session."));
-    var ok = api.Disconnect(handle);
-    api.Delete(ref handle);
-    return Results.Ok(ResultFromBool(ok, api, handle));
-});
+group.MapPost("/disconnect", (JingDiaoSessionRequest request, JingDiaoSessionStore store) =>
+    Results.Ok(store.Close(request.SessionId)));
 
 group.MapPost("/ping", (JingDiaoSessionRequest request, IJdMonApi api, JingDiaoSessionStore store) =>
     WithHandle(request.SessionId, store, handle => ResultFromBool(api.IsConnected(handle), api, handle)));
@@ -92,44 +87,44 @@ group.MapPost("/get-rate", (JingDiaoSessionRequest request, IJdMonApi api, JingD
 group.MapPost("/get-macro", (JingDiaoMacroRequest request, IJdMonApi api, JingDiaoSessionStore store) =>
     WithHandle(request.SessionId, store, handle =>
         Value(api.GetMacro(handle, request.Number, out var value), api, handle, value)));
+group.MapPost("/set-macro", (JingDiaoMacroWriteRequest request, IJdMonApi api, JingDiaoSessionStore store) =>
+    request.Number < 0 || !double.IsFinite(request.Value)
+        ? Results.Ok(Result(-1, "A nonnegative macro number and finite value are required."))
+        : WithHandle(request.SessionId, store, handle => ResultFromBool(api.SetMacro(handle, request.Number, request.Value), api, handle)));
 group.MapPost("/get-line-no", (JingDiaoSessionRequest request, IJdMonApi api, JingDiaoSessionStore store) =>
     WithHandle(request.SessionId, store, handle => Value(api.GetLineNo(handle, out var value), api, handle, value)));
 group.MapPost("/get-part-count", (JingDiaoSessionRequest request, IJdMonApi api, JingDiaoSessionStore store) =>
     WithHandle(request.SessionId, store, handle => Value(api.GetPartCount(handle, out var value), api, handle, value)));
 
 group.MapPost("/list-files", (JingDiaoBrowseFilesRequest request, IJdMonApi api, JingDiaoSessionStore store) =>
-    WithHandle(request.SessionId, store, handle =>
-    {
-        var ok = api.GetMachFileList(handle, request.Path ?? "", 102400, out var fileList);
-        return Value(ok, api, handle, ParseFileList(request.Path, fileList));
-    }));
+    WithHandle(request.SessionId, store, handle => JingDiaoFileTransfer.Browse(api, handle, request.Path)));
 
 group.MapPost("/send-nc-file", async (HttpRequest request, IJdMonApi api, JingDiaoSessionStore store, CancellationToken ct) =>
 {
     var form = await request.ReadFormAsync(ct);
     var sessionId = form["sessionId"].ToString();
-    if (!store.TryGet(sessionId, out var handle)) return Results.Ok(Result(-404, "Unknown session."));
     var file = form.Files.GetFile("file");
     if (file is null) return Results.Ok(Result(-1, "Missing multipart file field."));
     var addToTask = bool.TryParse(form["addToTask"], out var add) && add;
     var setMainProgram = bool.TryParse(form["setMainProgram"], out var setMain) && setMain;
-    var temp = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}-{Path.GetFileName(file.FileName)}");
     try
     {
-        await using (var output = File.Create(temp)) await file.CopyToAsync(output, ct);
-        return Results.Ok(ResultFromBool(api.SendNcFile(handle, temp, addToTask, setMainProgram), api, handle));
+        await using var source = file.OpenReadStream();
+        return Results.Ok(await JingDiaoFileTransfer.UploadAsync(api, store, sessionId, source, file.FileName,
+            form["directory"].ToString(), addToTask, setMainProgram, ct));
     }
-    finally { TryDelete(temp); }
+    catch (ArgumentException error) { return Results.Ok(Result(-1, error.Message)); }
 });
 
 group.MapPost("/receive-file", async (JingDiaoDownloadRequest request, IJdMonApi api, JingDiaoSessionStore store, CancellationToken ct) =>
 {
-    if (!store.TryGet(request.SessionId, out var handle)) return Results.NotFound(Result(-404, "Unknown session."));
     var temp = Path.GetTempFileName();
     try
     {
-        if (!api.ReceiveFile(handle, request.RemotePath, temp))
-            return Results.BadRequest(ResultFromBool(false, api, handle));
+        if (!store.TryUse(request.SessionId,
+                handle => ResultFromBool(api.ReceiveFile(handle, request.RemotePath, temp), api, handle), out var result))
+            return Results.NotFound(Result(-404, "Unknown session."));
+        if (result.ReturnCode != 0) return Results.BadRequest(result);
         var bytes = await File.ReadAllBytesAsync(temp, ct);
         return Results.File(bytes, "application/octet-stream", Path.GetFileName(request.RemotePath));
     }
@@ -143,7 +138,7 @@ group.MapPost("/delete-file", (JingDiaoDeleteFileRequest request, IJdMonApi api,
 app.Run();
 
 static IResult WithHandle(string sessionId, JingDiaoSessionStore store, Func<IntPtr, object> action)
-    => store.TryGet(sessionId, out var handle) ? Results.Ok(action(handle)) : Results.Ok(Result(-404, "Unknown session."));
+    => store.TryUse(sessionId, action, out var result) ? Results.Ok(result) : Results.Ok(Result(-404, "Unknown session."));
 
 static JingDiaoIpcResult ResultFromBool(bool ok, IJdMonApi api, IntPtr handle)
 {
@@ -157,22 +152,6 @@ static JingDiaoValueResult<T> Value<T>(bool ok, IJdMonApi api, IntPtr handle, T 
 {
     var result = ResultFromBool(ok, api, handle);
     return new() { ReturnCode = result.ReturnCode, ErrorMessage = result.ErrorMessage, Value = ok ? value : default };
-}
-
-static IReadOnlyList<JingDiaoFileEntry> ParseFileList(string? directory, string fileList)
-{
-    var basePath = directory ?? "";
-    return fileList.Split(["\r\n", "\n", "\r", ";", "|"], StringSplitOptions.RemoveEmptyEntries)
-        .Select(x => x.Trim())
-        .Where(x => x.Length > 0)
-        .Select(x =>
-        {
-            var name = Path.GetFileName(x.TrimEnd('/', '\\'));
-            var isDirectory = x.EndsWith('/') || x.EndsWith('\\');
-            var path = string.IsNullOrWhiteSpace(basePath) ? x : $"{basePath.TrimEnd('/', '\\')}/{name}";
-            return new JingDiaoFileEntry(path, string.IsNullOrWhiteSpace(name) ? x : name, isDirectory, null);
-        })
-        .ToArray();
 }
 
 static void TryDelete(string path)

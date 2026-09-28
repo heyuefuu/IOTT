@@ -5,7 +5,11 @@ using IndustrialIoT.Protocols.JingDiao;
 
 public sealed class JingDiaoSessionStore : IDisposable
 {
-    private readonly ConcurrentDictionary<string, IntPtr> sessions = [];
+    private readonly ConcurrentDictionary<string, Session> sessions = [];
+    private sealed class Session(IntPtr handle)
+    {
+        public IntPtr Handle = handle;
+    }
     private readonly IJdMonApi api;
 
     public JingDiaoSessionStore(IJdMonApi api) => this.api = api;
@@ -13,22 +17,49 @@ public sealed class JingDiaoSessionStore : IDisposable
     public string Add(IntPtr handle)
     {
         var sessionId = Guid.NewGuid().ToString("N");
-        sessions[sessionId] = handle;
+        sessions[sessionId] = new Session(handle);
         return sessionId;
     }
 
-    public bool TryGet(string sessionId, out IntPtr handle) => sessions.TryGetValue(sessionId, out handle);
-
-    public bool Remove(string sessionId, out IntPtr handle) => sessions.TryRemove(sessionId, out handle);
+    public bool TryUse<T>(string sessionId, Func<IntPtr, T> action, out T result)
+    {
+        result = default!;
+        if (!sessions.TryGetValue(sessionId, out var session)) return false;
+        lock (session)
+        {
+            if (session.Handle == IntPtr.Zero) return false;
+            result = action(session.Handle);
+            return true;
+        }
+    }
 
     public void Dispose()
     {
-        foreach (var pair in sessions)
+        foreach (var sessionId in sessions.Keys)
         {
-            var handle = pair.Value;
-            try { api.Disconnect(handle); } catch { }
-            try { api.Delete(ref handle); } catch { }
+            try { Close(sessionId); } catch { }
         }
-        sessions.Clear();
+    }
+
+    public JingDiaoIpcResult Close(string sessionId)
+    {
+        if (!sessions.TryRemove(sessionId, out var session))
+            return new() { ReturnCode = -404, ErrorMessage = "Unknown session." };
+        lock (session)
+        {
+            try
+            {
+                var ok = api.Disconnect(session.Handle);
+                var error = ok ? 0 : api.GetLastError(session.Handle);
+                return new() { ReturnCode = ok ? 0 : (int)(error == 0 ? 1 : error),
+                    ErrorMessage = ok ? null : $"NcMonIO disconnect failed: {error}" };
+            }
+            finally
+            {
+                var handle = session.Handle;
+                session.Handle = IntPtr.Zero;
+                api.Delete(ref handle);
+            }
+        }
     }
 }

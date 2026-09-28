@@ -17,9 +17,12 @@ public interface IJdMonApi
     bool GetSpindle(IntPtr handle, double[] spindle);
     bool GetRate(IntPtr handle, int[] rates);
     bool GetMacro(IntPtr handle, int number, out double value);
+    bool SetMacro(IntPtr handle, int number, double value);
     bool GetLineNo(IntPtr handle, out int lineNo);
     bool GetPartCount(IntPtr handle, out int count);
     bool GetMachFileList(IntPtr handle, string directory, int bufferSize, out string fileList);
+    bool GetFileAttribute(IntPtr handle, string path, out bool isDirectory, out long size);
+    bool SetReceiveFolder(IntPtr handle, string directory);
     bool SendNcFile(IntPtr handle, string localPath, bool addToTask, bool setMainProgram);
     bool ReceiveFile(IntPtr handle, string remotePath, string localPath);
     bool DeleteFile(IntPtr handle, string directory, string fileName);

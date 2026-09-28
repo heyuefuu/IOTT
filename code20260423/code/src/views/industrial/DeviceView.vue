@@ -45,6 +45,7 @@
                         </el-icon>
                         导出设备
                     </el-button>
+                    <el-button @click="$router.push('/industrial/import')">导入采集点位</el-button>
                     <el-button @click="importDevices">
                         <el-icon>
                             <Upload />
@@ -224,6 +225,9 @@
                         <el-option label="广数 (GSK WebServer)" value="GskWebServer" />
                         <el-option label="广数 (GSK SDK 采集)" value="Gskrm" />
                         <el-option label="FANUC FOCAS" value="FOCAS" />
+                        <el-option label="MTConnect（马扎克 / 兄弟）" value="MTConnect" />
+                        <el-option label="Haas MDC" value="HaasMdc" />
+                        <el-option label="北京精雕" value="JingDiao" />
                         <el-option label="欧姆龙 FINS" value="FINS" />
                         <el-option label="松下 Mewtocol" value="Mewtocol" />
                         <el-option label="OPC UA" value="OpcUa" />
@@ -251,26 +255,28 @@
                             <el-option label="SMB" value="SMB" />
                             <el-option label="NFS" value="NFS" />
                             <el-option label="广数 SDK 文件传输" value="GskrmFileTransfer" />
+                            <el-option label="串口" value="Serial" />
                         </el-select>
                     </el-form-item>
                     <template v-if="deviceForm.transferProtocol">
-                        <el-form-item label="传输主机" prop="transferHost" required>
+                        <el-form-item v-if="deviceForm.transferProtocol !== 'Serial'" label="传输主机" prop="transferHost" required>
                             <el-input v-model="deviceForm.transferHost" placeholder="如 192.168.1.20" />
                         </el-form-item>
-                        <el-form-item v-if="deviceForm.transferProtocol !== 'GskrmFileTransfer'" label="传输端口" prop="transferPort" required>
+                        <el-form-item v-if="!['GskrmFileTransfer', 'Serial'].includes(deviceForm.transferProtocol)" label="传输端口" prop="transferPort" required>
                             <el-input v-model.number="deviceForm.transferPort" placeholder="FTP 21，SMB 445，NFS 2049" />
                         </el-form-item>
-                        <el-alert v-else type="info" :closable="false" show-icon title="连接端口由广数 SDK 管理，只需填写机床 IP。" />
+                        <el-alert v-else-if="deviceForm.transferProtocol === 'GskrmFileTransfer'" type="info" :closable="false" show-icon title="连接端口由广数 SDK 管理，只需填写机床 IP。" />
+                        <SerialPortSettings v-if="deviceForm.transferProtocol === 'Serial'" v-model="deviceForm.transferExtendedProperties" />
                         <el-form-item v-if="deviceForm.transferProtocol === 'SMB'" label="共享名" prop="transferShareName" required>
                             <el-input v-model="deviceForm.transferShareName" placeholder="如 NC_PROGRAM" />
                         </el-form-item>
                         <el-form-item v-if="deviceForm.transferProtocol === 'NFS'" label="挂载目录" prop="transferMountPoint" required>
                             <el-input v-model="deviceForm.transferMountPoint" placeholder="采集服务主机上已挂载的目录，如 Z:\ 或 /mnt/cnc" />
                         </el-form-item>
-                        <el-form-item v-if="deviceForm.transferProtocol !== 'GskrmFileTransfer'" label="传输账号" prop="transferUsername">
+                        <el-form-item v-if="!['GskrmFileTransfer', 'Serial'].includes(deviceForm.transferProtocol)" label="传输账号" prop="transferUsername">
                             <el-input v-model="deviceForm.transferUsername" placeholder="可留空使用匿名/来宾" />
                         </el-form-item>
-                        <el-form-item v-if="deviceForm.transferProtocol !== 'GskrmFileTransfer'" label="传输密码" prop="transferPassword">
+                        <el-form-item v-if="!['GskrmFileTransfer', 'Serial'].includes(deviceForm.transferProtocol)" label="传输密码" prop="transferPassword">
                             <el-input v-model="deviceForm.transferPassword" type="password" show-password />
                         </el-form-item>
                     </template>
@@ -323,6 +329,18 @@
 
                 </template>
 
+                <template v-else-if="deviceForm.protocol === 'MTConnect'">
+                    <el-alert type="info" :closable="false" title="MTConnect 标准采集只读；写入需配置厂家提供的写接口及可写点位。" />
+                    <el-form-item label="厂商写接口 URL">
+                        <el-input v-model="deviceForm.mtWriteEndpointUrl" placeholder="可选，HTTP(S) 写接口地址" />
+                    </el-form-item>
+                    <el-form-item label="可写点位">
+                        <el-input v-model="deviceForm.mtWriteAddresses" type="textarea" placeholder="精确 DataItem.id，多个用逗号或换行分隔" />
+                    </el-form-item>
+                    <el-form-item label="写接口 Token">
+                        <el-input v-model="deviceForm.mtWriteBearerToken" type="password" show-password autocomplete="off" />
+                    </el-form-item>
+                </template>
                 <template v-else-if="deviceForm.protocol === 'NCLink'">
                     <el-form-item label="设备唯一标识" prop="deviceGuid" required>
                         <el-input v-model="deviceForm.deviceGuid" placeholder="NC-Link 设备 GUID，须与现场一致" />
@@ -909,6 +927,7 @@ import {
 import { buildProgramTransferConfig } from "./deviceTransferConfig";
 import { useAuthStore } from "@/stores/auth";
 import HistoryStorageSettings from "./HistoryStorageSettings.vue";
+import SerialPortSettings from "../transfer/SerialPortSettings.vue";
 
 const auth = useAuthStore();
 const historyStorageSettingsVisible = ref(false);
@@ -1129,6 +1148,7 @@ function buildExtendedProps(form: Record<string, unknown>): Record<string, strin
         NCLink: ["DeviceGuid", "Brand", "MqttBrokerHost", "MqttBrokerPort", "MqttUsername", "MqttPassword"],
         NCLinkApi: ["DeviceId", "ApiBaseUrl"],
         GskWebServer: ["DeviceSn", "Scheme", "ManagementBaseUrl", "WorkshopAuthToken", "AuthToken"],
+        MTConnect: ["WriteEndpointUrl", "WriteAddresses", "WriteBearerToken"],
     };
     for (const key of [...commonKeys, ...(editableKeys[protocol] ?? [])]) delete ext[key];
     const code = String(form.code ?? "").trim();
@@ -1166,6 +1186,17 @@ function buildExtendedProps(form: Record<string, unknown>): Record<string, strin
         if (rejectSha1) ext.RejectSHA1SignedCertificates = rejectSha1;
         const suppressNonce = String(form.suppressNonceValidationErrors ?? "").trim();
         if (suppressNonce) ext.SuppressNonceValidationErrors = suppressNonce;
+        return ext;
+    }
+
+    if (protocol === "MTConnect") {
+        const endpoint = String(form.mtWriteEndpointUrl ?? "").trim();
+        if (endpoint) {
+            ext.WriteEndpointUrl = endpoint;
+            ext.WriteAddresses = String(form.mtWriteAddresses ?? "").trim();
+            const token = String(form.mtWriteBearerToken ?? "").trim();
+            if (token) ext.WriteBearerToken = token;
+        }
         return ext;
     }
 
@@ -2458,6 +2489,9 @@ const transferChannelTagType = computed(() => {
 const transferChannelDetail = computed(() => {
     const ui = selectedTransferDevice.value;
     if (!ui) return "请选择设备";
+    if (ui.transferProtocol === "Serial") {
+        return `使用采集服务主机串口：${ui.transferExtendedProperties?.PortName ?? ""}`;
+    }
     if (ui.transferProtocol === "NFS") {
         return `使用设备已保存的 NFS 挂载目录：${ui.transferMountPoint}`;
     }
@@ -3773,8 +3807,15 @@ function treeDefaultsForNewDevice(): Record<string, unknown> {
             port: 11520,
         };
     }
+    const defaults: Record<string, { protocol: string; port: number }> = {
+        mazak: { protocol: "MTConnect", port: 5000 },
+        brother: { protocol: "MTConnect", port: 5000 },
+        haas: { protocol: "HaasMdc", port: 9999 },
+        jingdiao: { protocol: "JingDiao", port: 89 },
+        makino: { protocol: "FOCAS", port: 8193 },
+    };
     if (brandLabel) {
-        return { brand: brandLabel };
+        return { brand: brandLabel, ...defaults[key], model: "" };
     }
     return {};
 }
@@ -3829,6 +3870,9 @@ const deviceForm = ref({
     gskScheme: "http",
     gskManagementBaseUrl: "",
     gskWorkshopAuthToken: "",
+    mtWriteEndpointUrl: "",
+    mtWriteAddresses: "",
+    mtWriteBearerToken: "",
     originalProtocol: "",
     extendedProperties: {} as Record<string, string | undefined>,
     originalTransferProtocol: "",
@@ -3838,6 +3882,7 @@ const deviceForm = ref({
 function onDeviceProtocolChange(protocol: string) {
     const ports: Record<string, number> = {
         FOCAS: 8193, OpcUa: 4840, NCLink: 1883, NCLinkApi: 19001, ModbusTCP: 502,
+        MTConnect: 5000, HaasMdc: 9999, JingDiao: 89,
         GskWebServer: deviceForm.value.gskScheme === "https" ? 443 : 11520,
     };
     deviceForm.value.protocol = protocol;
@@ -3847,9 +3892,13 @@ function onDeviceProtocolChange(protocol: string) {
 function onDeviceBrandChange(brand: string) {
     const protocols: Record<string, string> = {
         huazhong: "NCLinkApi", guangzhou: "GskWebServer", fanuc: "FOCAS", siemens: "OpcUa",
+        mazak: "MTConnect", brother: "MTConnect", haas: "HaasMdc", jingdiao: "JingDiao", makino: "FOCAS",
     };
     const protocol = protocols[inferBrandKey(brand)];
-    if (protocol && protocol !== deviceForm.value.protocol) onDeviceProtocolChange(protocol);
+    if (protocol && protocol !== deviceForm.value.protocol) {
+        onDeviceProtocolChange(protocol);
+        deviceForm.value.model = "";
+    }
 }
 
 function onGskSchemeChange(scheme: string) {
@@ -3917,6 +3966,9 @@ const openAddDeviceDialog = () => {
         gskScheme: "http",
         gskManagementBaseUrl: "",
         gskWorkshopAuthToken: "",
+        mtWriteEndpointUrl: "",
+        mtWriteAddresses: "",
+        mtWriteBearerToken: "",
         originalProtocol: "",
         extendedProperties: {},
         originalTransferProtocol: "",
@@ -3979,6 +4031,9 @@ const editDevice = (device: DeviceUi) => {
         gskScheme: String(device.extendedProperties?.Scheme ?? "http"),
         gskManagementBaseUrl: String(device.extendedProperties?.ManagementBaseUrl ?? ""),
         gskWorkshopAuthToken: String(device.extendedProperties?.WorkshopAuthToken ?? device.extendedProperties?.AuthToken ?? ""),
+        mtWriteEndpointUrl: String(device.extendedProperties?.WriteEndpointUrl ?? ""),
+        mtWriteAddresses: String(device.extendedProperties?.WriteAddresses ?? ""),
+        mtWriteBearerToken: String(device.extendedProperties?.WriteBearerToken ?? ""),
         originalProtocol: device.protocol,
         extendedProperties: { ...device.extendedProperties },
         originalTransferProtocol: device.transferProtocol,
@@ -4018,11 +4073,15 @@ const saveDevice = async () => {
         ElMessage.warning("请输入有效端口 port");
         return;
     }
-    if (String(f.transferProtocol ?? "").trim() && !String(f.transferHost ?? "").trim()) {
+    if (f.transferProtocol === "Serial" && !String(f.transferExtendedProperties?.PortName ?? "").trim()) {
+        ElMessage.warning("请填写串口名称");
+        return;
+    }
+    if (String(f.transferProtocol ?? "").trim() && f.transferProtocol !== "Serial" && !String(f.transferHost ?? "").trim()) {
         ElMessage.warning("请填写文件传输主机");
         return;
     }
-    if (String(f.transferProtocol ?? "").trim() && f.transferProtocol !== "GskrmFileTransfer"
+    if (String(f.transferProtocol ?? "").trim() && !["GskrmFileTransfer", "Serial"].includes(f.transferProtocol)
         && (!Number.isInteger(f.transferPort) || f.transferPort <= 0 || f.transferPort > 65535)) {
         ElMessage.warning("请填写有效文件传输端口");
         return;
@@ -4048,6 +4107,12 @@ const saveDevice = async () => {
         return;
     }
 
+    if (f.protocol === "MTConnect" && f.mtWriteEndpointUrl.trim()) {
+        if (!/^https?:\/\/[^\s]+$/i.test(f.mtWriteEndpointUrl.trim()) || !f.mtWriteAddresses.trim()) {
+            ElMessage.warning("厂商写接口需填写有效的 HTTP(S) URL 和可写点位");
+            return;
+        }
+    }
     const transfer = buildProgramTransferConfig(f);
     const ext = buildExtendedProps(f as unknown as Record<string, unknown>);
     if (!transfer && f.originalTransferProtocol) delete ext.transferDeviceId;

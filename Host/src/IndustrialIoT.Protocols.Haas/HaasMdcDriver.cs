@@ -17,7 +17,7 @@ using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 ///   Q 命令：读取数据（命名地址如 "Mode"→Q104；宏变量 "Macro:10001"→Q600 10001）
 ///   E 命令：写入宏变量（"Macro:10001" + 42.0 → E10001 42.0）
 /// </summary>
-[ProtocolDriver(ProtocolType.HaasMdc, "Haas", "哈斯", "HaasNGC", "MDC")]
+[ProtocolDriver(ProtocolType.HaasMdc, "Haas", "哈斯", "哈斯（Haas）", "HaasNGC", "MDC")]
 public sealed class HaasMdcDriver : IProtocolDriver, IAddressSpaceBrowser
 {
     private const int DefaultPort = 9999;

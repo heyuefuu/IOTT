@@ -5,6 +5,7 @@ public sealed record JingDiaoConnectRequest(
 
 public sealed record JingDiaoSessionRequest(string SessionId);
 public sealed record JingDiaoMacroRequest(string SessionId, int Number);
+public sealed record JingDiaoMacroWriteRequest(string SessionId, int Number, double Value);
 public sealed record JingDiaoBrowseFilesRequest(string SessionId, string? Path);
 public sealed record JingDiaoDownloadRequest(string SessionId, string RemotePath);
 public sealed record JingDiaoDeleteFileRequest(string SessionId, string Directory, string FileName);

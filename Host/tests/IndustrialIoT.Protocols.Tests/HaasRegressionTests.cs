@@ -24,6 +24,10 @@ internal static class HaasRegressionTests
                 ("Q100", ">Q100 CNC123"),
                 ("E10001 12.5", ">E10001 12.5"),
                 ("Q600 10001", "MACRO, 10001, 12.5"),
+                ("E10002 1", ">E10002 1"),
+                ("Q600 10002", "MACRO, 10002, 1"),
+                ("E10003 553", ">E10003 553"),
+                ("Q600 10003", "MACRO, 10003, 553"),
             };
             foreach (var (command, response) in exchanges)
             {
@@ -37,6 +41,12 @@ internal static class HaasRegressionTests
         TestSupport.Require((await driver.WriteTagAsync("Macro:10001", DataType.Double, 12.5, timeout.Token)).Success, "Macro write failed");
         var read = await driver.ReadTagAsync("Macro:10001", DataType.Double, timeout.Token);
         TestSupport.Require(read.Quality == TagQuality.Good && Equals(read.Value, 12.5), "Macro readback failed");
+        TestSupport.Require((await driver.WriteTagAsync("Macro:10002", DataType.Bool, true, timeout.Token)).Success, "Bool macro write failed");
+        var booleanRead = await driver.ReadTagAsync("Macro:10002", DataType.Bool, timeout.Token);
+        TestSupport.Require(booleanRead.Quality == TagQuality.Good && Equals(booleanRead.Value, true), "Bool macro readback failed");
+        TestSupport.Require((await driver.WriteTagAsync("Macro:10003", DataType.Int32, 553, timeout.Token)).Success, "Integer macro write failed");
+        var integerRead = await driver.ReadTagAsync("Macro:10003", DataType.Int32, timeout.Token);
+        TestSupport.Require(integerRead.Quality == TagQuality.Good && Equals(integerRead.Value, 553), "Integer macro readback failed");
         await peer;
     }
 
@@ -67,6 +77,45 @@ internal static class HaasRegressionTests
         await peer;
         TestSupport.Require(first.Quality == TagQuality.Good && Equals(first.Value, "IDLE"), "Fragment truncated: " + first.Value);
         TestSupport.Require(second.Quality == TagQuality.Good && Equals(second.Value, 42), "Previous frame leaked: " + second.Value);
+    }
+
+    public static async Task LabelledResponsesAsync()
+    {
+        var cases = new (string Address, string Command, DataType Type, string Response, object Value, TagQuality Quality)[]
+        {
+            ("Mode", "Q104", DataType.String, ">MODE, (MEM)", "(MEM)", TagQuality.Good),
+            ("PartCount", "Q402", DataType.Int32, ">M30 #1, 553", 553, TagQuality.Good),
+            ("PartCount2", "Q403", DataType.Int32, ">Q403 M30 #2, 554", 554, TagQuality.Good),
+            ("Status", "Q500", DataType.String, ">Q500 IDLE, NO PROGRAM, 0", "IDLE, NO PROGRAM, 0", TagQuality.Good),
+            ("Status", "Q500", DataType.String, ">STATUS, PROGRAM O12345, PARTS 123", "STATUS, PROGRAM O12345, PARTS 123", TagQuality.Good),
+            ("Macro:10001", "Q600 10001", DataType.Double, ">MACRO, 10001, -12.5", -12.5, TagQuality.Good),
+            ("PartCount", "Q402", DataType.Int32, ">M30 #1, invalid-number", "", TagQuality.Bad),
+            ("Mode", "Q104", DataType.String, ">ERROR, DATA UNAVAILABLE", "", TagQuality.Bad),
+            ("Mode", "Q104", DataType.String, ">MODE, ERROR", "", TagQuality.Bad),
+        };
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var peer = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync(timeout.Token);
+            using var stream = client.GetStream();
+            using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+            foreach (var sample in cases)
+            {
+                TestSupport.Require(await reader.ReadLineAsync(timeout.Token) == sample.Command, "Wrong labelled query");
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(sample.Response + "\r\n"), timeout.Token);
+            }
+        }, timeout.Token);
+        await using var driver = new HaasMdcDriver(NullLogger<HaasMdcDriver>.Instance);
+        TestSupport.Require((await driver.ConnectAsync(Config(listener, 1000))).Success, "MDC connect failed");
+        foreach (var sample in cases)
+        {
+            var read = await driver.ReadTagAsync(sample.Address, sample.Type, timeout.Token);
+            TestSupport.Require(read.Quality == sample.Quality && Equals(read.Value, sample.Value),
+                $"Unexpected labelled response {sample.Response}: {read.Quality} {read.Value}");
+        }
+        await peer;
     }
 
     public static Task ReadTimeoutAsync() => TimeoutAsync(false);

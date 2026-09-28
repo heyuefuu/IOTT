@@ -111,13 +111,6 @@ public sealed partial class JingDiaoDriver :
         finally { gate.Release(); }
     }
 
-    public Task<WriteResult> WriteTagAsync(string address, DataType dataType, object value, CancellationToken ct = default)
-        => Task.FromResult(new WriteResult
-        {
-            Success = false,
-            ErrorMessage = "JingDiao first release does not support remote control or tag writes."
-        });
-
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.CompareExchange(ref disposed, 1, 0) != 0) return;

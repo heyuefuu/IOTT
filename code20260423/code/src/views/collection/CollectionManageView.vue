@@ -92,7 +92,7 @@
 			</el-table>
 			<el-empty
 				v-if="selectedDeviceId && !profiles.length && !loadingProfiles"
-				description="该设备暂无采集配置，可在「PLC监控 → 采集配置导入」中创建或批量导入"
+				description="该设备暂无采集配置，可在对应的 CNC 或 PLC 设备页面导入采集点位"
 				:image-size="80"
 			/>
 			<el-empty

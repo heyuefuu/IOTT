@@ -1,6 +1,7 @@
 namespace IndustrialIoT.Protocols.JingDiao;
 
 using System.Text;
+using System.Text.Json;
 using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Protocols.Models;
 
@@ -16,6 +17,10 @@ public sealed partial class JingDiaoDriver
 
     public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
     {
+        if (format == ExportFormat.JSON)
+            return Task.FromResult<Stream>(new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(
+                RootNodes.SelectMany(root => ChildNodes(root.Path.Trim('/'))))));
+        if (format != ExportFormat.CSV) throw new NotSupportedException($"Unsupported export format: {format}");
         var sb = new StringBuilder("Path,DisplayName,DataType,Readable,Writable\n");
         foreach (var root in RootNodes)
         foreach (var node in ChildNodes(root.Path.Trim('/')))
@@ -98,6 +103,6 @@ public sealed partial class JingDiaoDriver
         NodeType = AddressNodeType.Variable,
         DataType = dataType,
         IsReadable = true,
-        IsWritable = false
+        IsWritable = path.StartsWith("Macro:", StringComparison.OrdinalIgnoreCase)
     };
 }

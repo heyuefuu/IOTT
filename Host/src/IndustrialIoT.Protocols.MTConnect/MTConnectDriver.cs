@@ -14,7 +14,7 @@ using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 /// <summary>
 /// MTConnect 驱动 — 适用于 Mazak（Smooth 系列）、Brother（Speedio）等内置 MTConnect Agent 的数控。
 /// 协议：HTTP GET + XML 响应。标准端点 /probe（设备树）、/current（当前快照）、/sample（采样流）。
-/// 只读协议；点位地址使用 DataItem.id（MTConnect 标识符）。
+/// 标准端点只读；厂商私有写适配仅开放显式配置的 DataItem.id 白名单。
 /// </summary>
 [ProtocolDriver(ProtocolType.MTConnect, "Mazak", "马扎克", "Brother", "兄弟", "MTConnect")]
 public sealed class MTConnectDriver : IProtocolDriver, IAddressSpaceBrowser
@@ -110,17 +110,23 @@ public sealed class MTConnectDriver : IProtocolDriver, IAddressSpaceBrowser
             return Task.FromResult<WriteResult>(new()
             {
                 Success = false,
-                ErrorMessage = "MTConnect write endpoint is not configured. Set ExtendedProperties['WriteEndpointUrl'] for vendor private writes.",
+                ErrorMessage = "MTConnect vendor writes require WriteEndpointUrl and explicit WriteAddresses in ExtendedProperties.",
             });
         }
 
+        if (_state != ConnectionState.Connected || !_writeOptions.CanWrite(address))
+            return Task.FromResult(new WriteResult
+            {
+                Success = false,
+                ErrorMessage = "MTConnect must be connected and the address must be listed in WriteAddresses.",
+            });
         return WriteViaAdapterAsync(address, dataType, value, ct);
     }
 
     public async Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
     {
         var xml = await FetchXmlAsync("/probe", ct);
-        var tree = MTConnectXmlParser.ParseProbe(xml);
+        var tree = ApplyWriteAccess(MTConnectXmlParser.ParseProbe(xml));
         if (string.IsNullOrEmpty(parentPath)) return tree;
         var node = FindNode(tree, parentPath);
         return node?.Children ?? [];
@@ -175,11 +181,14 @@ public sealed class MTConnectDriver : IProtocolDriver, IAddressSpaceBrowser
     private async Task<WriteResult> WriteViaAdapterAsync(
         string address, DataType dataType, object value, CancellationToken ct)
     {
-        if (!string.IsNullOrWhiteSpace(_writeOptions.BearerToken))
-            _http.DefaultRequestHeaders.Authorization = new("Bearer", _writeOptions.BearerToken);
-
         var payload = new MTConnectWriteAdapterRequest(address, dataType.ToString(), value);
-        using var response = await _http.PostAsJsonAsync(_writeOptions.EndpointUrl!, payload, ct);
+        using var request = new HttpRequestMessage(HttpMethod.Post, _writeOptions.EndpointUrl!)
+        {
+            Content = JsonContent.Create(payload),
+        };
+        if (!string.IsNullOrWhiteSpace(_writeOptions.BearerToken))
+            request.Headers.Authorization = new("Bearer", _writeOptions.BearerToken);
+        using var response = await _http.SendAsync(request, ct);
         if (response.IsSuccessStatusCode)
             return new() { Success = true };
 
@@ -224,6 +233,13 @@ public sealed class MTConnectDriver : IProtocolDriver, IAddressSpaceBrowser
             ErrorMessage = isUnavailable ? "UNAVAILABLE" : null,
         };
     }
+
+    private IReadOnlyList<AddressNode> ApplyWriteAccess(IReadOnlyList<AddressNode> nodes) =>
+        nodes.Select(node => node with
+        {
+            IsWritable = node.NodeType == AddressNodeType.Variable && _writeOptions.CanWrite(node.Path),
+            Children = node.Children is null ? null : ApplyWriteAccess(node.Children),
+        }).ToList();
 
     private static AddressNode? FindNode(IEnumerable<AddressNode> nodes, string path)
     {

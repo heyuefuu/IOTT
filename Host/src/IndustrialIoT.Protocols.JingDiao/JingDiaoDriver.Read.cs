@@ -20,8 +20,20 @@ public sealed partial class JingDiaoDriver
             "spindle" => await ReadSpindleAsync(normalized, parts, dataType, ct),
             "rate" => await ReadRateAsync(normalized, parts, dataType, ct),
             "macro" => await ReadMacroAsync(normalized, parts, dataType, ct),
+            "program" when parts.Length == 2 && parts[1].Equals("Files", StringComparison.OrdinalIgnoreCase)
+                && dataType == DataType.String => await ReadProgramFilesAsync(normalized, dataType, ct),
             _ => Bad(normalized, dataType, $"Unknown JingDiao address '{normalized}'.")
         };
+    }
+
+    private async Task<TagValue> ReadProgramFilesAsync(string address, DataType dataType, CancellationToken ct)
+    {
+        try
+        {
+            return Good(address, dataType, System.Text.Json.JsonSerializer.Serialize(await BrowseFilesAsync(null, ct)));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception error) { return Bad(address, dataType, error.Message); }
     }
 
     public async Task<IReadOnlyList<TagValue>> ReadTagsAsync(IReadOnlyList<TagReadRequest> requests, CancellationToken ct = default)

@@ -1,12 +1,13 @@
 <template>
 	<div class="plc-collection-import-view">
-		<h2 class="page-title">PLC采集配置导入</h2>
+		<h2 class="page-title">{{ importDeviceType }}采集配置导入</h2>
 		<el-alert title="采样频率与批量导入" description="手动输入可设置单个点位的采集频率；CSV/JSON 批量导入可为不同分组设置不同的 IntervalMs。导入后在「采集任务管理」启动采集。" type="info" :closable="false" />
 
 		<el-card class="import-card">
 			<template #header>
 				<div class="card-header">
 					<span>导入采集配置</span>
+					<el-button @click="downloadImportTemplate">下载 CSV 模板</el-button>
 					<el-button @click="openCollectionManage">采集任务管理</el-button>
 				</div>
 			</template>
@@ -30,7 +31,7 @@
 						<el-form-item label="文件类型">
 							<el-radio-group v-model="fileType">
 								<el-radio-button label="standard">采集配置</el-radio-button>
-								<el-radio-button label="tia">TIA 符号表</el-radio-button>
+								<el-radio-button v-if="importDeviceType === 'PLC'" label="tia">TIA 符号表</el-radio-button>
 							</el-radio-group>
 						</el-form-item>
 					</el-form>
@@ -54,7 +55,7 @@
 							<div class="el-upload__tip">
 								{{ fileType === "tia"
 									? "TIA 符号表仅支持 .csv，需包含 Name、Data Type、Address"
-									: "支持上传 .json 或 .csv 格式的采集配置文件" }}
+									: "支持 JSON / CSV；模板需填写实际点位 Address、DataType、GroupName 和 IntervalMs（毫秒）" }}
 							</div>
 						</template>
 					</el-upload>
@@ -71,7 +72,7 @@
 						<el-form-item label="目标设备" required>
 							<el-select
 								v-model="fileConfig.deviceId"
-								placeholder="请选择已注册的 PLC 设备"
+								:placeholder="`请选择已注册的 ${importDeviceType} 设备`"
 								filterable :loading="devicesLoading" style="width: 100%"
 								@visible-change="(visible: boolean) => visible && loadDevices()"
 							>
@@ -110,7 +111,7 @@
 						<el-form-item label="目标设备" required>
 							<el-select
 								v-model="manualConfig.deviceId"
-								placeholder="请选择已注册的 PLC 设备"
+								:placeholder="`请选择已注册的 ${importDeviceType} 设备`"
 								filterable :loading="devicesLoading" style="width: 100%"
 								@visible-change="(visible: boolean) => visible && loadDevices()"
 							>
@@ -204,7 +205,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted } from "vue";
+import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Upload, View, Check } from "@element-plus/icons-vue";
 import {
@@ -251,6 +252,7 @@ const manualConfig = reactive({
 const devices = ref<DeviceDto[]>([]);
 const devicesLoading = ref(false);
 const route = useRoute();
+const importDeviceType = computed(() => route.meta.deviceType === "CNC" ? "CNC" : "PLC");
 const router = useRouter();
 const openCollectionManage = () => {
 	const deviceId = importMethod.value === "file" ? fileConfig.deviceId : manualConfig.deviceId;
@@ -271,13 +273,35 @@ const getImportError = (error: unknown, fallback: string): string => {
 const loadDevices = async () => {
 	if (devicesLoading.value) return;
 	devicesLoading.value = true;
+	const deviceType = importDeviceType.value;
 	try {
-		devices.value = await machineConnectionDevicesApi.list("PLC");
+		const loaded = await machineConnectionDevicesApi.list(deviceType);
+		if (deviceType === importDeviceType.value) devices.value = loaded;
 	} catch (error) {
-		ElMessage.error(getImportError(error, "加载 PLC 设备列表失败，请重新展开下拉框重试"));
+		ElMessage.error(getImportError(error, `加载 ${importDeviceType.value} 设备列表失败，请重新展开下拉框重试`));
 	} finally {
 		devicesLoading.value = false;
+		if (deviceType !== importDeviceType.value) await loadDevices();
 	}
+};
+
+watch(importDeviceType, async () => {
+	devices.value = [];
+	fileConfig.deviceId = "";
+	manualConfig.deviceId = "";
+	fileType.value = "standard";
+	clearUploadedFile();
+	await loadDevices();
+});
+
+const downloadImportTemplate = () => {
+	const blob = new Blob(["Address,DataType,GroupName,IntervalMs,DisplayName,Unit\r\n"], { type: "text/csv;charset=utf-8" });
+	const url = URL.createObjectURL(blob);
+	const link = document.createElement("a");
+	link.href = url;
+	link.download = "collection-template.csv";
+	link.click();
+	setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
 onMounted(async () => {
@@ -432,7 +456,7 @@ const importConfig = () => {
 
 	const deviceId = importMethod.value === "file" ? fileConfig.deviceId : manualConfig.deviceId;
 	if (!devices.value.some((device) => device.id === deviceId)) {
-		ElMessage.warning("请从列表选择已注册的 PLC 设备，不要填写设备名称或编号");
+		ElMessage.warning(`请从列表选择已注册的 ${importDeviceType.value} 设备，不要填写设备名称或编号`);
 		return;
 	}
 
@@ -448,6 +472,10 @@ const importConfig = () => {
 					fileConfig.deviceId,
 					importFile,
 				);
+				if (result.errorCount > 0) {
+					ElMessage.error(result.errors?.join("；") || `导入失败 ${result.errorCount} 条，请检查点位配置`);
+					return;
+				}
 				ElMessage.success(`导入完成：成功 ${result.successCount} 条，失败 ${result.errorCount} 条`);
 				clearUploadedFile();
 				Object.assign(fileConfig, { frequency: 1000, groupName: "" });

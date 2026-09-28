@@ -49,7 +49,7 @@ import {
 import TransferRecordTable from "./TransferRecordTable.vue";
 import { calculateTransferSpeed, getIntegrityState, TRANSFER_PROTOCOLS } from "./transferRecordMetrics";
 
-const transferProtocols = new Set(TRANSFER_PROTOCOLS);
+const transferProtocols = new Set(TRANSFER_PROTOCOLS.map((protocol) => protocol.toUpperCase()));
 const devices = ref<DeviceDto[]>([]);
 const selectedDeviceId = ref("");
 const records = ref<ProgramTransferResponse[]>([]);

@@ -31,6 +31,7 @@
 					<el-option label="FTP" value="FTP" />
 					<el-option label="SMB" value="SMB" />
 					<el-option label="NFS" value="NFS" />
+					<el-option label="串口" value="Serial" />
 				</el-select>
 				<el-button type="primary" @click="refreshDeviceList">
 					<el-icon><Refresh /></el-icon>
@@ -43,7 +44,9 @@
 				<el-table-column prop="id" label="设备ID" width="80" />
 				<el-table-column prop="deviceCode" label="设备编号" width="120" />
 				<el-table-column prop="name" label="设备名称" />
-				<el-table-column prop="ip" label="IP地址" width="150" />
+				<el-table-column label="连接地址" width="150">
+					<template #default="scope">{{ scope.row.protocol === 'Serial' ? scope.row.serialSettings.PortName : scope.row.ip }}</template>
+				</el-table-column>
 				<el-table-column prop="port" label="端口" width="100" />
 				<el-table-column prop="protocol" label="协议" width="100" />
 				<el-table-column prop="status" label="状态" width="100">
@@ -106,13 +109,13 @@
 						placeholder="请输入设备名称"
 					/>
 				</el-form-item>
-				<el-form-item label="IP地址" prop="ip" required>
+				<el-form-item v-if="currentDevice.protocol !== 'Serial'" label="IP地址" prop="ip" required>
 					<el-input
 						v-model="currentDevice.ip"
 						placeholder="请输入IP地址"
 					/>
 				</el-form-item>
-				<el-form-item label="端口" prop="port" required>
+				<el-form-item v-if="currentDevice.protocol !== 'Serial'" label="端口" prop="port" required>
 					<el-input-number
 						v-model="currentDevice.port"
 						:min="1"
@@ -129,22 +132,24 @@
 						<el-option label="FTP" value="FTP" />
 						<el-option label="SMB" value="SMB" />
 						<el-option label="NFS" value="NFS" />
+						<el-option label="串口" value="Serial" />
 					</el-select>
 				</el-form-item>
-				<el-form-item label="用户名" prop="username">
+				<SerialPortSettings v-if="currentDevice.protocol === 'Serial'" v-model="currentDevice.serialSettings" />
+				<el-form-item v-if="currentDevice.protocol !== 'Serial'" label="用户名" prop="username">
 					<el-input
 						v-model="currentDevice.username"
 						placeholder="请输入用户名"
 					/>
 				</el-form-item>
-				<el-form-item label="密码" prop="password">
+				<el-form-item v-if="currentDevice.protocol !== 'Serial'" label="密码" prop="password">
 					<el-input
 						v-model="currentDevice.password"
 						type="password"
 						placeholder="请输入密码"
 					/>
 				</el-form-item>
-				<el-form-item label="设备路径" prop="devicePath">
+				<el-form-item v-if="currentDevice.protocol !== 'Serial'" label="设备路径" prop="devicePath">
 					<el-input
 						v-model="currentDevice.devicePath"
 						placeholder="请输入设备程序存储路径"
@@ -181,8 +186,8 @@
 					<el-button @click="deviceDialogVisible = false"
 						>取消</el-button
 					>
-					<el-button type="success" @click="testConnection"
-						>测试连接</el-button
+					<el-button type="success" :loading="isTesting" @click="testConnection"
+						>保存并测试连接</el-button
 					>
 					<el-button type="primary" @click="saveDevice"
 						>保存</el-button
@@ -258,6 +263,7 @@ import {
 	type CreateDeviceRequest,
 } from "@/api/machineConnectionDevices";
 import { TRANSFER_PROTOCOLS } from "./transferRecordMetrics";
+import SerialPortSettings from "./SerialPortSettings.vue";
 
 // 设备类型定义（映射后端 Device，type=CNC + 文件传输协议）
 interface Device {
@@ -273,6 +279,8 @@ interface Device {
 	shareName?: string; // SMB 必填共享名
 	ftpsMode?: string; // FTP 加密：None/Explicit/Implicit（驱动读 EncryptionMode）
 	status: string;
+	serialSettings: Record<string, string | undefined>;
+	extendedProperties?: Record<string, string>;
 }
 
 // 设备列表（来自后端 /api/devices?type=CNC，仅文件传输协议）
@@ -306,6 +314,8 @@ function mapToDevice(d: DeviceDto): Device {
 		shareName: d.extendedProperties?.ShareName ?? "",
 		ftpsMode: d.extendedProperties?.EncryptionMode ?? "None",
 		status: d.status,
+		serialSettings: { ...d.extendedProperties },
+		extendedProperties: { ...d.extendedProperties },
 	};
 }
 
@@ -332,6 +342,7 @@ const pageSize = ref(10);
 const deviceDialogVisible = ref(false);
 const isEditing = ref(false);
 const currentDevice = reactive<Device>({
+	serialSettings: {},
 	id: "",
 	deviceCode: "",
 	name: "",
@@ -383,6 +394,8 @@ const filteredDevices = computed(() => {
 const openAddDeviceDialog = () => {
 	isEditing.value = false;
 	Object.assign(currentDevice, {
+		serialSettings: {},
+		extendedProperties: {},
 		id: "",
 		deviceCode: "",
 		name: "",
@@ -402,51 +415,68 @@ const openAddDeviceDialog = () => {
 // 打开编辑设备对话框
 const openEditDeviceDialog = (device: Device) => {
 	isEditing.value = true;
-	Object.assign(currentDevice, { ...device });
+	Object.assign(currentDevice, { ...device, serialSettings: { ...device.serialSettings } });
 	deviceDialogVisible.value = true;
 };
 
 // 组装 extendedProperties（按协议补必填项）
 function buildExt(d: Device): Record<string, string> {
-	const ext: Record<string, string> = {};
+	const ext: Record<string, string> = { ...d.extendedProperties };
+	for (const key of ["deviceCode", "devicePath", "ShareName", "EncryptionMode",
+		"PortName", "BaudRate", "DataBits", "Parity", "StopBits"]) delete ext[key];
 	if (d.deviceCode) ext.deviceCode = d.deviceCode;
 	if (d.devicePath) ext.devicePath = d.devicePath;
 	if (d.protocol === "SMB" && d.shareName) ext.ShareName = d.shareName;
 	if (d.protocol === "FTP" && d.ftpsMode && d.ftpsMode !== "None")
 		ext.EncryptionMode = d.ftpsMode;
+	if (d.protocol === "Serial") Object.assign(ext, {
+		PortName: d.serialSettings.PortName?.trim() ?? "",
+		BaudRate: d.serialSettings.BaudRate ?? "9600", DataBits: d.serialSettings.DataBits ?? "8",
+		Parity: d.serialSettings.Parity ?? "None", StopBits: d.serialSettings.StopBits ?? "One",
+	});
 	return ext;
 }
 
 // 保存设备 = 真实创建/更新（后端 type=CNC + 文件传输协议）
-const saveDevice = async () => {
+function validateDevice(): boolean {
 	if (
 		!currentDevice.deviceCode ||
 		!currentDevice.name ||
-		!currentDevice.ip ||
-		!currentDevice.port ||
+		(currentDevice.protocol !== "Serial" && (!currentDevice.ip || !currentDevice.port)) ||
 		!currentDevice.protocol
 	) {
 		ElMessage.warning("请填写必填字段");
-		return;
+		return false;
 	}
 	if (currentDevice.protocol === "SMB" && !currentDevice.shareName) {
 		ElMessage.warning("SMB 协议必须填写共享名（ShareName）");
-		return;
+		return false;
 	}
+	if (currentDevice.protocol === "Serial" && !currentDevice.serialSettings.PortName?.trim()) {
+		ElMessage.warning("请填写采集服务主机的串口名称");
+		return false;
+	}
+	return true;
+}
 
-	const body: CreateDeviceRequest = {
+function buildDeviceRequest(): CreateDeviceRequest {
+	return {
 		name: currentDevice.name,
 		type: "CNC",
 		brand: currentDevice.protocol,
 		model: currentDevice.deviceCode,
 		protocol: currentDevice.protocol,
-		host: currentDevice.ip,
-		port: currentDevice.port,
+		host: currentDevice.protocol === "Serial" ? "localhost" : currentDevice.ip,
+		port: currentDevice.protocol === "Serial" ? 0 : currentDevice.port,
 		username: currentDevice.username || null,
 		password: currentDevice.password || null,
 		extendedProperties: buildExt(currentDevice),
 	};
+}
 
+const saveDevice = async () => {
+	if (!validateDevice()) return;
+	const body = buildDeviceRequest();
 	try {
 		if (isEditing.value) {
 			await machineConnectionDevicesApi.update(currentDevice.id, body);
@@ -500,12 +530,13 @@ const getStatusType = (status: string) => {
 	}
 };
 
-// 测试连接 = 调后端真实连通性测试（需设备已保存）
+// 保存当前参数后，按设备 ID 调用驱动连接测试。
 const testConnection = async () => {
 	if (!isEditing.value || !currentDevice.id) {
 		ElMessage.warning("请先保存设备，再测试连接（后端按设备 ID 建连）");
 		return;
 	}
+	if (!validateDevice()) return;
 
 	testDialogVisible.value = true;
 	isTesting.value = true;
@@ -513,15 +544,21 @@ const testConnection = async () => {
 
 	const startTime = Date.now();
 	try {
+		const saved = await machineConnectionDevicesApi.update(currentDevice.id, buildDeviceRequest());
+		if (saved.upstreamSynced === false) throw new Error(saved.upstreamError ?? "设备参数尚未同步到采集服务");
 		const r = await machineConnectionDevicesApi.testConnection(currentDevice.id);
+		const target = currentDevice.protocol === "Serial"
+			? currentDevice.serialSettings.PortName : `${currentDevice.ip}:${currentDevice.port}`;
 		testResult.value = {
 			success: r.success,
 			message: r.success
-				? `成功连接到 ${currentDevice.ip}:${currentDevice.port}`
-				: (r.errorMessage ?? `无法连接到 ${currentDevice.ip}:${currentDevice.port}`),
+				? currentDevice.protocol === "Serial"
+					? `串口 ${target} 已打开；文件传输兼容性需实际传输验证`
+					: (r.errorMessage ?? `成功连接到 ${target}`)
+				: (r.errorMessage ?? `无法连接到 ${target}`),
 			details: {
-				address: currentDevice.ip,
-				port: currentDevice.port,
+				address: target,
+				port: currentDevice.protocol === "Serial" ? "不适用" : currentDevice.port,
 				protocol: currentDevice.protocol,
 				ftpMode: undefined,
 				responseTime: r.latency ?? `${Date.now() - startTime}`,

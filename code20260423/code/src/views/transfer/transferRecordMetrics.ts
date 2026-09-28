@@ -1,7 +1,7 @@
 import type { ProgramTransferResponse } from "@/api/machineConnectionProgramTransfer";
 
-/** 文件传输支持的协议（上游 IndustrialIoT ProtocolType 真实枚举：FTP/SMB/NFS）。 */
-export const TRANSFER_PROTOCOLS: readonly string[] = ["FTP", "SMB", "NFS"];
+/** 文件传输协议名与上游 ProtocolType 枚举一致。 */
+export const TRANSFER_PROTOCOLS: readonly string[] = ["FTP", "SMB", "NFS", "Serial"];
 
 export type IntegrityState = "pending" | "verified" | "size-matched" | "failed" | "unknown";
 

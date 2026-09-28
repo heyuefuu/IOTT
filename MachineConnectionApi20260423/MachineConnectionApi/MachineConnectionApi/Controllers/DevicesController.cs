@@ -74,7 +74,9 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         if (string.IsNullOrWhiteSpace(input.Type)) return BadRequest(new { error = "Type 不能为空（CNC / PLC / Robot）" });
         if (string.IsNullOrWhiteSpace(input.Protocol)) return BadRequest(new { error = "Protocol 不能为空" });
         if (string.IsNullOrWhiteSpace(input.Host)) return BadRequest(new { error = "Host 不能为空" });
-        if (!IsValidPort(input.Port, input.Protocol)) return BadRequest(new { error = "Port 必须是 1~65535；广数 SDK 可使用 0" });
+        if (!IsValidPort(input.Port, input.Protocol)) return BadRequest(new { error = "Port 必须是 1~65535；串口和广数 SDK 可使用 0" });
+        var serialError = ValidateSerialConfiguration(input.Protocol, input.ExtendedProperties, input.ClearTransfer ? null : input.Transfer);
+        if (serialError is not null) return BadRequest(new { error = serialError });
 
         using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);
         var item = new MachineDeviceDto
@@ -112,9 +114,12 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         var current = _store.ReadAll().FirstOrDefault(x => x.Id == id);
         if (current is null) return NotFound();
         if (!IsValidPort(input.Port ?? current.Port, input.Protocol ?? current.Protocol))
-            return BadRequest(new { error = "Port 必须是 1~65535；广数 SDK 可使用 0" });
+            return BadRequest(new { error = "Port 必须是 1~65535；串口和广数 SDK 可使用 0" });
 
         var transfer = input.ClearTransfer ? null : input.Transfer ?? current.Transfer;
+        var serialError = ValidateSerialConfiguration(input.Protocol ?? current.Protocol,
+            input.ExtendedProperties ?? current.ExtendedProperties, transfer);
+        if (serialError is not null) return BadRequest(new { error = serialError });
         if (!input.ClearTransfer && input.Transfer is { Password: null } requestedTransfer && current.Transfer is { } storedTransfer &&
             string.Equals(requestedTransfer.Protocol, storedTransfer.Protocol, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(requestedTransfer.Host, storedTransfer.Host, StringComparison.OrdinalIgnoreCase) &&
@@ -215,6 +220,8 @@ public class DevicesController : IndustrialIoTProxyControllerBase
 
         if (UsesSdkPort(item.Protocol))
             return Ok(new { success = false, errorMessage = "采集服务不可用，尚未完成广数 SDK 协议验证", mode = "driver" });
+        if (UsesSerialPort(item.Protocol))
+            return Ok(new { success = false, errorMessage = "采集服务不可用，尚未打开串口，串口连接不执行 TCP 探测", mode = "driver" });
 
         try
         {
@@ -245,7 +252,29 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         string.Equals(protocol, "GskrmFileTransfer", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsValidPort(int? port, string? protocol) =>
-        port is > 0 and <= 65535 || port == 0 && UsesSdkPort(protocol);
+        port is > 0 and <= 65535 || port == 0 && (UsesSdkPort(protocol) || UsesSerialPort(protocol));
+
+    private static bool UsesSerialPort(string? protocol) => string.Equals(protocol, "Serial", StringComparison.OrdinalIgnoreCase);
+
+    private static string? ValidateSerialConfiguration(string? protocol, Dictionary<string, string>? properties, TransferDeviceDto? transfer)
+    {
+        if (UsesSerialPort(protocol) && !IsValidSerialProperties(properties))
+            return "串口需要非空 PortName 和有效的 BaudRate/DataBits/Parity/StopBits";
+        if (transfer is not null && UsesSerialPort(transfer.Protocol) &&
+            (string.IsNullOrWhiteSpace(transfer.Host) || !IsValidPort(transfer.Port, transfer.Protocol) ||
+                !IsValidSerialProperties(transfer.ExtendedProperties)))
+            return "串口传输通道需要 Host、有效 Port、非空 PortName 和有效的 BaudRate/DataBits/Parity/StopBits";
+        return null;
+    }
+
+    private static bool IsValidSerialProperties(Dictionary<string, string>? properties) =>
+        properties is not null && properties.TryGetValue("PortName", out var name) && !string.IsNullOrWhiteSpace(name)
+        && (!properties.TryGetValue("BaudRate", out var baud) || int.TryParse(baud, out var rate) && rate > 0)
+        && (!properties.TryGetValue("DataBits", out var bits) || int.TryParse(bits, out var width) && width is >= 5 and <= 8)
+        && (!properties.TryGetValue("Parity", out var parity) ||
+            new[] { "None", "Odd", "Even", "Mark", "Space" }.Contains(parity, StringComparer.OrdinalIgnoreCase))
+        && (!properties.TryGetValue("StopBits", out var stop) ||
+            new[] { "One", "OnePointFive", "Two" }.Contains(stop, StringComparer.OrdinalIgnoreCase));
 
     private void MarkDriverStatus(string id, bool success)
     {
@@ -293,7 +322,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "上游驱动级连接测试不可用，回退 TCP 探测：{DeviceId}", item.Id);
+            _logger.LogWarning(ex, "上游驱动级连接测试不可用：{DeviceId}", item.Id);
             return null;
         }
     }

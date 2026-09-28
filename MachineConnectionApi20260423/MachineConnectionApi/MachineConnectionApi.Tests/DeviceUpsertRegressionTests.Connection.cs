@@ -41,7 +41,7 @@ internal static partial class DeviceUpsertRegressionTests
         Expect(!string.IsNullOrWhiteSpace(tcpResult.GetProperty("errorMessage").GetString()), "TCP result must explain missing driver verification");
         Expect(tcpStore.ReadAll().Single().Status == "Offline" && tcpStore.ReadAll().Single().LastSeenAt == offline.LastSeenAt,
             "TCP-only reachability must not mark a CNC online or update its last device contact");
-        foreach (var protocol in new[] { "Gskrm", "GskrmFileTransfer" })
+        foreach (var protocol in new[] { "Gskrm", "GskrmFileTransfer", "Serial" })
         {
             var sdkStore = new MemoryDeviceStore(offline with { Protocol = protocol });
             var sdkResult = ConnectionJson(await ConnectionController(sdkStore, tcpClient).TestConnection(offline.Id, timeout.Token));

@@ -57,13 +57,13 @@ public static class ProtocolDriverRegistration
         registry.Register(typeof(SiemensS7Driver), ProtocolType.SiemensS7, ["Siemens", "西门子", "S7-1200", "S7-1500", "S7-300", "S7-400", "S7-200Smart", "*"]);
         services.AddSingleton<IFocasApi, NativeFocasApi>();
         services.AddTransient<FocasDriver>();
-        registry.Register(typeof(FocasDriver), ProtocolType.FOCAS, ["FANUC", "发那科", "法那科", "Makino", "牧野", "0i-MF", "0i-D", "30i", "31i", "32i"]);
+        registry.Register(typeof(FocasDriver), ProtocolType.FOCAS, ["FANUC", "发那科", "法那科", "Makino", "牧野", "牧野（Makino）", "0i-MF", "0i-D", "30i", "31i", "32i"]);
         services.AddTransient<FanucRobotDriver>();
         registry.Register(typeof(FanucRobotDriver), ProtocolType.FanucRobot, ["FANUC", "发那科", "Robot", "机器人", "CRX", "M-", "R-", "LR"]);
         services.AddTransient<MTConnectDriver>();
         registry.Register(typeof(MTConnectDriver), ProtocolType.MTConnect, ["Mazak", "马扎克", "Brother", "兄弟", "MTConnect", "*"]);
         services.AddTransient<HaasMdcDriver>();
-        registry.Register(typeof(HaasMdcDriver), ProtocolType.HaasMdc, ["Haas", "哈斯", "HaasNGC", "MDC"]);
+        registry.Register(typeof(HaasMdcDriver), ProtocolType.HaasMdc, ["Haas", "哈斯", "哈斯（Haas）", "HaasNGC", "MDC"]);
         services.AddTransient<HuazhongRobotDriver>();
         // 华中机器人地址映射：默认无内置点位，从 appsettings.json 的 "RobotAddressMaps:Huazhong:Nodes" 节点加载。
         // 配置为空时仅支持原始 Modbus 地址直传（如 "1000;float"、"0x0040"、"100"）。

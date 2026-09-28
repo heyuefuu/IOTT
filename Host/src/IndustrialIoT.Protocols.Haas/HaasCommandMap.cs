@@ -135,8 +135,18 @@ internal static class HaasCommandMap
 
         // 普通 Q 响应："Q104 IDLE" 或 "Q500 IDLE, NO PROGRAM, 0"
         // 剥掉前缀 Q 命令码，余下就是值
-        var qPrefix = Regex.Match(trimmed, @"^Q\d+\s*(?<rest>.*)$", RegexOptions.IgnoreCase);
-        if (qPrefix.Success) return qPrefix.Groups["rest"].Value.Trim();
+        var qPrefix = Regex.Match(trimmed, @"^Q\d+(?:\s+|,\s*|$)(?<rest>.*)$", RegexOptions.IgnoreCase);
+        if (qPrefix.Success) trimmed = qPrefix.Groups["rest"].Value.Trim();
+
+        // 单值查询可能返回 "MODE, (MEM)"；Q500 是复合状态，保留完整字段。
+        var query = commandSent.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (!IsErrorValue(trimmed) && query is not null &&
+            !query.Equals("Q500", StringComparison.OrdinalIgnoreCase) &&
+            NameToQ.Values.Contains(query, StringComparer.OrdinalIgnoreCase))
+        {
+            var separator = trimmed.IndexOf(',');
+            if (separator >= 0) return trimmed[(separator + 1)..].Trim();
+        }
 
         return trimmed;
     }

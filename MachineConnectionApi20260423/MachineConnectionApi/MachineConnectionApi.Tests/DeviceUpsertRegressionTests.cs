@@ -36,6 +36,7 @@ internal static partial class DeviceUpsertRegressionTests
         await UpstreamSyncClearsRemovedTransfer();
         await ConnectionTestsDistinguishDriverAndTcp();
         await SdkPortsValidateAgainstSelectedProtocol();
+        await SerialConfigurationSurvivesEdits();
     }
 
     private static async Task SdkPortsValidateAgainstSelectedProtocol()

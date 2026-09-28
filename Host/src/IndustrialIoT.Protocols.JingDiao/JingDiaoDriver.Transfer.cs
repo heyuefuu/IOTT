@@ -34,10 +34,8 @@ public sealed partial class JingDiaoDriver
         var totalBytes = metadata.FileSize ?? (source.CanSeek ? source.Length : 0);
         try
         {
-            var fileName = string.IsNullOrWhiteSpace(metadata.FileName)
-                ? Path.GetFileName(metadata.RemotePath)
-                : metadata.FileName;
-            var result = await client!.UploadAsync(sessionId, source, fileName,
+            var target = JingDiaoProgramPath.Resolve(metadata.FileName, metadata.RemotePath);
+            var result = await client!.UploadAsync(sessionId, source, target.FileName, target.Directory,
                 options?.UploadAddToTask ?? false, options?.UploadSetMainProgram ?? false, ct);
             sw.Stop();
             progress?.Report(new() { BytesTransferred = totalBytes, TotalBytes = totalBytes });

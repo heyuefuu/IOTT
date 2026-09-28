@@ -35,6 +35,31 @@ public sealed class NativeJdMonApi : IJdMonApi
         => ReceiveFileNative(handle, remotePath, localPath, IntPtr.Zero, IntPtr.Zero) != 0;
     public bool DeleteFile(IntPtr handle, string directory, string fileName)
         => DelMachFile(handle, directory, fileName) != 0;
+    public bool SetReceiveFolder(IntPtr handle, string directory)
+        => SetMachRcvFolder(handle, directory) != 0;
+
+    public bool SetMacro(IntPtr handle, int number, double value)
+    {
+        var numbers = new int[64];
+        var values = new double[64];
+        numbers[0] = number;
+        values[0] = value;
+        return SetMacroVarValue(handle, 1, numbers, values) != 0;
+    }
+
+    public bool GetFileAttribute(IntPtr handle, string path, out bool isDirectory, out long size)
+    {
+        var name = new byte[512];
+        var encoded = Gbk.GetBytes(path);
+        if (encoded.Length >= name.Length) throw new ArgumentException("JingDiao file path exceeds 511 bytes.");
+        encoded.CopyTo(name, 0);
+        var type = new int[1];
+        var sizes = new long[1];
+        var ok = GetFileAttributeNative(handle, name, type, sizes) != 0;
+        isDirectory = type[0] == 1;
+        size = sizes[0];
+        return ok;
+    }
 
     public bool GetBasicModal(IntPtr handle, out JingDiaoModalSnapshot value)
     {
@@ -127,6 +152,15 @@ public sealed class NativeJdMonApi : IJdMonApi
 
     [DllImport(DllName, EntryPoint = "_GetMacroVarValue@16", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int GetMacroVarValue(IntPtr handle, int count, [In] int[] numbers, [Out] double[] values);
+
+    [DllImport(DllName, EntryPoint = "_SetMacroVarValue@16", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    private static extern int SetMacroVarValue(IntPtr handle, int count, [In] int[] numbers, [In] double[] values);
+
+    [DllImport(DllName, EntryPoint = "_SetMachRcvFolder@8", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, ExactSpelling = true)]
+    private static extern int SetMachRcvFolder(IntPtr handle, [MarshalAs(UnmanagedType.LPStr)] string directory);
+
+    [DllImport(DllName, EntryPoint = "_GetFileAttribute@16", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
+    private static extern int GetFileAttributeNative(IntPtr handle, [In] byte[] path, [Out] int[] type, [Out] long[] size);
 
     [DllImport(DllName, EntryPoint = "_GetCurLineNo@8", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)]
     private static extern int GetCurLineNo(IntPtr handle, [Out] int[] lineNo);

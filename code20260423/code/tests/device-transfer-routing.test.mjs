@@ -25,6 +25,7 @@ const names = [
     "onDeviceProtocolChange", "onDeviceBrandChange", "onGskSchemeChange", "onTransferProtocolChange",
     "getDelimitedAddressSpaceRemainder", "isAddressSpaceChildPath", "isImmediateAddressSpaceChild",
     "sanitizeAddressSpaceLevelNodes", "testConnection",
+    "SINGLE_LEVEL_BROWSE_PROTOCOLS", "markUnloadedFolders",
 ];
 const parsed = ts.createSourceFile("DeviceView.ts", script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 const statements = parsed.statements.filter((statement) => {
@@ -50,6 +51,7 @@ function setup(protocol, transferProtocol = "", items = []) {
         transferRemotePath: { value: "/NC" }, transferRemotePathPickedKind: { value: "none" },
         transferBatchSelections: { value: [] }, transferSelectedFiles: { value: [{ name: "O0001.nc" }] },
         transferSubmitting: { value: false }, remotePathTreeData: { value: [] }, REMOTE_TREE_MAX_NODES: 2000,
+        remotePathExpandedKeys: { value: [] },
         deviceForm: { value: {} }, selectedTreeNodeId: { value: "" },
         dialogVisible: { value: false }, dialogTitle: { value: "" }, async loadDevices() {},
         buildProgramTransferConfig: transferModule.exports.buildProgramTransferConfig,
@@ -386,3 +388,73 @@ for (const [protocol, channel] of [["GskWebServer", ""], ["Gskrm", "GskrmFileTra
         assert.equal(fixture.calls.at(-1)[3], "/");
     });
 }
+
+for (const [brandKey, brand, protocol, port] of [
+    ["mazak", "马扎克（Mazak）", "MTConnect", 5000], ["haas", "哈斯（Haas）", "HaasMdc", 9999],
+    ["jingdiao", "北京精雕", "JingDiao", 89], ["brother", "兄弟（Brother）", "MTConnect", 5000],
+    ["makino", "牧野（Makino）", "FOCAS", 8193],
+]) {
+    test(`${brandKey} creates a device with its intended protocol from either brand selector`, async () => {
+        for (const fromTree of [true, false]) {
+            const fixture = setup(protocol);
+            fixture.context.selectedTreeNodeId.value = fromTree ? `brand-${brandKey}` : "";
+            fixture.handlers.openAddDeviceDialog();
+            if (!fromTree) fixture.handlers.onDeviceBrandChange(brand);
+            const form = fixture.context.deviceForm.value;
+            Object.assign(form, { name: brandKey, brand, code: "CNC-1", model: "controller" });
+            assert.equal(form.protocol, protocol);
+            assert.equal(form.port, port);
+            await fixture.handlers.saveDevice();
+            assert.equal(fixture.calls[0][1].protocol, protocol);
+            assert.equal(fixture.calls[0][1].port, port);
+        }
+    });
+}
+
+test("CNC serial transfer saves local port settings and retains them while editing", async () => {
+    const fixture = setup("HaasMdc");
+    fixture.handlers.openAddDeviceDialog();
+    Object.assign(fixture.context.deviceForm.value, {
+        name: "Haas", brand: "哈斯（Haas）", model: "VF-2", code: "CNC-1",
+        protocol: "HaasMdc", port: 9999, transferProtocol: "Serial", transferHost: "",
+        transferExtendedProperties: { PortName: "COM7", BaudRate: "19200", DataBits: "7", Parity: "Even", StopBits: "Two" },
+    });
+    await fixture.handlers.saveDevice();
+    const payload = fixture.calls[0][1];
+    assert.equal(payload.transfer.host, "localhost");
+    assert.equal(payload.transfer.port, 0);
+    assert.equal(payload.transfer.username, undefined);
+    assert.equal(payload.transfer.extendedProperties.PortName, "COM7");
+    fixture.handlers.editDevice(fixture.handlers.mapDtoToUi({ ...payload, id: "device" }));
+    await fixture.handlers.saveDevice();
+    assert.deepEqual(JSON.parse(JSON.stringify(fixture.calls[1][2].transfer.extendedProperties)),
+        JSON.parse(JSON.stringify(payload.transfer.extendedProperties)));
+    fixture.context.deviceForm.value.transferExtendedProperties.PortName = " ";
+    await fixture.handlers.saveDevice();
+    assert.equal(fixture.calls.length, 2);
+    assert.equal(fixture.warnings.length, 1);
+});
+
+test("MTConnect adapter settings survive edits and are removed when disabled", async () => {
+    const fixture = setup("MTConnect");
+    fixture.handlers.editDevice(fixture.handlers.mapDtoToUi({
+        id: "device", name: "Mazak", type: "CNC", brand: "Mazak", model: "fixture",
+        protocol: "MTConnect", host: "127.0.0.1", port: 5000,
+        extendedProperties: { DeviceCode: "CNC-1", WriteEndpointUrl: "https://adapter.test/write",
+            WriteAddresses: "feed,override", WriteBearerToken: "fixture-token", CustomProperty: "retained" },
+    }));
+    await fixture.handlers.saveDevice();
+    const ext = fixture.calls[0][2].extendedProperties;
+    assert.equal(ext.WriteEndpointUrl, "https://adapter.test/write");
+    assert.equal(ext.WriteAddresses, "feed,override");
+    assert.equal(ext.WriteBearerToken, "fixture-token");
+    fixture.context.deviceForm.value.mtWriteAddresses = "";
+    await fixture.handlers.saveDevice();
+    assert.equal(fixture.calls.length, 1);
+    fixture.context.deviceForm.value.mtWriteEndpointUrl = "";
+    await fixture.handlers.saveDevice();
+    const disabled = fixture.calls[1][2].extendedProperties;
+    assert.equal(disabled.WriteEndpointUrl, undefined);
+    assert.equal(disabled.WriteBearerToken, undefined);
+    assert.equal(disabled.CustomProperty, "retained");
+});

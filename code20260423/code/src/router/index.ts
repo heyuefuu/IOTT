@@ -31,6 +31,12 @@ const routes: RouteRecordRaw[] = [
                 path: 'property',
                 name: 'IndustrialProperty',
                 component: () => import('../views/industrial/MachinePropertyView.vue')
+            },
+            {
+                path: 'import',
+                name: 'IndustrialImport',
+                component: () => import('../views/plc/CollectionImportView.vue'),
+                meta: { deviceType: 'CNC' }
             }
         ]
     },

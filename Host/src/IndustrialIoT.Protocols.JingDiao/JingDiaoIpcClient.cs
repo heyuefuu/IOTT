@@ -16,10 +16,11 @@ public interface IJingDiaoClient
     Task<JingDiaoValueResult<JingDiaoSpindleSnapshot>> GetSpindleAsync(string sessionId, CancellationToken ct);
     Task<JingDiaoValueResult<JingDiaoRateSnapshot>> GetRateAsync(string sessionId, CancellationToken ct);
     Task<JingDiaoValueResult<double>> GetMacroAsync(string sessionId, int number, CancellationToken ct);
+    Task<JingDiaoIpcResult> SetMacroAsync(JingDiaoMacroWriteRequest request, CancellationToken ct);
     Task<JingDiaoValueResult<int>> GetLineNoAsync(string sessionId, CancellationToken ct);
     Task<JingDiaoValueResult<int>> GetPartCountAsync(string sessionId, CancellationToken ct);
     Task<JingDiaoValueResult<IReadOnlyList<JingDiaoFileEntry>>> BrowseFilesAsync(JingDiaoBrowseFilesRequest request, CancellationToken ct);
-    Task<JingDiaoIpcResult> UploadAsync(string sessionId, Stream source, string fileName, bool addToTask, bool setMainProgram, CancellationToken ct);
+    Task<JingDiaoIpcResult> UploadAsync(string sessionId, Stream source, string fileName, string directory, bool addToTask, bool setMainProgram, CancellationToken ct);
     Task<Stream> DownloadAsync(JingDiaoDownloadRequest request, CancellationToken ct);
 }
 
@@ -61,6 +62,8 @@ public sealed class JingDiaoIpcClient : IJingDiaoClient, IDisposable
         => PostAsync<JingDiaoValueResult<JingDiaoRateSnapshot>>("api/jingdiao/get-rate", new JingDiaoSessionRequest(sessionId), ct);
     public Task<JingDiaoValueResult<double>> GetMacroAsync(string sessionId, int number, CancellationToken ct)
         => PostAsync<JingDiaoValueResult<double>>("api/jingdiao/get-macro", new JingDiaoMacroRequest(sessionId, number), ct);
+    public Task<JingDiaoIpcResult> SetMacroAsync(JingDiaoMacroWriteRequest request, CancellationToken ct)
+        => PostAsync<JingDiaoIpcResult>("api/jingdiao/set-macro", request, ct);
     public Task<JingDiaoValueResult<int>> GetLineNoAsync(string sessionId, CancellationToken ct)
         => PostAsync<JingDiaoValueResult<int>>("api/jingdiao/get-line-no", new JingDiaoSessionRequest(sessionId), ct);
     public Task<JingDiaoValueResult<int>> GetPartCountAsync(string sessionId, CancellationToken ct)
@@ -69,11 +72,12 @@ public sealed class JingDiaoIpcClient : IJingDiaoClient, IDisposable
         => PostAsync<JingDiaoValueResult<IReadOnlyList<JingDiaoFileEntry>>>("api/jingdiao/list-files", request, ct);
 
     public async Task<JingDiaoIpcResult> UploadAsync(
-        string sessionId, Stream source, string fileName, bool addToTask, bool setMainProgram, CancellationToken ct)
+        string sessionId, Stream source, string fileName, string directory, bool addToTask, bool setMainProgram, CancellationToken ct)
     {
         using var content = new MultipartFormDataContent
         {
             { new StringContent(sessionId), "sessionId" },
+            { new StringContent(directory), "directory" },
             { new StringContent(addToTask.ToString()), "addToTask" },
             { new StringContent(setMainProgram.ToString()), "setMainProgram" },
         };

@@ -23,6 +23,7 @@ var checks = new (string Name, Func<Task> Run)[]
     ("OPC UA scalar, structured values and quality", OpcUaRegressionTests.RunAsync),
     ("Haas ping and macro roundtrip", HaasRegressionTests.MacroRoundtripAsync),
     ("Haas fragmented responses and CRLF", HaasRegressionTests.FragmentedResponseAsync),
+    ("Haas labelled responses preserve scalar types and structured status", HaasRegressionTests.LabelledResponsesAsync),
     ("Haas asynchronous timeout", HaasRegressionTests.ReadTimeoutAsync),
     ("Haas incomplete response", HaasRegressionTests.PartialResponseTimeoutAsync),
     ("GSK upload and directory errors", CncRegressionTests.GskUploadAsync),
@@ -32,6 +33,11 @@ var checks = new (string Name, Func<Task> Run)[]
     ("FANUC CRX capabilities", CncRegressionTests.FanucMetadataAsync),
     ("GSK WebSocket frame timestamps and disconnect", GskRealtimeRegressionTests.RunAsync),
     ("HTTP status, transfers and MTConnect nesting", HttpRegressionTests.RunAsync),
+    ("CNC brand driver registration and aliases", CncBrandRegistrationRegressionTests.RunAsync),
+    ("Serial transfer configuration and port validation", SerialConfigurationRegressionTests.RunAsync),
+    ("MTConnect vendor write allowlist and typed payloads", MTConnectWriteAdapterRegressionTests.RunAsync),
+    ("JingDiao driver writes, files and export", JingDiaoRegressionTests.RunAsync),
+    ("JingDiao shim transfer names and directories", JingDiaoShimRegressionTests.RunAsync),
     ("JingDiao shared shim crash recovery and cleanup", JingDiaoLifecycleRegressionTests.SharedProcessAsync),
     ("JingDiao external shim ownership and health validation", JingDiaoLifecycleRegressionTests.ExternalHealthAsync),
     ("NCLink per-device routing, rejected writes and file keys", NCLinkApiRoutingRegressionTests.RunAsync),
@@ -44,6 +50,14 @@ if (args.Contains("--protocol-safety"))
     checks = checks.Where(check => check.Name.StartsWith("Protocol safety:", StringComparison.Ordinal)).ToArray();
 if (args.Contains("--jingdiao"))
     checks = checks.Where(check => check.Name.StartsWith("JingDiao", StringComparison.Ordinal)
+        || check.Name.StartsWith("HNC and JingDiao", StringComparison.Ordinal)).ToArray();
+if (args.Contains("--brand-drivers"))
+    checks = checks.Where(check => check.Name.StartsWith("Haas", StringComparison.Ordinal)
+        || check.Name.StartsWith("Serial transfer", StringComparison.Ordinal)
+        || check.Name.StartsWith("CNC brand", StringComparison.Ordinal)
+        || check.Name.StartsWith("MTConnect", StringComparison.Ordinal)
+        || check.Name.StartsWith("JingDiao", StringComparison.Ordinal)
+        || check.Name.StartsWith("HTTP status", StringComparison.Ordinal)
         || check.Name.StartsWith("HNC and JingDiao", StringComparison.Ordinal)).ToArray();
 if (args.Contains("--plc-collection"))
     checks = checks.Where(check => check.Name.StartsWith("PLC collection", StringComparison.Ordinal)).ToArray();

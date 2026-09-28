@@ -14,7 +14,7 @@ public class CreateDeviceRequestValidator : AbstractValidator<CreateDeviceReques
         RuleFor(x => x.Model).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Host).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Port).Must((request, port) => IsValidPort(request.Protocol, port))
-            .WithMessage("Port must be 1~65535; GSK SDK protocols may use 0");
+            .WithMessage("Port must be 1~65535; Serial and GSK SDK protocols may use 0");
         RuleFor(x => x.ConnectTimeoutMs).GreaterThan(0).When(x => x.ConnectTimeoutMs.HasValue);
         RuleFor(x => x.ReadTimeoutMs).GreaterThan(0).When(x => x.ReadTimeoutMs.HasValue);
         RuleFor(x => x.Protocol).IsInEnum();
@@ -31,6 +31,10 @@ public class CreateDeviceRequestValidator : AbstractValidator<CreateDeviceReques
         });
 
         // Serial (and serial variants) require PortName
+        When(x => x.Protocol == ProtocolType.Serial, () =>
+            RuleFor(x => x.ExtendedProperties).Must(IsValidSerialConfiguration)
+                .WithMessage("Serial requires a nonempty PortName and valid BaudRate/DataBits/Parity/StopBits"));
+
         When(x => x.Protocol is ProtocolType.Serial or ProtocolType.ModbusRTU or ProtocolType.InovanceSerial or ProtocolType.MewtocolSerial, () =>
         {
             RuleFor(x => x.ExtendedProperties)
@@ -115,7 +119,16 @@ public class CreateDeviceRequestValidator : AbstractValidator<CreateDeviceReques
     }
 
     internal static bool IsValidPort(ProtocolType protocol, int port) =>
-        port is > 0 and <= 65535 || port == 0 && protocol is (ProtocolType.Gskrm or ProtocolType.GskrmFileTransfer);
+        port is > 0 and <= 65535 || port == 0 && protocol is (ProtocolType.Serial or ProtocolType.Gskrm or ProtocolType.GskrmFileTransfer);
+
+    internal static bool IsValidSerialConfiguration(Dictionary<string, string>? properties) =>
+        properties is not null && properties.TryGetValue("PortName", out var name) && !string.IsNullOrWhiteSpace(name)
+        && (!properties.TryGetValue("BaudRate", out var baud) || int.TryParse(baud, out var rate) && rate > 0)
+        && (!properties.TryGetValue("DataBits", out var bits) || int.TryParse(bits, out var width) && width is >= 5 and <= 8)
+        && (!properties.TryGetValue("Parity", out var parity) ||
+            new[] { "None", "Odd", "Even", "Mark", "Space" }.Contains(parity, StringComparer.OrdinalIgnoreCase))
+        && (!properties.TryGetValue("StopBits", out var stop) ||
+            new[] { "One", "OnePointFive", "Two" }.Contains(stop, StringComparer.OrdinalIgnoreCase));
 
     private static bool IsSerialMode(Dictionary<string, string>? properties) =>
         properties is not null &&
@@ -129,10 +142,14 @@ internal sealed class TransferDeviceRequestValidator : AbstractValidator<Transfe
     {
         RuleFor(x => x.Host).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Port).Must((request, port) => CreateDeviceRequestValidator.IsValidPort(request.Protocol, port))
-            .WithMessage("Port must be 1~65535; GSK SDK protocols may use 0");
+            .WithMessage("Port must be 1~65535; Serial and GSK SDK protocols may use 0");
         RuleFor(x => x.ConnectTimeoutMs).GreaterThan(0).When(x => x.ConnectTimeoutMs.HasValue);
         RuleFor(x => x.ReadTimeoutMs).GreaterThan(0).When(x => x.ReadTimeoutMs.HasValue);
         RuleFor(x => x.Protocol).IsInEnum();
+
+        When(x => x.Protocol == ProtocolType.Serial, () =>
+            RuleFor(x => x.ExtendedProperties).Must(CreateDeviceRequestValidator.IsValidSerialConfiguration)
+                .WithMessage("Serial transfer requires a nonempty PortName and valid BaudRate/DataBits/Parity/StopBits"));
 
         When(x => x.Protocol == ProtocolType.SMB, () =>
         {

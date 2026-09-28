@@ -9,6 +9,12 @@ internal static class Program
 {
     private static async Task Main(string[] args)
     {
+        if (args.Contains("--metric-store"))
+        {
+            MetricStoreInitializesEmptyLibraryAndPreservesExistingData();
+            Console.WriteLine("Metric store regression tests passed.");
+            return;
+        }
         if (args.Contains("--influx-settings"))
         {
             await MachineConnectionApi.Tests.InfluxSettingsRegressionTests.RunAll();
@@ -29,6 +35,7 @@ internal static class Program
             Console.WriteLine("Datacollection save regression tests passed.");
             return;
         }
+        MetricStoreInitializesEmptyLibraryAndPreservesExistingData();
         await MachineConnectionApi.Tests.CncGatewayRoutingRegressionTests.RunAll();
         if (args.Contains("--cnc-gateway"))
         {
@@ -65,6 +72,44 @@ internal static class Program
         ParallelReportServiceGeneratesHtmlReport();
         ParallelReportServiceGeneratesPdfReport();
         Console.WriteLine("All tests passed.");
+    }
+
+    private static void MetricStoreInitializesEmptyLibraryAndPreservesExistingData()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "App_Data", "metrics.json");
+        var original = File.Exists(path) ? File.ReadAllBytes(path) : null;
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        try
+        {
+            File.WriteAllText(path, "[]");
+            var store = new MetricStore();
+            var metrics = store.ReadAll();
+            var expectedIds = new[] { "industrial-protocol", "communication-stability", "max-connections",
+                "transfer-protocol", "file-integrity", "transfer-speed", "file-size" };
+            AssertEqual(7, metrics.Count, "DefaultMetricCount");
+            for (var index = 0; index < metrics.Count; index++)
+            {
+                AssertEqual(expectedIds[index], metrics[index].Id, "ExecutableMetricId");
+                AssertEqual($"5.2.{index + 1}", metrics[index].Code, "MetricCode");
+            }
+            AssertEqual(7, new MetricStore().ReadAll().Count, "NoDuplicateInitialization");
+            var customized = metrics[0] with { Name = "Custom metric", Threshold = 9 };
+            store.WriteAll([customized]);
+            var preserved = new MetricStore().ReadAll();
+            AssertEqual(7, preserved.Count, "MissingDefaultsRestored");
+            AssertEqual(customized, preserved[0], "CustomSettingsPreserved");
+            store.WriteAll([customized with { Id = "user-defined", Code = "111" }]);
+            var withCustomMetric = new MetricStore().ReadAll();
+            AssertEqual(8, withCustomMetric.Count, "CustomMetricKeptAlongsideDefaults");
+            AssertEqual("user-defined", withCustomMetric[0].Id, "CustomMetricIdPreserved");
+            File.Delete(path);
+            AssertEqual(7, new MetricStore().ReadAll().Count, "MissingLibraryInitialized");
+        }
+        finally
+        {
+            if (original is null) File.Delete(path);
+            else File.WriteAllBytes(path, original);
+        }
     }
 
     private static async Task SameTargetParallelTestOpensRequestedConnections()
