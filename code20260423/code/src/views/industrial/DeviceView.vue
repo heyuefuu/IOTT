@@ -559,7 +559,8 @@
                         </div>
                     </template>
                     <el-table ref="pointTableRef" v-loading="pointTableFlattenLoading" :data="filteredPointTableData"
-                        border row-key="id" @selection-change="handlePointSelectionChange">
+                        border row-key="id" @selection-change="handlePointSelectionChange"
+                        @select="pointSelectionEdited = true" @select-all="pointSelectionEdited = true">
                         <el-table-column type="selection" width="46" />
                         <el-table-column prop="path" label="路径" min-width="140" />
                         <el-table-column prop="displayName" label="显示名称" min-width="140" />
@@ -576,7 +577,8 @@
                         <el-table-column label="采集频率" width="130" fixed="right">
                             <template #default="{ row }">
                                 <div class="freq-input">
-                                    <el-input v-model="row.frequency" size="small" placeholder="1000" />
+                                    <el-input v-model="row.frequency" size="small" placeholder="1000"
+                                        @input="handlePointFrequencyInput(row)" />
                                     <span class="freq-unit">ms</span>
                                 </div>
                             </template>
@@ -1321,6 +1323,8 @@ const pointTableRef = ref<InstanceType<typeof ElTable>>();
 const selectedPointTreeNodeId = ref<string>("/");
 const pointExpandedKeys = ref<string[]>(["/"]);
 const selectedPointRows = ref<PointRow[]>([]);
+const pointSelectionEdited = ref(false);
+const pointFrequencyEdits = new Map<string, string>();
 /** 当前设备在 MachineCollection.datacollection 中已存在的路径（用于默认勾选） */
 const savedPathsInDb = ref<Set<string>>(new Set());
 /** 当前设备在数据库中已保存的点位配置（用于回填采集频率） */
@@ -1411,7 +1415,6 @@ type PointRow = {
     dataType: string;
     isReadable: boolean;
     isWritable: boolean;
-    children: string;
     enabled: boolean;
     name: string;
     type: string;
@@ -1517,6 +1520,8 @@ const handlePointTreeNodeClick = async (data: PointTreeNode) => {
     const isCurrent = () => requestVersion === pointRequestVersion && pointDialogVisible.value
         && deviceId === pointDialogDeviceId.value;
     selectedPointTreeNodeId.value = data.id;
+    pointSelectionEdited.value = false;
+    pointFrequencyEdits.clear();
     pointTableFlattenLoading.value = false;
     pointTableData.value = [];
     selectedPointRows.value = [];
@@ -1571,6 +1576,8 @@ const openPointDialog = async (device: { id: string; name: string; protocol?: st
     pointDialogDeviceId.value = device.id;
     pointDialogDeviceProtocol.value = device.protocol ?? "";
     selectedPointTreeNodeId.value = "/";
+    pointSelectionEdited.value = false;
+    pointFrequencyEdits.clear();
     pointDialogVisible.value = true;
     const openVersion = pointDialogVersion;
     const openRequestVersion = pointRequestVersion;
@@ -1739,6 +1746,10 @@ const handleWriteSinglePoint = async (row: PointRow) => {
     }
 };
 
+const handlePointFrequencyInput = (row: PointRow) => {
+    pointFrequencyEdits.set(row.path, row.frequency);
+};
+
 const handlePointSelectionChange = (rows: PointRow[]) => {
     selectedPointRows.value = rows;
 
@@ -1755,7 +1766,11 @@ const handlePointSelectionChange = (rows: PointRow[]) => {
             row.frequency = "";
             continue;
         }
-        // 已勾选：优先用数据库回填
+        if (pointFrequencyEdits.has(row.path)) {
+            row.frequency = pointFrequencyEdits.get(row.path)!;
+            continue;
+        }
+        // 已勾选：未编辑的频率用数据库回填
         const cfg = cfgMap.get(row.path);
         if (cfg?.collectionFrequency && Number.isFinite(cfg.collectionFrequency)) {
             row.frequency = String(cfg.collectionFrequency);
@@ -1772,6 +1787,7 @@ const handlePointSelectionChange = (rows: PointRow[]) => {
 const handleSelectAllPoints = () => {
     const table = pointTableRef.value;
     if (!table) return;
+    pointSelectionEdited.value = true;
     table.clearSelection();
     for (const row of filteredPointTableData.value) {
         table.toggleRowSelection(row, true);
@@ -1781,6 +1797,7 @@ const handleSelectAllPoints = () => {
 const handleInvertSelectPoints = () => {
     const table = pointTableRef.value;
     if (!table) return;
+    pointSelectionEdited.value = true;
     const selected = new Set(selectedPointRows.value.map((r) => r.id));
     table.clearSelection();
     for (const row of filteredPointTableData.value) {
@@ -1905,20 +1922,14 @@ async function applySavedPathsToTable() {
     const table = pointTableRef.value;
     if (!table) return;
     const pathSet = savedPathsInDb.value;
-    const cfgMap = savedPointConfigByPath.value;
-    table.clearSelection();
-    for (const row of filteredPointTableData.value) {
-        const cfg = cfgMap.get(row.path);
-        if (cfg?.collectionFrequency && Number.isFinite(cfg.collectionFrequency)) {
-            row.frequency = String(cfg.collectionFrequency);
-        } else {
-            // 未勾选默认空
-            row.frequency = "";
-        }
-        if (pathSet.has(row.path)) {
-            table.toggleRowSelection(row, true);
+    if (!pointSelectionEdited.value) {
+        table.clearSelection();
+        for (const row of filteredPointTableData.value) {
+            if (pathSet.has(row.path)) table.toggleRowSelection(row, true);
         }
     }
+    // 保留用户勾选；未手动编辑的频率仍接收延迟返回的数据库配置。
+    handlePointSelectionChange(selectedPointRows.value);
 }
 
 const handleSavePointConfig = async () => {
@@ -2167,7 +2178,6 @@ function mapVariableNodeToRow(n: PointTreeNode): PointRow {
         dataType: dt,
         isReadable: !!n.isReadable,
         isWritable: !!n.isWritable,
-        children: n.children ? String(n.children.length) : "null",
         enabled: true,
         name: n.label,
         type: dt,

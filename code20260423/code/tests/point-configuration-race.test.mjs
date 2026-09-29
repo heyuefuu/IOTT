@@ -10,8 +10,11 @@ const script = component.match(/<script[^>]*setup[^>]*>([\s\S]*?)<\/script>/)?.[
 assert.ok(script, "DeviceView script setup exists");
 const handlers = ["openPointDialog", "refreshSavedPathsFromDb", "applySavedPathsToTable",
     "handlePointTreeNodeClick", "loadAddressChildren", "expandPointTreeNodes",
-    "collectFirstLevelExpandedKeys", "mapVariableNodeToRow", "normalizeDataType"];
-const names = [...handlers, "pointRequestVersion", "pointDialogVersion"];
+    "collectFirstLevelExpandedKeys", "mapVariableNodeToRow", "normalizeDataType",
+    "handleSelectAllPoints", "handleInvertSelectPoints", "handlePointSelectionChange", "handleSavePointConfig",
+    "handlePointFrequencyInput"];
+const names = [...handlers, "pointRequestVersion", "pointDialogVersion", "pointSelectionEdited",
+    "DEFAULT_COLLECTION_FREQUENCY_MS", "pointFrequencyEdits"];
 const parsed = ts.createSourceFile("DeviceView.ts", script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 const statementName = (statement) => ts.isFunctionDeclaration(statement) ? statement.name?.text
     : ts.isVariableStatement(statement) ? statement.declarationList.declarations[0]?.name.getText(parsed) : null;
@@ -42,9 +45,10 @@ function setup(options = {}) {
     const databaseReads = Array.from({ length: 2 }, () => ({ started: deferred(), response: deferred() }));
     const flattenCalls = [];
     const errors = [];
+    const savedRequests = [];
     let databaseIndex = 0;
     const context = vm.createContext({
-        watch, nextTick: options.nextTick ?? nextTick,
+        ref, watch, nextTick: options.nextTick ?? nextTick,
         pointDialogVisible: ref(false), pointDialogDeviceId: ref("device-a"),
         pointDialogDeviceName: ref(""), pointDialogDeviceProtocol: ref("OpcUa"),
         selectedPointTreeNodeId: ref("/"), pointTableFlattenLoading: ref(false),
@@ -52,12 +56,13 @@ function setup(options = {}) {
         pointTreeRenderKey: ref(0), pointTreeRef: ref({ getNode() {} }),
         pointTreeData: ref([{ id: "/", path: "/", label: "Root", nodeType: "Folder", children: [], _loaded: false }]),
         savedPathsInDb: ref(new Set()), savedPointConfigByPath: ref(new Map()),
+        savedCollectionPointsByDevice: ref({}),
         datacollectionApi: { list(deviceId) {
             const request = databaseReads[databaseIndex++];
             request.deviceId = deviceId;
             request.started.resolve();
             return request.response.promise;
-        } },
+        }, async sync(body) { savedRequests.push(body); } },
         machineConnectionPointsApi: { browseAddressSpace: options.browse ?? (async () => [variable()]) },
         sanitizeAddressSpaceLevelNodes: (_parent, nodes) => nodes,
         mapAddressNodeToTreeNode: (node) => node,
@@ -66,15 +71,21 @@ function setup(options = {}) {
             return [variable()];
         },
         POINT_FLATTEN_MAX_VARIABLES: 5000,
-        console: { error: (error) => errors.push(error) }, ElMessage: { warning() {}, info() {} },
+        console: { error: (error) => errors.push(error) },
+        getApiErrorMessage: (error) => String(error),
+        ElMessage: { warning() {}, info() {}, success() {}, error: (error) => errors.push(error) },
     });
     context.filteredPointTableData = computed(() => context.pointTableData.value);
     context.pointTableRef = ref({
-        clearSelection() { context.selectedPointRows.value = []; },
-        toggleRowSelection(row) { context.selectedPointRows.value.push(row); },
+        clearSelection() { context.handlers.handlePointSelectionChange([]); },
+        toggleRowSelection(row, selected = true) {
+            const rows = context.selectedPointRows.value.filter((item) => item.id !== row.id);
+            if (selected) rows.push(row);
+            context.handlers.handlePointSelectionChange(rows);
+        },
     });
     vm.runInContext(executable, context);
-    return { context, handlers: context.handlers, databaseReads, flattenCalls, errors };
+    return { context, handlers: context.handlers, databaseReads, flattenCalls, errors, savedRequests };
 }
 
 function assertSavedPoint(fixture, frequency) {
@@ -94,6 +105,80 @@ test("Clicking a point while its device configuration is loading retains saved s
     await loading;
     assertSavedPoint(fixture, 2500);
     assert.equal(fixture.context.selectedPointTreeNodeId.value, "i=2259");
+});
+
+test("A delayed configuration response preserves points explicitly selected by the user", async () => {
+    const fixture = setup();
+    fixture.context.pointDialogVisible.value = true;
+    const loading = fixture.handlers.refreshSavedPathsFromDb({ silent: true });
+    await fixture.handlers.handlePointTreeNodeClick(variable());
+    fixture.handlers.handleSelectAllPoints();
+    fixture.context.pointTableData.value[0].frequency = "750";
+    fixture.handlers.handlePointFrequencyInput(fixture.context.pointTableData.value[0]);
+    fixture.databaseReads[0].response.resolve([]);
+    await loading;
+    assert.equal(fixture.context.selectedPointRows.value.length, 1);
+    assert.equal(fixture.context.selectedPointRows.value[0].path, "i=2259");
+    assert.equal(fixture.context.pointTableData.value[0].frequency, "750");
+});
+
+test("Selecting all before configuration arrives saves the original frequencies", async () => {
+    const fixture = setup();
+    fixture.context.pointDialogVisible.value = true;
+    const loading = fixture.handlers.refreshSavedPathsFromDb({ silent: true });
+    await fixture.handlers.handlePointTreeNodeClick(variable());
+    fixture.context.pointTableData.value.push(fixture.handlers.mapVariableNodeToRow(variable("point-b")));
+    fixture.handlers.handleSelectAllPoints();
+    assert.deepEqual(Array.from(fixture.context.selectedPointRows.value, (row) => row.frequency), ["1000", "1000"]);
+    fixture.databaseReads[0].response.resolve([
+        { path: "i=2259", collectionFrequency: 2500 },
+        { path: "point-b", collectionFrequency: 5000 },
+    ]);
+    await loading;
+    await fixture.handlers.handleSavePointConfig();
+    assert.equal(fixture.savedRequests.length, 1);
+    assert.deepEqual(Array.from(fixture.savedRequests[0].items, (item) => item.collectionFrequency), [2500, 5000]);
+    assert.equal(fixture.errors.length, 0);
+});
+
+test("Only unedited frequencies are restored; edits survive selection changes and reset on navigation", async () => {
+    const fixture = setup();
+    fixture.context.pointDialogVisible.value = true;
+    const loading = fixture.handlers.refreshSavedPathsFromDb({ silent: true });
+    await fixture.handlers.handlePointTreeNodeClick(variable());
+    fixture.context.pointTableData.value.push(fixture.handlers.mapVariableNodeToRow(variable("point-b")));
+    const firstRow = fixture.context.pointTableData.value[0];
+    firstRow.frequency = "750";
+    fixture.handlers.handlePointFrequencyInput(firstRow);
+    fixture.handlers.handleSelectAllPoints();
+    fixture.databaseReads[0].response.resolve([
+        { path: "i=2259", collectionFrequency: 2500 },
+        { path: "point-b", collectionFrequency: 5000 },
+    ]);
+    await loading;
+    fixture.handlers.handleInvertSelectPoints();
+    fixture.handlers.handleSelectAllPoints();
+    await fixture.handlers.handleSavePointConfig();
+    assert.deepEqual(Array.from(fixture.savedRequests[0].items, (item) => item.collectionFrequency), [750, 5000]);
+    firstRow.frequency = "900";
+    fixture.handlers.handlePointFrequencyInput(firstRow);
+    await fixture.handlers.handlePointTreeNodeClick(variable());
+    assert.equal(fixture.context.pointTableData.value[0].frequency, "750");
+    assert.equal(fixture.errors.length, 0);
+});
+
+test("Delayed saved points stay deselected after invert; revisiting restores saved configuration", async () => {
+    const fixture = setup();
+    fixture.context.pointDialogVisible.value = true;
+    const loading = fixture.handlers.refreshSavedPathsFromDb({ silent: true });
+    await fixture.handlers.handlePointTreeNodeClick(variable());
+    fixture.handlers.handleSelectAllPoints();
+    fixture.handlers.handleInvertSelectPoints();
+    fixture.databaseReads[0].response.resolve([{ path: "i=2259", collectionFrequency: 2500 }]);
+    await loading;
+    assert.equal(fixture.context.selectedPointRows.value.length, 0);
+    await fixture.handlers.handlePointTreeNodeClick(variable());
+    assertSavedPoint(fixture, 2500);
 });
 
 for (const reopenSameDevice of [false, true]) {
