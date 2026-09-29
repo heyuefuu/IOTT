@@ -35,6 +35,8 @@ internal static partial class DeviceUpsertRegressionTests
         await PartialUpdatesKeepIndependentChannel();
         await UpstreamSyncClearsRemovedTransfer();
         await ConnectionTestsDistinguishDriverAndTcp();
+        await ConnectionRetriesPendingConfiguration();
+        await ConnectionPreservesRestoredConfiguration();
         await SdkPortsValidateAgainstSelectedProtocol();
         await SerialConfigurationSurvivesEdits();
     }

@@ -207,8 +207,17 @@ public class DevicesController : IndustrialIoTProxyControllerBase
     [HttpPost("{id}/test-connection")]
     public async Task<IActionResult> TestConnection(string id, CancellationToken ct)
     {
+        using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);
         var item = _store.ReadAll().FirstOrDefault(x => x.Id == id);
         if (item is null) return NotFound();
+
+        if (item.UpstreamSynced == false && !item.RestoredFromUpstream)
+        {
+            var sync = await SyncForConnectionTestAsync(item, ct);
+            if (!sync.Success)
+                return Ok(new { success = false, mode = "sync",
+                    errorMessage = $"设备配置同步采集服务失败，未执行连接测试：{sync.Error}" });
+        }
 
         var driver = await TryUpstreamDriverTestAsync(item, ct);
         if (driver is not null)
@@ -293,6 +302,20 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         });
     }
 
+    private async Task<UpstreamSyncResult> SyncForConnectionTestAsync(MachineDeviceDto item, CancellationToken ct)
+    {
+        var sync = await _sync.UpsertAsync(item, ct);
+        _store.Update(rows =>
+        {
+            var index = rows.FindIndex(row => row.Id == item.Id);
+            if (index >= 0)
+                rows[index] = rows[index] with
+                { UpstreamSynced = sync.Success, UpstreamError = sync.Success ? null : sync.Error };
+            return 0;
+        });
+        return sync;
+    }
+
     /// <summary>
     /// 上游驱动级连接测试。设备尚未同步到上游（404）时先补一次注册再重试。
     /// 返回 null 表示上游不可用，调用方回退本地 TCP 探测。
@@ -306,11 +329,11 @@ public class DevicesController : IndustrialIoTProxyControllerBase
             using var first = await client.PostAsync(path, content: null, ct);
             if (first.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);
                 var current = _store.ReadAll().FirstOrDefault(device => device.Id == item.Id);
                 if (current is null) return null;
-                var sync = await _sync.UpsertAsync(current, ct);
-                if (!sync.Success) return null;
+                var sync = await SyncForConnectionTestAsync(current, ct);
+                if (!sync.Success)
+                    return new(false, $"设备配置同步采集服务失败，未执行连接测试：{sync.Error}", null);
                 using var retry = await client.PostAsync(path, content: null, ct);
                 return await ParseTestResultAsync(retry, ct);
             }
