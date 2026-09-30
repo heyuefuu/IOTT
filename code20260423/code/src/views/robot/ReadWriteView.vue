@@ -170,6 +170,9 @@
 												v-model="scope.row.value"
 												placeholder="请输入值"
 											/>
+											<el-text v-if="scope.row.errorMessage" type="danger">
+												{{ scope.row.errorMessage }}
+											</el-text>
 										</template>
 									</el-table-column>
 									<el-table-column label="操作" width="100">
@@ -224,7 +227,7 @@ import { ref, reactive, onMounted } from "vue";
 import { Link, Edit, Plus } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { machineConnectionDevicesApi } from "@/api/machineConnectionDevices";
-import { machineConnectionPointsApi } from "@/api/machineConnectionPoints";
+import { machineConnectionPointsApi, type ReadTagResult } from "@/api/machineConnectionPoints";
 
 // 设备列表（来自后端 /api/devices?type=Robot）
 const devices = ref<{ id: string; name: string }[]>([]);
@@ -240,6 +243,13 @@ function getErr(e: unknown, fallback: string): string {
 		ax.message ??
 		fallback
 	);
+}
+
+function getReadError(tag: ReadTagResult | undefined): string {
+	if (!tag) return "未返回读取结果";
+	return tag.errorMessage || (tag.quality === "Good"
+		? ""
+		: `读取失败（质量：${tag.quality ?? "Unknown"}）`);
 }
 
 /**
@@ -334,7 +344,7 @@ const rwForm = reactive({
 const rwResult = ref<any>(null);
 
 // 批量读写
-const batchItems = ref([{ dataType: "joint", address: "", value: "" }]);
+const batchItems = ref([{ dataType: "joint", address: "", value: "", errorMessage: "" }]);
 
 // 连接设备 = 真实连通性测试
 const connectDevice = async () => {
@@ -386,19 +396,22 @@ const readData = async () => {
 			},
 		);
 		const tag = res.tags[0];
-		if (tag && (tag.quality === "Good" || !tag.errorMessage)) {
+		const errorMessage = getReadError(tag);
+		if (tag && !errorMessage) {
 			rwForm.value = String(tag.value ?? "");
 			rwResult.value = {
 				success: true,
 				message: `读取成功，值为: ${rwForm.value}`,
 			};
 		} else {
+			rwForm.value = "";
 			rwResult.value = {
 				success: false,
-				message: tag?.errorMessage ?? "读取失败",
+				message: errorMessage,
 			};
 		}
 	} catch (e: unknown) {
+		rwForm.value = "";
 		rwResult.value = { success: false, message: getErr(e, "读取失败") };
 	}
 };
@@ -442,7 +455,7 @@ const writeData = async () => {
 
 // 添加批量项目
 const addBatchItem = () => {
-	batchItems.value.push({ dataType: "joint", address: "", value: "" });
+	batchItems.value.push({ dataType: "joint", address: "", value: "", errorMessage: "" });
 };
 
 // 删除批量项目
@@ -473,13 +486,25 @@ const batchRead = async () => {
 				})),
 			},
 		);
-		res.tags.forEach((tag) => {
-			const item = batchItems.value.find((i) => i.address === tag.address);
-			if (item) item.value = String(tag.value ?? "");
+		let successCount = 0;
+		valid.forEach((item, index) => {
+			const tag = res.tags[index];
+			item.errorMessage = getReadError(tag);
+			item.value = item.errorMessage ? "" : String(tag?.value ?? "");
+			if (!item.errorMessage) successCount++;
 		});
-		ElMessage.success("批量读取完成");
+		if (successCount === valid.length) {
+			ElMessage.success(`批量读取完成：${successCount}/${valid.length} 成功`);
+		} else {
+			ElMessage.error(`批量读取完成：${successCount}/${valid.length} 成功，失败原因见对应行`);
+		}
 	} catch (e: unknown) {
-		ElMessage.error(getErr(e, "批量读取失败"));
+		const errorMessage = getErr(e, "批量读取失败");
+		valid.forEach((item) => {
+			item.value = "";
+			item.errorMessage = errorMessage;
+		});
+		ElMessage.error(errorMessage);
 	}
 };
 

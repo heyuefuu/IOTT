@@ -1,6 +1,7 @@
 namespace IndustrialIoT.Protocols.Modbus;
 
 using System.Buffers.Binary;
+using SocketException = System.Net.Sockets.SocketException;
 using System.Text;
 using FluentModbus;
 using IndustrialIoT.Domain.Enums;
@@ -109,7 +110,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver
         try
         {
             // Read a single holding register as a lightweight health check
-            _client.ReadHoldingRegisters<short>(_unitId, 0, 1);
+            ExecuteRequest(() => _client!.ReadHoldingRegisters<short>(_unitId, 0, 1).ToArray());
             return true;
         }
         catch
@@ -307,27 +308,53 @@ public sealed class ModbusTcpDriver : IProtocolDriver
 
     // ─────────── Low-level read dispatch ───────────
 
+    private T ExecuteRequest<T>(Func<T> request)
+    {
+        EnsureConnected();
+        try
+        {
+            return request();
+        }
+        catch (Exception ex) when (ex is IOException or SocketException or TimeoutException or InvalidOperationException
+            || ex is ModbusException modbus && (int)modbus.ExceptionCode < 0)
+        {
+            // Only wire failures invalidate the session. A Modbus exception response (e.g. an
+            // illegal address) leaves it usable; a timeout may leave a late reply on the stream.
+            SetState(ConnectionState.Faulted, ex.Message);
+            try { _client?.Dispose(); }
+            catch (Exception cleanupError) { _logger.LogWarning(cleanupError, "Closing failed Modbus TCP connection"); }
+            finally { _client = null; }
+            throw;
+        }
+    }
+
+    private void ExecuteRequest(Action request) => ExecuteRequest(() =>
+    {
+        request();
+        return true;
+    });
+
     private object ReadParsed(ParsedAddress parsed, DataType dataType)
     {
         return parsed.RegisterType switch
         {
             ModbusRegisterType.Coil =>
-                ReadBits(_client!.ReadCoils(_unitId, parsed.StartAddress, parsed.RegisterCount).ToArray(), parsed),
+                ReadBits(ExecuteRequest(() => _client!.ReadCoils(_unitId, parsed.StartAddress, parsed.RegisterCount).ToArray()), parsed),
 
             ModbusRegisterType.DiscreteInput =>
-                ReadBits(_client!.ReadDiscreteInputs(_unitId, parsed.StartAddress, parsed.RegisterCount).ToArray(), parsed),
+                ReadBits(ExecuteRequest(() => _client!.ReadDiscreteInputs(_unitId, parsed.StartAddress, parsed.RegisterCount).ToArray()), parsed),
 
             ModbusRegisterType.HoldingRegister =>
-                ReadRegisterValue(() => _client!.ReadHoldingRegisters(
+                ReadRegisterValue(() => ExecuteRequest(() => _client!.ReadHoldingRegisters(
                     _unitId,
                     checked((ushort)parsed.StartAddress),
-                    checked((ushort)parsed.RegisterCount)).ToArray(), dataType, parsed),
+                    checked((ushort)parsed.RegisterCount)).ToArray()), dataType, parsed),
 
             ModbusRegisterType.InputRegister =>
-                ReadRegisterValue(() => _client!.ReadInputRegisters(
+                ReadRegisterValue(() => ExecuteRequest(() => _client!.ReadInputRegisters(
                     _unitId,
                     checked((ushort)parsed.StartAddress),
-                    checked((ushort)parsed.RegisterCount)).ToArray(), dataType, parsed),
+                    checked((ushort)parsed.RegisterCount)).ToArray()), dataType, parsed),
 
             _ => throw new NotSupportedException($"Register type {parsed.RegisterType} is not supported.")
         };
@@ -417,7 +444,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver
         switch (parsed.RegisterType)
         {
             case ModbusRegisterType.Coil:
-                _client!.WriteSingleCoil(_unitId, parsed.StartAddress, Convert.ToBoolean(value));
+                ExecuteRequest(() => _client!.WriteSingleCoil(_unitId, parsed.StartAddress, Convert.ToBoolean(value)));
                 break;
 
             case ModbusRegisterType.HoldingRegister:
@@ -445,7 +472,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver
                 DataType.UInt16 => unchecked((short)Convert.ToUInt16(value)),
                 _ => Convert.ToInt16(value)
             };
-            _client!.WriteSingleRegister(_unitId, parsed.StartAddress, raw);
+            ExecuteRequest(() => _client!.WriteSingleRegister(_unitId, parsed.StartAddress, raw));
         }
         else
         {
@@ -480,7 +507,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver
             var registers = new short[parsed.RegisterCount];
             for (int i = 0; i < registers.Length; i++)
                 registers[i] = BinaryPrimitives.ReadInt16BigEndian(bytes.AsSpan(i * 2, 2));
-            _client!.WriteMultipleRegisters(_unitId, parsed.StartAddress, registers);
+            ExecuteRequest(() => _client!.WriteMultipleRegisters(_unitId, parsed.StartAddress, registers));
         }
     }
 

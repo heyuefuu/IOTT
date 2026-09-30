@@ -6,6 +6,7 @@ if (args.Length == 2 && args[0] == "--urls")
 
 var checks = new (string Name, Func<Task> Run)[]
 {
+    ("Modbus batch connection recovery", ModbusBatchConnectionRegressionTests.RunAsync),
     ("Estun connection lifecycle retains a shared Modbus socket", EstunConnectionLifecycleRegressionTests.RunAsync),
     ("Protocol safety: Modbus writes, lengths and point isolation", ModbusSafetyRegressionTests.RunAsync),
     ("Protocol safety: PLC types and Siemens S7 transport", PlcSafetyRegressionTests.RunAsync),
@@ -49,6 +50,8 @@ var checks = new (string Name, Func<Task> Run)[]
 };
 if (args.Contains("--protocol-safety"))
     checks = checks.Where(check => check.Name.StartsWith("Protocol safety:", StringComparison.Ordinal)).ToArray();
+if (args.Contains("--modbus-batch"))
+    checks = checks.Where(check => check.Name.StartsWith("Modbus", StringComparison.Ordinal)).ToArray();
 if (args.Contains("--estun-connection"))
     checks = checks.Where(check => check.Name.StartsWith("Estun connection", StringComparison.Ordinal)
         || check.Name.StartsWith("Batch CNC file", StringComparison.Ordinal)).ToArray();
