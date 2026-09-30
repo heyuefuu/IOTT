@@ -215,7 +215,7 @@
 				</div>
 				<div v-else-if="testResult" class="test-result">
 					<el-alert
-						:title="testResult.success ? '连接成功' : '连接失败'"
+						:title="testResult.success ? '本次测试通过' : '协议连接未验证通过'"
 						:description="testResult.message"
 						:type="testResult.success ? 'success' : 'error'"
 						show-icon
@@ -636,9 +636,11 @@ const testConnection = async (device: Device) => {
 	try {
 		const r = await machineConnectionDevicesApi.testConnection(device.id);
 		testResult.value = {
-			success: r.success,
+			success: r.success && r.mode === "driver",
 			message: r.success
-				? `成功连接到设备: ${device.name}`
+				? r.mode === "driver"
+					? `设备 ${device.name} 本次协议连接测试通过；持续通信状态请查看状态监控。`
+					: (r.errorMessage ?? "仅 TCP 端口可达，尚未完成协议连接验证")
 				: (r.errorMessage ?? `无法连接到设备: ${device.name}`),
 		};
 	} catch (e: unknown) {

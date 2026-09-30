@@ -231,7 +231,10 @@ public class DevicesController : IndustrialIoTProxyControllerBase
             return Ok(new { success = false, errorMessage = "采集服务不可用，尚未完成广数 SDK 协议验证", mode = "driver" });
         if (UsesSerialPort(item.Protocol))
             return Ok(new { success = false, errorMessage = "采集服务不可用，尚未打开串口，串口连接不执行 TCP 探测", mode = "driver" });
-        if (string.Equals(item.Protocol, "EstunRobot", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(item.Protocol, "EstunRobot", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(item.Protocol, "ModbusTCP", StringComparison.OrdinalIgnoreCase) &&
+            (string.Equals(item.Brand?.Trim(), "ESTUN", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(item.Brand?.Trim(), "埃斯顿", StringComparison.OrdinalIgnoreCase)))
             return Ok(new { success = false, errorMessage = "采集服务不可用，未完成埃斯顿协议验证；请检查采集服务连接", mode = "driver" });
 
         try

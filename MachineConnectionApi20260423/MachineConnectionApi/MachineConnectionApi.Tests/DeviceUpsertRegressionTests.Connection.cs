@@ -49,6 +49,15 @@ internal static partial class DeviceUpsertRegressionTests
                 "SDK-managed protocols require driver verification instead of an arbitrary TCP port probe");
             Expect(!listener.Pending() && sdkStore.ReadAll().Single().Status == "Offline", "SDK fallback must not open TCP or mark a device online");
         }
+        foreach (var (protocol, brand) in new[] { ("EstunRobot", "ESTUN"), ("ModbusTCP", "ESTUN"), ("ModbusTCP", "埃斯顿") })
+        {
+            var robotStore = new MemoryDeviceStore(offline with { Protocol = protocol, Brand = brand });
+            var robotResult = ConnectionJson(await ConnectionController(robotStore, tcpClient).TestConnection(offline.Id, timeout.Token));
+            Expect(!robotResult.GetProperty("success").GetBoolean() && robotResult.GetProperty("mode").GetString() == "driver",
+                "Estun requires driver verification for either protocol configuration");
+            Expect(!listener.Pending() && robotStore.ReadAll().Single().Status == "Offline",
+                "Unavailable upstream must not open a short-lived Estun socket or report online");
+        }
         Console.WriteLine("PASS connection tests preserve driver failures and distinguish TCP reachability");
     }
 
