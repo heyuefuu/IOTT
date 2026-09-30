@@ -298,8 +298,8 @@ const connectDevice = async () => {
 			connectionMode.value = r.mode ?? "";
 			ElMessage.success(`成功连接到设备: ${device.name}`);
 			await loadAddressSpace();
-			void loadCapability();
-			void loadPrograms();
+			await loadCapability();
+			await loadPrograms();
 		} else {
 			isConnected.value = false;
 			ElMessage.error(r.errorMessage ?? "连接失败");
@@ -479,6 +479,10 @@ const loadCapability = async () => {
 };
 
 const loadPrograms = async () => {
+	if (transferCapability.value?.supportsBrowse === false) {
+		programRows.value = [];
+		return;
+	}
 	loadingPrograms.value = true;
 	try {
 		programRows.value = await machineConnectionProgramTransferApi.files(
@@ -488,9 +492,7 @@ const loadPrograms = async () => {
 		);
 	} catch (e: unknown) {
 		programRows.value = [];
-		// 部分机器人协议不支持文件浏览，能力标签/Alert 已说明，这里静默为空即可
-		if (transferCapability.value?.supportsBrowse !== false)
-			ElMessage.warning(getErr(e, "加载程序文件失败"));
+		ElMessage.warning(getErr(e, "加载程序文件失败"));
 	} finally {
 		loadingPrograms.value = false;
 	}

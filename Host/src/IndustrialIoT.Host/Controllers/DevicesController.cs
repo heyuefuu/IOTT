@@ -4,6 +4,7 @@ using IndustrialIoT.Application.Commands;
 using IndustrialIoT.Application.DTOs;
 using IndustrialIoT.Application.Queries;
 using IndustrialIoT.Domain.Enums;
+using IndustrialIoT.Domain.Interfaces;
 using IndustrialIoT.Infrastructure.BackgroundServices;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
@@ -14,11 +15,13 @@ public class DevicesController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IDeviceConnectionPool _pool;
+    private readonly IDeviceRepository _repo;
 
-    public DevicesController(IMediator mediator, IDeviceConnectionPool pool)
+    public DevicesController(IMediator mediator, IDeviceConnectionPool pool, IDeviceRepository repo)
     {
         _mediator = mediator;
         _pool = pool;
+        _repo = repo;
     }
 
     /// <summary>获取所有设备列表</summary>
@@ -80,28 +83,24 @@ public class DevicesController : ControllerBase
         string id,
         CancellationToken ct = default)
     {
-        // If a pooled connection is already up, probe it instead of opening (and immediately
-        // closing) a second socket — some controllers raise an alarm on that close
-        if (_pool.TryGetConnected(id, out var pooled) && pooled is not null)
+        var device = await _repo.GetByIdAsync(id, ct);
+        if (device is null) return NotFound();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        bool alive;
+        string? error = null;
+        try
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            var alive = await pooled.PingAsync(ct);
-            sw.Stop();
-
-            if (alive)
-            {
-                return Ok(new ConnectionTestResult
-                {
-                    Success = true,
-                    Latency = sw.Elapsed,
-                });
-            }
-
-            // Pooled socket is dead — drop it and fall through to a real connection test
-            await _pool.ReleaseAsync(id, ct);
+            // Keep the first connection too; a temporary test socket triggers controller alarms.
+            var driver = await _pool.GetOrCreateAsync(id, ct);
+            alive = await driver.PingAsync(ct);
+            if (!alive) error = "Device protocol health check failed";
         }
-
-        var result = await _mediator.Send(new TestConnectionCommand(id), ct);
-        return Ok(result);
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { alive = false; error = ex.Message; }
+        sw.Stop();
+        device.Status = alive ? DeviceStatus.Online : DeviceStatus.Error;
+        if (alive) device.LastSeenAt = DateTimeOffset.UtcNow;
+        await _repo.UpdateAsync(device, ct);
+        return Ok(new ConnectionTestResult { Success = alive, ErrorMessage = error, Latency = sw.Elapsed });
     }
 }

@@ -476,6 +476,12 @@ public class ProgramTransferController : ControllerBase
         CancellationToken ct)
     {
         var driver = _factory.Create(protocol, brand, model);
+        // Address-space browsing alone is not a file capability. Reject before opening a socket.
+        if (driver is not INCProgramTransfer && driver is not IProgramFileBrowser)
+        {
+            await driver.DisposeAsync();
+            return new(protocol, null, BadRequest("Device driver does not support program files"));
+        }
         var connectResult = await driver.ConnectAsync(config, ct);
         if (connectResult.Success)
             return new(protocol, driver, null);

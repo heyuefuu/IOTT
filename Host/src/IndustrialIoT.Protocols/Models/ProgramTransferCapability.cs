@@ -21,7 +21,8 @@ public sealed record ProgramTransferCapability
         {
             Protocol = protocol,
             SupportsProgramTransfer = transfer is not null,
-            SupportsBrowse = driver is IAddressSpaceBrowser,
+            SupportsBrowse = driver is IAddressSpaceBrowser &&
+                (driver is IProgramFileBrowser || transfer is not null),
             SupportsResumeUpload = supportsResume,
             SupportsFullRestartUpload = transfer is not null,
             ResumeMode = supportsResume ? "ResumeUpload" : "FullRestartUpload",
