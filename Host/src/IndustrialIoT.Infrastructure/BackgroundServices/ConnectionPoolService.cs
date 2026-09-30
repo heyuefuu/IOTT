@@ -75,7 +75,20 @@ public class ConnectionPoolService : BackgroundService, IDeviceConnectionPool
                 if (!result.Success)
                     throw new InvalidOperationException($"Failed to connect to device {deviceId}: {result.ErrorMessage}");
 
-                _pool[deviceId] = new PoolEntry { Driver = driver, DeviceId = deviceId, ConnectedAt = DateTimeOffset.UtcNow };
+                var keepAliveInterval = GetKeepAliveInterval(device.Protocol, device.Brand, device.ConnectionConfig);
+                var newEntry = new PoolEntry
+                {
+                    Driver = driver, DeviceId = deviceId, ConnectedAt = DateTimeOffset.UtcNow,
+                    KeepAliveStop = keepAliveInterval is null ? null : new CancellationTokenSource(),
+                };
+                if (keepAliveInterval is { } interval)
+                {
+                    // Independent of the HTTP request and the slow, shared health-check sweep.
+                    newEntry.KeepAliveTask = Task.Run(() => KeepAliveAsync(newEntry, interval));
+                    _logger.LogInformation("Device {DeviceId} protocol keepalive interval: {IntervalMs}ms",
+                        deviceId, interval.TotalMilliseconds);
+                }
+                _pool[deviceId] = newEntry;
                 _logger.LogInformation("Opened pooled connection for device {DeviceId}", deviceId);
                 return driver;
             }
@@ -102,6 +115,13 @@ public class ConnectionPoolService : BackgroundService, IDeviceConnectionPool
         {
             try
             {
+                // Join the keepalive before closing its driver; it must never revive a released socket.
+                if (entry.KeepAliveStop is { } keepAliveStop)
+                {
+                    await keepAliveStop.CancelAsync();
+                    if (entry.KeepAliveTask is { } keepAliveTask) await keepAliveTask;
+                    keepAliveStop.Dispose();
+                }
                 await entry.Driver.DisconnectAsync(ct);
                 await entry.Driver.DisposeAsync();
             }
@@ -125,6 +145,45 @@ public class ConnectionPoolService : BackgroundService, IDeviceConnectionPool
         }
         driver = null;
         return false;
+    }
+
+    private static TimeSpan? GetKeepAliveInterval(ProtocolType protocol, string brand, DeviceConnectionConfig config)
+    {
+        var isEstun = protocol == ProtocolType.EstunRobot
+            || (protocol == ProtocolType.ModbusTCP
+                && (brand.Contains("Estun", StringComparison.OrdinalIgnoreCase) || brand.Contains("埃斯顿")));
+        if (!isEstun) return null;
+
+        // RCS2 V2.0 §2.3: requests must be >50ms apart; 5s without a request closes the socket.
+        // 53013 needs application requests, not TCP keepalive or the 30s health sweep.
+        var intervalMs = int.TryParse(config.ExtendedProperties.GetValueOrDefault("KeepAliveIntervalMs"), out var value)
+            && value > 50 && value < 5000 ? value : 1000;
+        return TimeSpan.FromMilliseconds(intervalMs);
+    }
+
+    private async Task KeepAliveAsync(PoolEntry entry, TimeSpan interval)
+    {
+        var ct = entry.KeepAliveStop!.Token;
+        using var timer = new PeriodicTimer(interval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                try
+                {
+                    // Ping performs a read-only Modbus request through the driver's existing I/O lock.
+                    // Failure eviction remains with the normal health sweep, not this keepalive task.
+                    if (!await entry.Driver.PingAsync(ct))
+                        _logger.LogDebug("Device {DeviceId} protocol keepalive failed", entry.DeviceId);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Device {DeviceId} protocol keepalive failed", entry.DeviceId);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -180,6 +239,8 @@ public class ConnectionPoolService : BackgroundService, IDeviceConnectionPool
         public required IProtocolDriver Driver { get; init; }
         public required string DeviceId { get; init; }
         public required DateTimeOffset ConnectedAt { get; init; }
+        public CancellationTokenSource? KeepAliveStop { get; init; }
+        public Task? KeepAliveTask { get; set; }
 
         /// <summary>Health-check misses in a row; reset on the first success.</summary>
         public int ConsecutivePingFailures { get; set; }

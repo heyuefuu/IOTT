@@ -536,7 +536,8 @@ public sealed class EstunRobotDriver : IProtocolDriver, IAddressSpaceBrowser
     /// 也没有公开的关闭入口 —— 客户端对象被弃用后它仍在后台每 10 秒尝试重连并读取，
     /// 每次失败都会占满 ConnectTimeOut 的线程池线程。驱动实例反复创建时会累积成线程池饥饿。
     ///
-    /// 本驱动的存活探测由 <see cref="PingAsync"/> 和连接池健康检查负责，不需要这个定时器。
+    /// 连接池通过 <see cref="PingAsync"/> 定期发送协议层只读保活，并在释放连接前停止任务；
+    /// 不能仅依赖 30 秒健康检查，否则控制器可能先触发 53013 接收报文超时。
     /// </summary>
     private void DisableHslKeepAliveTimer(EstunTcpNet client)
     {

@@ -11,6 +11,7 @@ using IndustrialIoT.Infrastructure.BackgroundServices;
 using IndustrialIoT.Protocols.Abstractions;
 using IndustrialIoT.Protocols.EstunRobot;
 using IndustrialIoT.Protocols.Models;
+using IndustrialIoT.Protocols.Modbus;
 using IndustrialIoT.Protocols.Registration;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,6 +42,12 @@ internal static class EstunConnectionLifecycleRegressionTests
         finally { await pool.ReleaseAsync(device.Id); }
         await peer.WaitForCloseAsync();
         TestSupport.Require(peer.Closed == 1, "Explicit release must close the single pooled socket");
+        await VerifyIdleKeepAliveAsync(ProtocolType.EstunRobot, null);
+        await VerifyIdleKeepAliveAsync(ProtocolType.ModbusTCP, null, brand: "埃斯顿");
+        await VerifyIdleKeepAliveAsync(ProtocolType.ModbusTCP, "200", releaseExplicitly: true, expectedIntervalMs: 200);
+        await VerifyIdleKeepAliveAsync(ProtocolType.ModbusTCP, "50");
+        await VerifyIdleKeepAliveAsync(ProtocolType.ModbusTCP, "5000");
+        await VerifyOtherModbusRemainsIdleAsync();
     }
 
     private static async Task VerifyLifecycleAsync(DevicesController controller, ConnectionPoolService pool,
@@ -84,13 +91,98 @@ internal static class EstunConnectionLifecycleRegressionTests
             "Unknown device must return not found");
     }
 
+    private static async Task VerifyIdleKeepAliveAsync(ProtocolType protocol, string? interval,
+        string brand = "ESTUN", bool releaseExplicitly = false, int expectedIntervalMs = 1000)
+    {
+        await using var peer = new ModbusPeer(TimeSpan.FromSeconds(2.5));
+        var device = new Device
+        {
+            Name = "Estun idle", Type = DeviceType.Robot, Brand = brand, Model = "ER", Protocol = protocol,
+            ConnectionConfig = new DeviceConnectionConfig
+            {
+                Host = "127.0.0.1", Port = peer.Port,
+                ConnectTimeout = TimeSpan.FromSeconds(1), ReadTimeout = TimeSpan.FromSeconds(1),
+                ExtendedProperties = interval is null ? new() : new() { ["KeepAliveIntervalMs"] = interval },
+            },
+        };
+        var repository = new DeviceRepository(device);
+        using var services = new ServiceCollection().AddSingleton<IDeviceRepository>(repository).BuildServiceProvider();
+        using var pool = new ConnectionPoolService(new DriverFactory(), services, NullLogger<ConnectionPoolService>.Instance);
+        await pool.StartAsync(CancellationToken.None);
+        try
+        {
+            var controller = new DevicesController(null!, pool, repository);
+            using var request = new CancellationTokenSource();
+            RequireSuccess(await controller.TestConnection(device.Id, request.Token), protocol + " initial idle connection failed");
+            await request.CancelAsync();
+            var initialRequests = peer.Requests;
+            var useDefaultInterval = expectedIntervalMs == 1000;
+            await Task.Delay(TimeSpan.FromSeconds(useDefaultInterval ? 4.2 : 1.2));
+            TestSupport.Require(peer.ReceiveTimeouts == 0,
+                protocol + " controller receive timeout: no keepalive arrived within 2.5 seconds");
+            var keepAliveRequests = peer.Requests - initialRequests;
+            TestSupport.Require(keepAliveRequests >= (useDefaultInterval ? 3 : 4),
+                protocol + " did not continue sending FC03 requests while the page was idle");
+            TestSupport.Require(keepAliveRequests <= (useDefaultInterval ? 6 : 9),
+                protocol + " sent keepalive requests too frequently for the expected interval");
+            TestSupport.Require(peer.Accepted == 1 && peer.Closed == 0 && pool.ActiveConnections == 1,
+                protocol + " idle keepalive must preserve the original pooled socket");
+            if (releaseExplicitly)
+            {
+                await pool.ReleaseAsync(device.Id);
+                await peer.WaitForCloseAsync();
+                var releasedRequests = peer.Requests;
+                await Task.Delay(TimeSpan.FromSeconds(1.2));
+                TestSupport.Require(peer.Accepted == 1 && peer.Closed == 1 && peer.Requests == releasedRequests,
+                    protocol + " explicit release must stop keepalive while the pool is still running");
+                TestSupport.Require(pool.ActiveConnections == 0, "Explicit release must remove the pooled connection");
+            }
+        }
+        finally { await pool.StopAsync(CancellationToken.None); }
+        await peer.WaitForCloseAsync();
+        var stoppedRequests = peer.Requests;
+        await Task.Delay(TimeSpan.FromSeconds(1.2));
+        TestSupport.Require(peer.Accepted == 1 && peer.Closed == 1 && peer.Requests == stoppedRequests,
+            protocol + " keepalive must not reconnect or send requests after pool shutdown");
+    }
+
+    private static async Task VerifyOtherModbusRemainsIdleAsync()
+    {
+        await using var peer = new ModbusPeer();
+        var device = new Device
+        {
+            Name = "Other Modbus", Type = DeviceType.PLC, Brand = "Inovance", Model = "H3U", Protocol = ProtocolType.ModbusTCP,
+            ConnectionConfig = new DeviceConnectionConfig
+            {
+                Host = "127.0.0.1", Port = peer.Port,
+                ConnectTimeout = TimeSpan.FromSeconds(1), ReadTimeout = TimeSpan.FromSeconds(1),
+            },
+        };
+        var repository = new DeviceRepository(device);
+        using var services = new ServiceCollection().AddSingleton<IDeviceRepository>(repository).BuildServiceProvider();
+        using var pool = new ConnectionPoolService(new DriverFactory(), services, NullLogger<ConnectionPoolService>.Instance);
+        await pool.StartAsync(CancellationToken.None);
+        try
+        {
+            var controller = new DevicesController(null!, pool, repository);
+            RequireSuccess(await controller.TestConnection(device.Id), "Other Modbus initial connection failed");
+            var initialRequests = peer.Requests;
+            await Task.Delay(TimeSpan.FromSeconds(2.2));
+            TestSupport.Require(peer.Requests == initialRequests && peer.Accepted == 1 && peer.Closed == 0,
+                "Non-Estun Modbus devices must retain their normal health-check cadence");
+        }
+        finally { await pool.StopAsync(CancellationToken.None); }
+    }
+
     private static void RequireSuccess(ActionResult<ConnectionTestResult> result, string message) =>
         TestSupport.Require(result.Result is OkObjectResult { Value: ConnectionTestResult { Success: true } }, message);
 
     private sealed class DriverFactory : IProtocolDriverFactory
     {
         public IProtocolDriver Create(ProtocolType protocol, string brand, string? model = null) =>
-            new EstunRobotDriver(NullLogger<EstunRobotDriver>.Instance);
+            protocol == ProtocolType.EstunRobot
+                ? new EstunRobotDriver(NullLogger<EstunRobotDriver>.Instance)
+                : new ModbusTcpDriver(NullLogger<ModbusTcpDriver>.Instance);
     }
 
     private sealed class DeviceRepository(Device device) : IDeviceRepository
@@ -113,14 +205,18 @@ internal static class EstunConnectionLifecycleRegressionTests
         private int _accepted;
         private int _closed;
         private int _requests;
+        private int _receiveTimeouts;
+        private readonly TimeSpan? _idleTimeout;
         public volatile bool RejectReads;
         public int Accepted => Volatile.Read(ref _accepted);
         public int Closed => Volatile.Read(ref _closed);
         public int Requests => Volatile.Read(ref _requests);
+        public int ReceiveTimeouts => Volatile.Read(ref _receiveTimeouts);
         public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
-        public ModbusPeer()
+        public ModbusPeer(TimeSpan? idleTimeout = null)
         {
+            _idleTimeout = idleTimeout;
             _listener.Start();
             _acceptLoop = AcceptAsync();
         }
@@ -163,7 +259,15 @@ internal static class EstunConnectionLifecycleRegressionTests
                     while (!_stop.IsCancellationRequested)
                     {
                         var header = new byte[7];
-                        await stream.ReadExactlyAsync(header, _stop.Token);
+                        using var receiveTimeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+                        if (_idleTimeout is { } idleTimeout) receiveTimeout.CancelAfter(idleTimeout);
+                        try { await stream.ReadExactlyAsync(header, receiveTimeout.Token); }
+                        catch (OperationCanceledException) when (!_stop.IsCancellationRequested)
+                        {
+                            Interlocked.Increment(ref _receiveTimeouts);
+                            Interlocked.Increment(ref _closed);
+                            return;
+                        }
                         var request = new byte[BinaryPrimitives.ReadUInt16BigEndian(header.AsSpan(4)) - 1];
                         await stream.ReadExactlyAsync(request, _stop.Token);
                         TestSupport.Require(request[0] == 3, "Expected a read-only FC03 request");
