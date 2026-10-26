@@ -14,7 +14,7 @@
 					<el-select
 						v-model="form.deviceId"
 						placeholder="请选择PLC设备"
-						@change="handleDeviceChange"
+						@change="handleDeviceSelection"
 					>
 						<el-option
 							v-for="device in devices"
@@ -31,7 +31,7 @@
 				<el-form-item>
 					<el-button
 						type="primary"
-						@click="loadAddressSpace"
+						@click="loadAddressSpace(true)"
 						:loading="loading"
 					>
 						<el-icon><Refresh /></el-icon>
@@ -106,14 +106,22 @@
 				<div class="card-header">
 					<span>地址空间</span>
 					<div class="header-actions">
-						<el-button
-							type="primary"
-							size="small"
-							@click="exportAddresses"
-						>
-							<el-icon><Download /></el-icon>
-							导出地址
-						</el-button>
+						<el-dropdown @command="exportAddresses">
+							<el-button type="primary" size="small">
+								<el-icon><Download /></el-icon>
+								导出地址
+							</el-button>
+							<template #dropdown>
+								<el-dropdown-menu>
+									<el-dropdown-item command="XLSX">
+										Excel (.xlsx)
+									</el-dropdown-item>
+									<el-dropdown-item command="CSV">CSV</el-dropdown-item>
+									<el-dropdown-item command="JSON">JSON</el-dropdown-item>
+									<el-dropdown-item command="XML">XML</el-dropdown-item>
+								</el-dropdown-menu>
+							</template>
+						</el-dropdown>
 						<el-button
 							type="success"
 							size="small"
@@ -664,9 +672,10 @@ const exportProbeResults = () => {
 };
 
 // 加载地址空间 = 真实浏览后端地址空间
-const loadAddressSpace = async () => {
+const loadAddressSpace = async (preserveExpanded = false) => {
 	const deviceId = form.deviceId;
 	if (!deviceId) return false;
+	const previousExpanded = preserveExpanded ? new Set(expandedKeys.value) : null;
 
 	handleDeviceChange();
 	const requestVersion = addressSpaceVersion.value;
@@ -684,9 +693,12 @@ const loadAddressSpace = async () => {
 		if (nodes.length === 0) {
 			browseNotice.value = "设备未返回可浏览的地址目录，未生成任何预设点位。";
 		}
-		expandedKeys.value = addressSpace.value
+		const folders = addressSpace.value
 			.filter((n) => n.type === "folder")
 			.map((n) => n.address);
+		expandedKeys.value = previousExpanded
+			? folders.filter(address => previousExpanded.has(address))
+			: folders;
 		return true;
 	} catch (e: unknown) {
 		if (requestVersion === addressSpaceVersion.value) {
@@ -700,6 +712,10 @@ const loadAddressSpace = async () => {
 	} finally {
 		if (requestVersion === addressSpaceVersion.value) loading.value = false;
 	}
+};
+
+const handleDeviceSelection = () => {
+	void loadAddressSpace();
 };
 
 // 展开节点 = 按目录懒加载子地址
@@ -887,7 +903,9 @@ const resetSearch = () => {
 };
 
 // 导出地址 = 导出后端地址空间 CSV
-const exportAddresses = async () => {
+const exportAddresses = async (
+	format: "CSV" | "XLSX" | "JSON" | "XML" = "XLSX",
+) => {
 	if (!form.deviceId) {
 		ElMessage.warning("请先选择设备");
 		return;
@@ -896,7 +914,7 @@ const exportAddresses = async () => {
 		const { blob, fileName } =
 			await machineConnectionPointsApi.exportAddressSpace(
 				form.deviceId,
-				"CSV",
+				format,
 			);
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement("a");

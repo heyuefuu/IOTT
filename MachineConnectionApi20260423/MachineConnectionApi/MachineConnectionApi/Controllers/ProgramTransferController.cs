@@ -104,6 +104,24 @@ public class ProgramTransferController : IndustrialIoTProxyControllerBase
             fileResponseOnSuccess: false);
     }
 
+    /// <summary>比较设备上两个程序文件</summary>
+    [HttpPost("{deviceId}/compare")]
+    public Task<IActionResult> Compare(string deviceId, CancellationToken ct) =>
+        ProxyForwardAsync(
+            HttpMethod.Post,
+            $"{TransferPath}/{Uri.EscapeDataString(deviceId)}/compare",
+            ct,
+            fileResponseOnSuccess: false);
+
+    /// <summary>删除设备上的程序文件</summary>
+    [HttpPost("{deviceId}/delete")]
+    public Task<IActionResult> Delete(string deviceId, CancellationToken ct) =>
+        ProxyForwardAsync(
+            HttpMethod.Post,
+            $"{TransferPath}/{Uri.EscapeDataString(deviceId)}/delete",
+            ct,
+            fileResponseOnSuccess: false);
+
     /// <summary>批量下载程序</summary>
     [HttpPost("{deviceId}/download-batch")]
     public async Task<IActionResult> DownloadBatch(string deviceId, CancellationToken ct)

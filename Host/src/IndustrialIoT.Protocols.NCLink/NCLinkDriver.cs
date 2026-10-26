@@ -3,6 +3,7 @@ namespace IndustrialIoT.Protocols.NCLink;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Text;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using IndustrialIoT.Domain.Enums;
@@ -43,6 +44,10 @@ public sealed partial class NCLinkDriver : IProtocolDriver, IAddressSpaceBrowser
 
     // Sample 数据回调
     private Action<string, IReadOnlyList<QueryResultValue>>? _onSampleData;
+
+    // 存活心跳：Sample 数据 / 任意设备响应的时间戳（UTC ticks）
+    private long _lastSampleTicks;
+    private long _lastDeviceMessageTicks;
 
     // ── IProtocolDriver 属性 ─────────────────────────────────────────
 
@@ -133,15 +138,19 @@ public sealed partial class NCLinkDriver : IProtocolDriver, IAddressSpaceBrowser
 
             await _mqttClient.SubscribeAsync(subOptions.Build(), ct);
 
-            // 订阅 Sample Topic（如配置了）
+            // 订阅 Sample Topic（有配置则按通道，否则订阅全部通道）
             var sampleChannels = ext.GetValueOrDefault("SampleChannels");
+            var sampleBuilder = new MqttClientSubscribeOptionsBuilder();
             if (!string.IsNullOrEmpty(sampleChannels))
             {
-                var subBuilder = new MqttClientSubscribeOptionsBuilder();
                 foreach (var ch in sampleChannels.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                    subBuilder.WithTopicFilter(NCLinkProtocol.SampleTopic(_deviceGuid, ch), MqttQualityOfServiceLevel.AtMostOnce);
-                await _mqttClient.SubscribeAsync(subBuilder.Build(), ct);
+                    sampleBuilder.WithTopicFilter(NCLinkProtocol.SampleTopic(_deviceGuid, ch), MqttQualityOfServiceLevel.AtMostOnce);
             }
+            else
+            {
+                sampleBuilder.WithTopicFilter($"Sample/{_deviceGuid}/#", MqttQualityOfServiceLevel.AtMostOnce);
+            }
+            await _mqttClient.SubscribeAsync(sampleBuilder.Build(), ct);
 
             // Probe — 获取设备模型
             await LoadDeviceModelAsync(ct);
@@ -172,13 +181,40 @@ public sealed partial class NCLinkDriver : IProtocolDriver, IAddressSpaceBrowser
         if (_state != ConnectionState.Connected || _mqttClient is not { IsConnected: true })
             return false;
 
+        var now = DateTimeOffset.UtcNow;
+
+        // 1) Sample 心跳：HNC 面板适配器可能不响应 Probe，但会持续发布 Sample。
+        var lastSample = Interlocked.Read(ref _lastSampleTicks);
+        if (lastSample != 0 && now - new DateTimeOffset(lastSample, TimeSpan.Zero) <= TimeSpan.FromSeconds(30))
+            return true;
+
+        // 2) 任意设备响应（Probe/Register/Query 等）在最近 30 秒内。
+        var lastMessage = Interlocked.Read(ref _lastDeviceMessageTicks);
+        if (lastMessage != 0 && now - new DateTimeOffset(lastMessage, TimeSpan.Zero) <= TimeSpan.FromSeconds(30))
+            return true;
+
+        // 3) Probe/Version（部分适配器不支持，超时不应直接判死）。
         try
         {
-            // 用 Probe/Version 做轻量 ping
             var msgId = NCLinkProtocol.NextMessageId();
             var payload = NCLinkProtocol.BuildProbeVersionRequest(msgId, _deviceModel?.Version);
             var response = await PublishAndWaitAsync(
                 NCLinkProtocol.ProbeVersionTopic(_deviceGuid), payload, msgId, ct);
+            if (response.Code.Equals("OK", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        catch
+        {
+            // 继续尝试 Register。
+        }
+
+        // 4) Register 握手：另一种轻量存活探测。
+        try
+        {
+            var msgId = NCLinkProtocol.NextMessageId();
+            var payload = NCLinkProtocol.BuildRegisterRequest(msgId, _deviceGuid);
+            var response = await PublishAndWaitAsync(
+                NCLinkProtocol.RegisterRequestTopic(_deviceGuid), payload, msgId, ct);
             return response.Code.Equals("OK", StringComparison.OrdinalIgnoreCase);
         }
         catch
@@ -375,12 +411,14 @@ public sealed partial class NCLinkDriver : IProtocolDriver, IAddressSpaceBrowser
             {
                 var channelId = topic.Substring($"Sample/{_deviceGuid}/".Length);
                 var sampleValues = NCLinkProtocol.ParseSampleData(payload);
+                Interlocked.Exchange(ref _lastSampleTicks, DateTimeOffset.UtcNow.UtcTicks);
                 _onSampleData?.Invoke(channelId, sampleValues);
                 return Task.CompletedTask;
             }
 
-            // 请求-响应匹配
+            // 请求-响应匹配（任何设备响应都视为存活）
             var response = NCLinkProtocol.ParseResponse(payload);
+            Interlocked.Exchange(ref _lastDeviceMessageTicks, DateTimeOffset.UtcNow.UtcTicks);
             if (_pending.TryRemove(response.MessageId, out var tcs))
             {
                 tcs.TrySetResult(response);
@@ -557,21 +595,56 @@ public sealed partial class NCLinkDriver : IProtocolDriver, IAddressSpaceBrowser
     private static object ConvertValue(JsonNode? node, DataType dataType)
     {
         if (node is null) return GetDefaultValue(dataType);
-        return dataType switch
+
+        // NC-Link 设备常把所有值都编码为 JSON 字符串（含数字/布尔），
+        // 先取原生类型，失败后按不变文化解析文本，避免 "Data type conversion failed"。
+        if (node is JsonValue value)
         {
-            DataType.Bool => node.GetValue<bool>(),
-            DataType.Int16 => node.GetValue<short>(),
-            DataType.Int32 => node.GetValue<int>(),
-            DataType.Int64 => node.GetValue<long>(),
-            DataType.UInt16 => node.GetValue<ushort>(),
-            DataType.UInt32 => node.GetValue<uint>(),
-            DataType.Float => node.GetValue<float>(),
-            DataType.Double => node.GetValue<double>(),
-            DataType.String => node.GetValue<string>(),
-            DataType.ByteArray => Convert.FromBase64String(node.GetValue<string>()),
-            _ => node.GetValue<double>(),
-        };
+            if (dataType == DataType.String)
+            {
+                if (value.TryGetValue<string>(out var text)) return text;
+                return value.ToJsonString().Trim('"');
+            }
+            if (value.TryGetValue<string>(out var raw))
+                return ParseText(raw, dataType);
+            if (value.TryGetValue<bool>(out var boolean) && dataType == DataType.Bool)
+                return boolean;
+            if (value.TryGetValue<double>(out var number))
+                return ConvertNumber(number, dataType);
+        }
+
+        return ParseText(node.ToJsonString().Trim('"'), dataType);
     }
+
+    private static object ParseText(string text, DataType dataType) => dataType switch
+    {
+        DataType.Bool => bool.TryParse(text.Trim(), out var b)
+            ? b
+            : double.TryParse(text.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out var bn) && bn != 0,
+        DataType.Int16 => (short)double.Parse(text.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture),
+        DataType.Int32 => (int)double.Parse(text.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture),
+        DataType.Int64 => (long)double.Parse(text.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture),
+        DataType.UInt16 => (ushort)double.Parse(text.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture),
+        DataType.UInt32 => (uint)double.Parse(text.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture),
+        DataType.Float => float.Parse(text.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture),
+        DataType.Double => double.Parse(text.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture),
+        DataType.String => text,
+        DataType.ByteArray => Convert.FromBase64String(text.Trim()),
+        _ => text,
+    };
+
+    private static object ConvertNumber(double number, DataType dataType) => dataType switch
+    {
+        DataType.Bool => number != 0,
+        DataType.Int16 => (short)number,
+        DataType.Int32 => (int)number,
+        DataType.Int64 => (long)number,
+        DataType.UInt16 => (ushort)number,
+        DataType.UInt32 => (uint)number,
+        DataType.Float => (float)number,
+        DataType.Double => number,
+        _ => number,
+    };
 
     private static object GetDefaultValue(DataType dt) => dt switch
     {

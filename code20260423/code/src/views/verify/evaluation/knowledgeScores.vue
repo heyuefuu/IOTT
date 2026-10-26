@@ -53,7 +53,7 @@
           </el-table-column>
           <el-table-column label="测试结果（数据）" min-width="220">
             <template #default="scope">
-              <span v-if="readonly" class="multiline">{{ record.testResults[scope.row.id] || '—' }}</span>
+              <span v-if="readonly" class="multiline">{{ formatTestResult(record.testResults[scope.row.id]) }}</span>
               <el-input v-else v-model="record.testResults[scope.row.id]" type="textarea" :autosize="{ minRows: 1, maxRows: 4 }" placeholder="填写实际测试数据" />
             </template>
           </el-table-column>
@@ -80,6 +80,15 @@ const summary = computed(() => scoreSummary(props.record));
 const errors = computed(() => weightErrors(props.record));
 function setScore(id: string, value: unknown) { props.record.scores[id] = typeof value === 'number' ? value : null; }
 function isCustomScore(value: number | null | undefined) { return value != null && !scoreOptions.some(option => option.value === value); }
+function formatTestResult(value?: string) {
+  if (!value) return '—';
+  const match = value.match(/^\s*(-?\d+(?:\.\d+)?)\s*([^\d]*)$/);
+  if (!match) return value;
+  const number = Number(match[1] ?? '');
+  if (!Number.isFinite(number)) return value;
+  const unit = (match[2] ?? '').trim();
+  return `${number.toFixed(2)}${unit ? (unit.startsWith('%') ? unit : ` ${unit}`) : ''}`;
+}
 </script>
 
 <style scoped>

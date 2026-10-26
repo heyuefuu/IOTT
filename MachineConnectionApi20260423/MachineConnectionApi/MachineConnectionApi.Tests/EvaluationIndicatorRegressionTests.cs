@@ -97,6 +97,11 @@ internal static class EvaluationIndicatorRegressionTests
         var minutes = stability with { PassRule = new() { Comparison = "eq", Threshold = 1800, Unit = "s" } };
         Assert(EvaluationAutomationRules.Judge(minutes, 30) == true && EvaluationAutomationRules.Judge(minutes, 20) == false, "Equality duration conversion failed");
         Assert(EvaluationAutomationRules.Judge(minutes with { PassRule = minutes.PassRule! with { Comparison = "lte" } }, 20) == true, "LTE comparison failed");
+        var displayPrecision = stability with { PassRule = new() { Comparison = "eq", Threshold = 3, Unit = "min" } };
+        Assert(EvaluationAutomationRules.Judge(displayPrecision, 2.99999) == true, "Equality did not tolerate floating point noise at two-decimal display precision");
+        Assert(EvaluationAutomationRules.Judge(displayPrecision, 2.99) == false, "Equality tolerance accepted a visibly different value");
+        var displayBands = stability with { ScoreBands = [new() { Min = 3, Score = 100 }, new() { Min = 0, Score = 0 }] };
+        Assert(EvaluationAutomationRules.Score(displayBands, 2.99999) == 100, "Band boundary did not use two-decimal display precision");
         var invalidRules = new[]
         {
             stability with { PassRule = new() { Threshold = 99, Unit = "%" } },

@@ -4,6 +4,7 @@
 		<div class="machine-toolbar">
 			<div class="toolbar-actions">
 				<el-button :loading="loading" @click="loadMachines">刷新列表</el-button>
+				<el-button :loading="refreshingStatuses" :disabled="loading || !machines.length" @click="refreshMachineStatuses">刷新状态</el-button>
 				<el-button type="primary" :icon="Plus" @click="openAddMachineDialog">新增机床</el-button>
 			</div>
 			<el-input v-model="searchText" class="machine-search" clearable
@@ -15,8 +16,7 @@
 				<el-card v-for="machine in filteredMachines" :key="machine.id" class="machine-card" shadow="always">
 					<div class="machine-heading">
 						<h3>{{ machine.name }}</h3>
-						<el-tag :type="machine.status === '在线' ? 'success' : machine.status === '故障' ? 'danger' : 'warning'"
-							effect="dark" size="small">{{ machine.status }}</el-tag>
+						<el-tag :type="getStatusType(getMachineStatusText(machine))" effect="dark" size="small">{{ getMachineStatusText(machine) }}</el-tag>
 					</div>
 					<p class="machine-code">设备编号：{{ machine.deviceCode }} | {{ machine.type }}</p>
 					<dl class="machine-summary">
@@ -28,12 +28,13 @@
 						<div><dt>所属单位</dt><dd>{{ machine.organization || '-' }}</dd></div>
 						<div class="last-communication"><dt>最后通讯</dt><dd>{{ formatLastSeen(machine.lastSeenAt) }}</dd></div>
 					</dl>
-					<div class="machine-actions">
-						<el-button type="primary" link @click="showProperties(machine)">属性</el-button>
-						<el-button type="warning" link @click="openEditMachineDialog(machine)">编辑</el-button>
-						<el-button type="danger" link :loading="deletingMachineId === machine.id"
-							@click="deleteMachine(machine)">删除</el-button>
-					</div>
+						<div class="machine-actions">
+							<el-button type="success" link :loading="testingMachineIds.includes(machine.id)" @click="testMachine(machine)">连接测试</el-button>
+							<el-button type="primary" link @click="showProperties(machine)">属性</el-button>
+							<el-button type="warning" link @click="openEditMachineDialog(machine)">编辑</el-button>
+							<el-button type="danger" link :loading="deletingMachineId === machine.id"
+								@click="deleteMachine(machine)">删除</el-button>
+						</div>
 				</el-card>
 			</div>
 			<el-empty v-if="!loading && !loadError && !filteredMachines.length"
@@ -59,7 +60,7 @@
 							<el-descriptions-item label="机床名称">{{ selectedMachine.name }}</el-descriptions-item>
 							<el-descriptions-item label="品牌">{{ selectedMachine.brand || '-' }}</el-descriptions-item>
 							<el-descriptions-item label="机床类型">{{ selectedMachine.type }}</el-descriptions-item>
-							<el-descriptions-item label="状态">{{ selectedMachine.status }}</el-descriptions-item>
+							<el-descriptions-item label="状态">{{ getMachineStatusText(selectedMachine) }}</el-descriptions-item>
 							<el-descriptions-item label="IP地址">{{ selectedMachine.ip }}</el-descriptions-item>
 							<el-descriptions-item label="端口">{{ selectedMachine.port }}</el-descriptions-item>
 							<el-descriptions-item label="协议">{{ selectedMachine.protocol }}</el-descriptions-item>
@@ -214,6 +215,10 @@ import {
 	type CreateDeviceRequest,
 	type UpdateDeviceRequest,
 } from "@/api/machineConnectionDevices";
+import {
+	getDeviceRuntimeStatus,
+	type DeviceRuntimeStatus,
+} from "@/stores/deviceRuntimeStatus";
 
 interface Machine {
 	id: string;
@@ -266,6 +271,50 @@ const currentMachine = reactive<Machine>({
 
 const mapStatus = (status: string) =>
 	status === "Online" ? "在线" : status === "Error" ? "故障" : "离线";
+
+const testingMachineIds = ref<string[]>([]);
+const machineRuntimeStatusText = (status: DeviceRuntimeStatus) =>
+	status === "online" ? "在线" : status === "error" ? "故障" : "未知";
+const getMachineStatusText = (machine: Machine) => machineRuntimeStatusText(getDeviceRuntimeStatus(machine.id));
+const getStatusType = (status: string) =>
+	status === "在线" ? "success" : status === "故障" ? "danger" : "info";
+
+async function testMachine(machine: Machine) {
+	if (testingMachineIds.value.includes(machine.id)) return;
+	testingMachineIds.value = [...testingMachineIds.value, machine.id];
+	try {
+		const result = await machineConnectionDevicesApi.testConnection(machine.id);
+		if (result.success && result.mode === "tcp") {
+			ElMessage.warning(`TCP 端口可达，协议尚未验证${result.errorMessage ? `：${result.errorMessage}` : ""}`);
+		} else if (result.success && result.mode === "driver") {
+			ElMessage.success(result.latency ? `协议连接成功，延迟 ${result.latency}` : "协议连接成功");
+		} else if (result.success) {
+			ElMessage.warning("连接探测成功，但未返回协议验证结果");
+		} else {
+			ElMessage.error(result.errorMessage || "连接失败");
+		}
+	} catch (error) {
+		const ax = error as { response?: { data?: { error?: string } } };
+		ElMessage.error(ax.response?.data?.error ?? "连接测试失败");
+	} finally {
+		testingMachineIds.value = testingMachineIds.value.filter(id => id !== machine.id);
+	}
+}
+
+const refreshingStatuses = ref(false);
+async function refreshMachineStatuses() {
+	if (refreshingStatuses.value) return;
+	refreshingStatuses.value = true;
+	try {
+		await Promise.all(filteredMachines.value.map(async machine => {
+			try { await machineConnectionDevicesApi.testConnection(machine.id); }
+			catch { /* testConnection marks the device as error in the runtime store */ }
+		}));
+		ElMessage.success("设备状态已刷新");
+	} finally {
+		refreshingStatuses.value = false;
+	}
+}
 
 const toMachine = (device: DeviceDto): Machine => ({
 	id: device.id,

@@ -37,6 +37,13 @@ export interface CsDataSource {
     lastResult?: string;
 }
 
+export interface CsServerPoint {
+    deviceId: string;
+    address: string;
+    dataType: string;
+    label?: string;
+}
+
 export interface CsServerService {
     id: string;
     name: string;
@@ -46,6 +53,10 @@ export interface CsServerService {
     port: number;
     description?: string;
     maxClients: number;
+    /** 客户端 IP 白名单：精确 IP / CIDR / 网段前缀；空为不限制 */
+    allowedIps?: string[];
+    /** 对外提供的数据点位 */
+    points?: CsServerPoint[];
     status: string;
     clientCount: number;
     lastAccess?: string;

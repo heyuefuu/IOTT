@@ -29,11 +29,11 @@
 					<div class="device-option">
 						<span>{{ device.name }}（{{ device.protocol }} · {{ device.ip }}:{{ device.port }}）</span>
 						<el-tag
-							:type="device.status === 'Online' || device.status === '在线' ? 'success' : 'warning'"
+							:type="deviceRuntimeStatusType(device)"
 							size="small"
 							style="margin-left: 10px"
 						>
-							{{ device.status === "Online" ? "在线" : device.status === "Offline" ? "离线" : device.status }}
+							{{ deviceRuntimeStatusText(device) }}
 						</el-tag>
 					</div>
 				</el-option>
@@ -147,6 +147,24 @@
 				<el-icon><Download /></el-icon>
 				下载到本地
 			</el-button>
+			<el-button
+				type="info"
+				@click="compareSelectedFiles"
+				:loading="comparingFiles"
+				:disabled="selectedDeviceFiles.length !== 2"
+			>
+				<el-icon><Document /></el-icon>
+				对比
+			</el-button>
+			<el-button
+				type="danger"
+				@click="deleteSelectedFile"
+				:loading="deletingFile"
+				:disabled="selectedDeviceFiles.length !== 1"
+			>
+				<el-icon><Delete /></el-icon>
+				删除
+			</el-button>
 		</div>
 
 		<!-- 文件传输任务列表 -->
@@ -249,8 +267,14 @@
 					<template #default="scope">
 						<el-progress
 							:percentage="transferPercent(scope.row)"
-							:status="scope.row.status === 'Failed' ? 'exception' : undefined"
+							:color="transferProgressColor(scope.row)"
+							:status="transferProgressStatus(scope.row)"
 						/>
+					</template>
+				</el-table-column>
+				<el-table-column label="预计剩余" width="110">
+					<template #default="scope">
+						{{ formatEta(scope.row) }}
 					</template>
 				</el-table-column>
 				<el-table-column label="大小" width="110">
@@ -305,7 +329,7 @@
 			<p>· 设备列表 / 设备目录 / 上传 / 下载 / 传输历史 / 断点续传均对接后端真实接口（/api/program-transfer）。</p>
 			<p>· 上传文件来自浏览器本地选择（真实 File）；下载经设备目录勾选后由后端读取并下发。</p>
 			<p>· 断点续传仅对「失败/暂停」的上传记录可用，且需设备协议驱动支持（见传输历史卡片的能力标签）。</p>
-			<p>· 删除设备文件、常用文件库、文件识别等后端暂无对应接口，已移除以避免造假展示。</p>
+			<p>· 程序文件「对比」「删除」已对接后端：对比返回 SHA256 与首处差异偏移；删除需设备驱动支持（FTP/SMB/NFS），不支持时后端返回 501。常用文件库、文件识别仍无后端接口。</p>
 		</el-alert>
 	</div>
 </template>
@@ -318,15 +342,26 @@ import {
 	Download,
 	Folder,
 	Document,
+	Delete,
 } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { machineConnectionDevicesApi } from "@/api/machineConnectionDevices";
+import {
+	getDeviceRuntimeStatus,
+	type DeviceRuntimeStatus,
+} from "@/stores/deviceRuntimeStatus";
 import {
 	machineConnectionProgramTransferApi,
 	type ProgramTransferResponse,
 	type ProgramTransferCapability,
 } from "@/api/machineConnectionProgramTransfer";
-import { TRANSFER_PROTOCOLS } from "./transferRecordMetrics";
+import {
+	TRANSFER_PROTOCOLS,
+	formatDuration,
+	getTransferEtaSeconds,
+	transferProgressColor,
+	transferProgressStatus,
+} from "./transferRecordMetrics";
 
 // 文件类型定义
 interface FileItem {
@@ -359,6 +394,16 @@ interface Device {
 	status: string;
 }
 
+const deviceRuntimeStatus = (device: Device): DeviceRuntimeStatus => getDeviceRuntimeStatus(device.id);
+const deviceRuntimeStatusText = (device: Device) => {
+	const status = deviceRuntimeStatus(device);
+	return status === "online" ? "在线" : status === "error" ? "异常" : "未知";
+};
+const deviceRuntimeStatusType = (device: Device) => {
+	const status = deviceRuntimeStatus(device);
+	return status === "online" ? "success" : status === "error" ? "danger" : "info";
+};
+
 function getErr(e: unknown, fallback: string): string {
 	const ax = e as {
 		response?: { data?: { error?: string; detail?: string } };
@@ -385,6 +430,7 @@ const uploadRemotePath = ref("/");
 // 设备文件系统（来自后端 /api/program-transfer/{id}/files）
 const deviceFiles = ref<FileItem[]>([]);
 const expandedDeviceKeys = ref<string[]>([]);
+let expandAllDeviceFilesOnLoad = true;
 const selectedDeviceFiles = ref<string[]>([]);
 const loadingDeviceFiles = ref(false);
 
@@ -446,6 +492,8 @@ function buildFileTree(
 // 加载设备文件 = 后端真实目录浏览
 const loadDeviceFiles = async () => {
 	if (!selectedDevice.value) return;
+	const previousExpanded = new Set(expandedDeviceKeys.value);
+	const expandAll = expandAllDeviceFilesOnLoad;
 	const deviceId = selectedDevice.value.id;
 	const contextVersion = deviceContextVersion;
 	const requestSequence = ++deviceFilesLoadSequence;
@@ -462,9 +510,11 @@ const loadDeviceFiles = async () => {
 			requestSequence !== deviceFilesLoadSequence
 		) return;
 		deviceFiles.value = buildFileTree(items);
-		expandedDeviceKeys.value = deviceFiles.value
-			.filter((n) => n.type === "directory")
-			.map((n) => n.path);
+		const directories = deviceFiles.value
+			.filter(n => n.type === "directory")
+			.map(n => n.path);
+		expandedDeviceKeys.value = expandAll ? directories : directories.filter(path => previousExpanded.has(path));
+		expandAllDeviceFilesOnLoad = false;
 	} catch (e: unknown) {
 		if (
 			!isCurrentDeviceContext(deviceId, contextVersion) ||
@@ -483,6 +533,7 @@ const loadDeviceFiles = async () => {
 };
 
 const refreshDeviceFiles = () => {
+	expandAllDeviceFilesOnLoad = false;
 	void loadDeviceFiles();
 };
 
@@ -492,6 +543,7 @@ function handleDeviceChange() {
 	transferHistory.value = [];
 	capabilities.value = null;
 	resumingTransferId.value = "";
+	expandAllDeviceFilesOnLoad = true;
 	deviceFiles.value = [];
 	expandedDeviceKeys.value = [];
 	selectedDeviceFiles.value = [];
@@ -646,6 +698,79 @@ const transferPercent = (row: ProgramTransferResponse) => {
 		100,
 		Math.round((row.bytesTransferred / row.fileSize) * 100),
 	);
+};
+
+const formatEta = (row: ProgramTransferResponse) => {
+	const seconds = getTransferEtaSeconds(row, Date.now());
+	return seconds == null ? "-" : formatDuration(seconds);
+};
+
+const comparingFiles = ref(false);
+const compareSelectedFiles = async () => {
+	if (!selectedDevice.value || selectedDeviceFiles.value.length !== 2) return;
+	const pathA = selectedDeviceFiles.value[0];
+	const pathB = selectedDeviceFiles.value[1];
+	if (!pathA || !pathB) return;
+	comparingFiles.value = true;
+	try {
+		const r = await machineConnectionProgramTransferApi.compare(
+			selectedDevice.value.id,
+			pathA,
+			pathB,
+		);
+		const lines = [
+			`文件A：${r.pathA}`,
+			`文件B：${r.pathB}`,
+			`大小：${formatFileSize(r.sizeA)} / ${formatFileSize(r.sizeB)}`,
+			`SHA256：${r.sha256A.slice(0, 16)}… / ${r.sha256B.slice(0, 16)}…`,
+			r.equal
+				? "结论：内容一致（SHA256 相同）"
+				: `结论：不一致（首处差异偏移 ${r.firstDifferenceOffset ?? "-"} 字节）`,
+		];
+		await ElMessageBox.alert(lines.join("\n"), "文件对比结果", {
+			confirmButtonText: "关闭",
+		});
+	} catch (e: unknown) {
+		ElMessage.error(getErr(e, "对比失败"));
+	} finally {
+		comparingFiles.value = false;
+	}
+};
+
+const deletingFile = ref(false);
+const deleteSelectedFile = async () => {
+	if (!selectedDevice.value || selectedDeviceFiles.value.length !== 1) return;
+	const remotePath = selectedDeviceFiles.value[0];
+	if (!remotePath) return;
+	try {
+		await ElMessageBox.confirm(
+			`确定删除设备文件 ${remotePath} ？此操作不可撤销。`,
+			"删除确认",
+			{
+				type: "warning",
+				confirmButtonText: "删除",
+				cancelButtonText: "取消",
+			},
+		);
+	} catch {
+		return;
+	}
+	deletingFile.value = true;
+	try {
+		await machineConnectionProgramTransferApi.remove(
+			selectedDevice.value.id,
+			remotePath,
+		);
+		ElMessage.success("已删除");
+		selectedDeviceFiles.value = selectedDeviceFiles.value.filter(
+			(p) => p !== remotePath,
+		);
+		await loadDeviceFiles();
+	} catch (e: unknown) {
+		ElMessage.error(getErr(e, "删除失败"));
+	} finally {
+		deletingFile.value = false;
+	}
 };
 
 const resumeTransfer = async (row: ProgramTransferResponse) => {

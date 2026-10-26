@@ -6,6 +6,9 @@
 const RULES: Array<[prefix: string, permission: string]> = [
 	["/system/log", "log_manage"],
 	["/system/permission", "permission_manage"],
+	["/system/role", "permission_manage"],
+	["/system/data-output", "config_manage"],
+	["/system/operation-log", "log_manage"],
 	["/industrial", "device_manage"],
 	["/plc", "device_manage"],
 	["/robot", "device_manage"],

@@ -68,7 +68,7 @@ public class ConnectionPoolService : BackgroundService, IDeviceConnectionPool
                 using var scope = _serviceProvider.CreateScope();
                 var repo = scope.ServiceProvider.GetRequiredService<IDeviceRepository>();
                 var device = await repo.GetByIdAsync(deviceId, ct)
-                    ?? throw new InvalidOperationException($"Device {deviceId} not found");
+                    ?? throw new InvalidOperationException($"Device {deviceId} not found（可能尚未从上游同步或已被删除）");
 
                 var config = SiemensS7ConnectionOptions.ForConnection(device.Protocol, device.Model, device.ConnectionConfig);
                 driver = _factory.Create(device.Protocol, device.Brand, device.Model);

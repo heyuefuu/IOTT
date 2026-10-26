@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using MachineConnectionApi.Models;
 
@@ -38,13 +38,17 @@ public sealed partial class VerifyAutomationService : IVerifyAutomationService
         ILogger<VerifyAutomationService> logger,
         EvaluationIndicatorStore? evaluationIndicators = null,
         IVerifyMeasurementAdapter? measurements = null,
-        IVerifyTestClock? clock = null)
+        IVerifyTestClock? clock = null,
+        IDeviceCollectionPointStore? pointStore = null)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _logger = logger;
         _evaluationIndicators = evaluationIndicators;
-        _measurements = measurements ?? new HttpVerifyMeasurementAdapter(httpClientFactory);
+        // 默认走真实证据适配器；仅当显式开启 Verify:Simulate 时使用测试用模拟适配器（不产生真实通讯证据）。
+        _measurements = measurements ?? (_configuration.GetValue<bool>("Verify:Simulate")
+            ? new SimulatedVerifyMeasurementAdapter()
+            : new HttpVerifyMeasurementAdapter(httpClientFactory, pointStore: pointStore));
         _clock = clock ?? new SystemVerifyTestClock();
     }
 
@@ -122,6 +126,11 @@ public sealed partial class VerifyAutomationService : IVerifyAutomationService
             {
                 var item = items?.GetValueOrDefault(metric.MetricId);
                 var rule = item?.Automation;
+                if (options.Feasibility && item is not null && rule is not null)
+                {
+                    (item, rule) = ApplyFeasibilityProfile(metric.MetricId, item, rule);
+                    metric.Evidence.Add("Feasibility profile: 3-minute stability, relaxed thresholds, connections mode, FTP standard set, <=10 MiB size files.");
+                }
                 if (item is null || rule is null)
                     MarkUnrated(metric, "未配置评价自动测试规则；旧指标库阈值不会用于本次评价。");
                 else
@@ -148,9 +157,55 @@ public sealed partial class VerifyAutomationService : IVerifyAutomationService
         return response;
     }
 
+    private static (EvaluationItem Item, EvaluationAutomationRule Rule) ApplyFeasibilityProfile(
+        string metricId, EvaluationItem item, EvaluationAutomationRule rule)
+    {
+        EvaluationPassRule Pass(double threshold, string unit) =>
+            new() { Comparison = "gte", Threshold = threshold, Unit = unit };
+        var test = rule.Test;
+        switch (metricId)
+        {
+            case "industrial-protocol":
+                rule = rule with { PassRule = Pass(1, "%") };
+                break;
+            case "communication-stability":
+                rule = rule with { PassRule = Pass(3, "min"), Test = test with { DurationMinutes = 3 } };
+                break;
+            case "max-connections":
+                rule = rule with
+                {
+                    PassRule = Pass(1, "count"),
+                    Test = test with { ConcurrencyMode = "connections", MaxConnections = 4, FailureLimit = 2 },
+                };
+                break;
+            case "transfer-protocol":
+                item = item with { Protocols = ["FTP"] };
+                rule = rule with { PassRule = Pass(1, "count") };
+                break;
+            case "file-integrity":
+                rule = rule with { PassRule = Pass(50, "%") };
+                break;
+            case "transfer-speed":
+                rule = rule with { PassRule = Pass(1, "MB/s") };
+                break;
+            case "file-size":
+                item = item with
+                {
+                    Files = item.Files
+                        .Where(file => file.SizeBytes is null or <= 10L * 1024 * 1024)
+                        .ToList(),
+                };
+                rule = rule with { PassRule = Pass(1, "MB") };
+                break;
+        }
+        return (item, rule);
+    }
+
     private Task MeasureAsync(VerifyMetricResult metric, EvaluationItem item, EvaluationAutomationRule rule,
         IReadOnlyList<VerifyMeasurementTarget> selected, IReadOnlyList<VerifyMeasurementTarget> all,
-        VerifyRunOptions options, Action<double> progress, CancellationToken ct) => metric.MetricId switch
+        VerifyRunOptions options, Action<double> progress, CancellationToken ct)
+    {
+        return metric.MetricId switch
         {
             "industrial-protocol" => MeasureProtocolsAsync(metric, item, rule, selected, options, progress, ct),
             "transfer-protocol" => MeasureTransferCoverageAsync(metric, item, rule, selected, all, options, progress, ct),
@@ -158,6 +213,7 @@ public sealed partial class VerifyAutomationService : IVerifyAutomationService
             "max-connections" => MeasureConcurrencyAsync(metric, rule, selected, all, options, progress, ct),
             _ => MeasureFilesAsync(metric, item, rule, selected, options, progress, ct),
         };
+    }
 
     private static void ApplyRule(VerifyMetricResult metric, EvaluationAutomationRule rule)
     {
@@ -182,10 +238,13 @@ public sealed partial class VerifyAutomationService : IVerifyAutomationService
         { MarkUnrated(metric, $"测量单位 {sourceUnit} 无法换算至 {rule.Unit}"); return; }
         metric.Measurement = converted;
         metric.Unit = rule.Unit;
-        metric.Value = $"{converted.ToString("0.####", CultureInfo.InvariantCulture)} {rule.Unit}";
+        metric.Value = $"{FormatMeasurement(converted, rule.Unit)} {rule.Unit}";
         metric.MeasurementSource = "current-run";
         metric.ScoreReason = reason;
     }
+
+    private static string FormatMeasurement(double value, string unit) =>
+        value.ToString(unit == "count" ? "0" : "0.00", CultureInfo.InvariantCulture);
 
     private static void MarkUnrated(VerifyMetricResult metric, string reason)
     {

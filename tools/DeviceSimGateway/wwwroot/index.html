@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>模拟设备网关</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --bd:#2a2f3a; --fg:#e6e8ee; --mut:#9aa3b2; --ok:#2ecc71; --bad:#e74c3c; --warn:#f1c40f; --acc:#4da3ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 system-ui,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding:14px 18px; background:linear-gradient(90deg,#12141a,#1b2330); border-bottom:1px solid var(--bd); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+  h1 { font-size:16px; margin:0; }
+  .wrap { padding:16px; display:grid; gap:16px; }
+  .card { background:var(--panel); border:1px solid var(--bd); border-radius:10px; padding:14px; }
+  .card h2 { font-size:13px; margin:0 0 10px; color:var(--mut); font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { padding:7px 8px; border-bottom:1px solid var(--bd); text-align:left; font-size:13px; }
+  th { color:var(--mut); font-weight:600; }
+  input,select { background:#0e1116; color:var(--fg); border:1px solid var(--bd); border-radius:6px; padding:4px 6px; font:inherit; }
+  input[type=number]{ width:76px; }
+  button { background:#20293a; color:var(--fg); border:1px solid var(--bd); border-radius:6px; padding:5px 10px; cursor:pointer; font:inherit; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:#1f4e79; border-color:#2f6ea8; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; }
+  .s-Running{background:rgba(46,204,113,.15);color:var(--ok);border:1px solid rgba(46,204,113,.4);}
+  .s-Stopped{background:rgba(154,163,178,.12);color:var(--mut);border:1px solid var(--bd);}
+  .s-Error{background:rgba(231,76,60,.15);color:var(--bad);border:1px solid rgba(231,76,60,.4);}
+  .s-NotImplemented{background:rgba(241,196,15,.12);color:var(--warn);border:1px solid rgba(241,196,15,.35);}
+  .mut{color:var(--mut);}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  code{background:#0e1116;border:1px solid var(--bd);border-radius:4px;padding:1px 5px;}
+  canvas{width:100%;height:140px;background:#0e1116;border:1px solid var(--bd);border-radius:8px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>模拟设备网关 <span class="mut" style="font-size:12px">DeviceSimGateway</span></h1>
+  <div class="row"><span id="mgmt" class="mut"></span>
+    <button id="refresh" class="primary">刷新</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h2>协议服务（开关 / 端口 / 状态）</h2>
+    <table><thead><tr>
+      <th>服务</th><th>协议说明</th><th>端口</th><th>启用</th><th>状态</th><th>操作</th>
+    </tr></thead><tbody id="svcBody"></tbody></table>
+    <p class="mut" style="margin:10px 0 0">未实现项为扩展占位，不监听端口。Modbus TCP 与 MTConnect 已严格按协议实现。</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>模拟数据生成</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label>保持寄存器数 <input id="gHolding" type="number" min="1" max="65536"></label>
+        <label>输入寄存器数 <input id="gInput" type="number" min="1" max="65536"></label>
+        <label>线圈数 <input id="gCoils" type="number" min="1" max="65536"></label>
+        <label>离散输入 <input id="gDisc" type="number" min="1" max="65536"></label>
+        <label>刷新(ms) <input id="gInterval" type="number" min="50" max="60000"></label>
+        <label><input id="gDrive" type="checkbox"> 生成器也驱动保持寄存器</label>
+      </div>
+      <table><thead><tr><th>区</th><th>模式</th><th>Base</th><th>幅值</th><th>周期(ms)</th><th>步长</th></tr></thead>
+      <tbody>
+        <tr><td>输入寄存器</td>
+          <td><select id="iMode"><option>Constant</option><option>Ramp</option><option>Sine</option><option>Random</option><option>Counter</option></select></td>
+          <td><input id="iBase" type="number"></td><td><input id="iAmp" type="number"></td>
+          <td><input id="iPeriod" type="number"></td><td><input id="iStep" type="number"></td></tr>
+      </tbody></table>
+      <div class="row" style="margin-top:10px"><button id="applyGen" class="primary">应用生成配置</button>
+        <span id="genMsg" class="mut"></span></div>
+    </div>
+
+    <div class="card">
+      <h2>实时数据（前 32 点）</h2>
+      <canvas id="chart" width="600" height="140"></canvas>
+      <table style="margin-top:8px"><thead><tr><th>#</th><th>保持(HR)</th><th>输入(IR)</th><th>线圈</th><th>离散</th></tr></thead>
+      <tbody id="dataBody"></tbody></table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>随机失败注入（联调稳定性 / 中断）</h2>
+    <div class="row" style="margin-bottom:8px">
+      <label><input id="fEnabled" type="checkbox"> 启用随机失败</label>
+      <label>失败率(%) <input id="fRate" type="number" min="0" max="100" step="1"></label>
+      <label>方式
+        <select id="fDrop">
+          <option value="true">断链（直接断开连接）</option>
+          <option value="false">设备错误（协议错误 / 坏质量）</option>
+        </select>
+      </label>
+      <button id="applyFailure" class="primary">应用</button>
+      <span id="fMsg" class="mut"></span>
+    </div>
+    <p class="mut" style="margin:0">作用于 Modbus / S7 / OPC UA / MTConnect / NC-Link / FTP 的读写请求；断链=客户端读超时，设备错误=返回协议异常或坏质量。</p>
+  </div>
+
+  <div class="card">
+    <h2>虚拟第三方订阅（MQTT 消费端模拟）</h2>
+    <div class="row" style="margin-bottom:8px">
+      <label><input id="tpEnabled" type="checkbox"> 启用</label>
+      <label>Broker <input id="tpHost" type="text" value="127.0.0.1" style="width:120px"></label>
+      <label>端口 <input id="tpPort" type="number" min="1" max="65535" value="1883" style="width:70px"></label>
+      <label>Topic <input id="tpFilter" type="text" value="industrial-iot/devices/+/data" style="width:250px"></label>
+      <label>ClientId <input id="tpClientId" type="text" value="third-party-sim" style="width:130px"></label>
+      <button id="applyThirdParty" class="primary">应用</button>
+      <span id="tpMsg" class="mut"></span>
+    </div>
+    <div class="row"><span id="tpStatus" class="mut"></span></div>
+    <pre id="tpRecent" style="max-height:170px;overflow:auto;font-size:12px;margin:6px 0 0"></pre>
+    <p class="mut" style="margin:0">按《第三方数据同步接口文档》订阅我方出站主题（默认 industrial-iot/devices/+/data），解析 values[] 并按 dataType/quality 枚举与 deviceId+address+timestamp 去重统计。</p>
+  </div>
+
+  <div class="card">
+    <h2>接入说明</h2>
+    <p class="mut">本机作为"机床/PLC 服务端"，目标机（运行 Host）通过内网/网线连接本机对应端口即可：</p>
+    <ul class="mut">
+      <li><b>Modbus TCP</b>：目标机新增设备，协议 <code>ModbusTCP</code>、IP=本机IP、端口=此处端口；保持寄存器可读可写、输入寄存器/离散输入由生成器驱动。</li>
+      <li><b>MTConnect</b>：设备协议 <code>MTConnect</code>、IP=本机IP、端口=此处端口；Agent 端点 <code>/probe</code>、<code>/current</code>。</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = (p, o) => fetch(p, o).then(async r => { const t = await r.text(); try { return JSON.parse(t); } catch { return { message: t }; } });
+
+async function loadServices() {
+  const list = await api('/api/services');
+  const tb = $('#svcBody'); tb.innerHTML = '';
+  for (const s of list) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><b>${s.name}</b><div class="mut" style="font-size:12px">${s.key}</div></td>
+      <td class="mut">${s.description}</td>
+      <td><input type="number" value="${s.port}" data-port="${s.key}" ${s.implemented ? '' : 'disabled'}></td>
+      <td><input type="checkbox" ${s.enabled ? 'checked' : ''} data-en="${s.key}" ${s.implemented ? '' : 'disabled'}></td>
+      <td><span class="pill s-${s.state}">${s.state}</span><div class="mut" style="font-size:12px">${s.message || ''}</div></td>
+      <td><div class="row">
+        <button data-start="${s.key}" ${s.implemented ? '' : 'disabled'}>启动</button>
+        <button data-stop="${s.key}" ${s.implemented ? '' : 'disabled'}>停止</button>
+        <button data-save="${s.key}" ${s.implemented ? '' : 'disabled'}>保存</button>
+      </div></td>`;
+    tb.appendChild(tr);
+  }
+  $('#mgmt').textContent = '管理台端口 ' + location.port;
+}
+document.addEventListener('click', async e => {
+  const t = e.target; if (t.tagName !== 'BUTTON') return;
+  if (t.dataset.start) await api(`/api/services/${t.dataset.start}/start`, { method: 'POST' });
+  else if (t.dataset.stop) await api(`/api/services/${t.dataset.stop}/stop`, { method: 'POST' });
+  else if (t.dataset.save) {
+    const key = t.dataset.save;
+    const port = Number(document.querySelector(`[data-port="${key}"]`).value);
+    const enabled = document.querySelector(`[data-en="${key}"]`).checked;
+    await api(`/api/services/${key}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ port, enabled }) });
+  } else if (t.id === 'refresh') { await loadServices(); await loadGen(); await loadFailure(); await loadThirdParty(); }
+  else if (t.id === 'applyGen') { await applyGen(); return; }
+  else if (t.id === 'applyFailure') { await applyFailure(); return; }
+  else if (t.id === 'applyThirdParty') { await applyThirdParty(); return; }
+  await loadServices();
+});
+
+async function loadGen() {
+  const g = await api('/api/generator');
+  $('#gHolding').value = g.holdingSize; $('#gInput').value = g.inputSize;
+  $('#gCoils').value = g.coilCount; $('#gDisc').value = g.discreteCount;
+  $('#gInterval').value = g.intervalMs; $('#gDrive').checked = g.driveHolding;
+  $('#iMode').value = g.input.mode; $('#iBase').value = g.input.base;
+  $('#iAmp').value = g.input.amplitude; $('#iPeriod').value = g.input.periodMs; $('#iStep').value = g.input.step;
+}
+async function applyGen() {
+  const cur = await api('/api/generator');
+  const cfg = {
+    holdingSize: +$('#gHolding').value, inputSize: +$('#gInput').value,
+    coilCount: +$('#gCoils').value, discreteCount: +$('#gDisc').value,
+    intervalMs: +$('#gInterval').value, driveHolding: $('#gDrive').checked,
+    holdingSeed: cur.holdingSeed, coils: cur.coils, discretes: cur.discretes,
+    input: { mode: $('#iMode').value, base: +$('#iBase').value, amplitude: +$('#iAmp').value, periodMs: +$('#iPeriod').value, step: +$('#iStep').value, min: 0, max: 65535 }
+  };
+  const r = await api('/api/generator', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cfg) });
+  $('#genMsg').textContent = r.message || '已应用';
+}
+
+async function loadThirdParty() {
+  const s = await api('/api/thirdparty/status');
+  $('#tpEnabled').checked = !!s.enabled;
+  if (s.broker) { const parts = String(s.broker).split(':'); if (parts[0]) $('#tpHost').value = parts[0]; if (parts[1]) $('#tpPort').value = parts[1]; }
+  if (s.topicFilter) $('#tpFilter').value = s.topicFilter;
+  if (s.clientId) $('#tpClientId').value = s.clientId;
+  $('#tpStatus').textContent = `连接=${s.isConnected}  收到=${s.receivedMessages}  设备=${s.devices}  新增点位=${s.points}  坏质量=${s.badQualityPoints}  去重丢弃=${s.dedupedPoints}  解析错误=${s.parseErrors}  最近=${s.lastMessageAt || '-'}  错误=${s.lastError || '-'}`;
+  $('#tpRecent').textContent = (s.recent || []).slice().reverse().map(x => JSON.stringify(x)).join('\n');
+}
+async function applyThirdParty() {
+  const r = await api('/api/thirdparty', { method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ enabled: $('#tpEnabled').checked, brokerHost: $('#tpHost').value, brokerPort: Number($('#tpPort').value) || 1883,
+      topicFilter: $('#tpFilter').value, clientId: $('#tpClientId').value, username: '', password: '', useTls: false }) });
+  $('#tpMsg').textContent = r.message || '已应用';
+  await loadThirdParty();
+}
+
+async function loadFailure() {
+  const f = await api('/api/failure');
+  $('#fEnabled').checked = !!f.enabled;
+  $('#fRate').value = f.ratePercent ?? 0;
+  $('#fDrop').value = (f.dropConnection ?? true) ? 'true' : 'false';
+}
+async function applyFailure() {
+  const r = await api('/api/failure', { method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ enabled: $('#fEnabled').checked, ratePercent: Number($('#fRate').value) || 0, dropConnection: $('#fDrop').value === 'true' }) });
+  $('#fMsg').textContent = `${r.message || '已应用'}（失败率 ${r.ratePercent}%，${r.enabled ? '已启用' : '未启用'}）`;
+}
+
+let hist = [[], [], [], []];
+function drawChart() {
+  const c = $('#chart'), ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  const colors = ['#4da3ff', '#2ecc71', '#f1c40f', '#e74c3c'];
+  const all = hist.flat();
+  const min = Math.min(0, ...all), max = Math.max(1, ...all);
+  hist.forEach((h, k) => {
+    ctx.strokeStyle = colors[k]; ctx.beginPath();
+    h.forEach((v, i) => {
+      const x = (i / Math.max(1, h.length - 1)) * c.width;
+      const y = c.height - ((v - min) / (max - min)) * c.height;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.stroke();
+  });
+}
+setInterval(async () => {
+  try {
+    const d = await api('/api/data?count=32');
+    const tb = $('#dataBody'); let html = '';
+    for (let i = 0; i < d.holding.length; i++) {
+      html += `<tr><td class="mut">${i}</td><td>${d.holding[i] ?? ''}</td><td>${d.input[i] ?? ''}</td><td>${d.coils[i] ? '1' : '0'}</td><td>${d.discrete[i] ? '1' : '0'}</td></tr>`;
+    }
+    tb.innerHTML = html;
+    for (let k = 0; k < 4; k++) { hist[k].push((d.input[k] ?? 0)); if (hist[k].length > 120) hist[k].shift(); }
+    drawChart();
+  } catch { }
+}, 1200);
+
+loadServices(); loadGen(); loadFailure(); loadThirdParty();
+setInterval(() => { loadThirdParty().catch(() => {}); }, 3000);
+</script>
+</body>
+</html>

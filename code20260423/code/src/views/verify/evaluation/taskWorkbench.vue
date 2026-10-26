@@ -19,11 +19,12 @@
         <el-table-column label="状态 / 实测进度" width="150"><template #default="scope"><el-tag :type="taskStatusType(scope.row.status)">{{ taskStatusLabels[scope.row.status] || scope.row.status }}</el-tag><div v-if="scope.row.status === 'running'" class="progress-text">{{ taskProgress(scope.row) }}%</div></template></el-table-column>
         <el-table-column label="创建时间" width="175"><template #default="scope">{{ taskTime(scope.row.createdAt) }}</template></el-table-column>
         <el-table-column label="完成时间" width="175"><template #default="scope">{{ taskTime(scope.row.completedAt) }}</template></el-table-column>
-        <el-table-column label="操作" fixed="right" width="405">
+        <el-table-column label="操作" fixed="right" width="470">
           <template #default="scope">
             <div class="row-actions">
               <el-button type="primary" link :disabled="scope.row.status === 'running'" @click="editTask(scope.row)">编辑</el-button>
               <el-button type="success" link :loading="executingIds.has(scope.row.id)" :disabled="executingIds.has(scope.row.id) || scope.row.status === 'running'" @click="executeTask(scope.row)">{{ scope.row.lastRunJson ? '重新执行' : '执行' }}</el-button>
+              <el-button type="danger" link :loading="cancellingIds.has(scope.row.id)" :disabled="scope.row.status !== 'running' || cancellingIds.has(scope.row.id)" @click="cancelTask(scope.row)">终止</el-button>
               <el-button type="primary" link :disabled="!scope.row.lastRunJson && scope.row.status !== 'running'" @click="viewResult(scope.row)">{{ scope.row.status === 'running' ? '查看进度' : '查看结果' }}</el-button>
               <el-button type="warning" link :loading="exportingId === scope.row.id" :disabled="!scope.row.lastRunJson || scope.row.status === 'running'" @click="exportTask(scope.row)">导出Excel</el-button>
               <el-tooltip :disabled="canImport(scope.row)" content="需先执行任务，旧版结果需重新执行以保存机床和指标快照"><span><el-button type="primary" link :disabled="!canImport(scope.row) || scope.row.status === 'running'" @click="importKnowledge(scope.row)">导入知识库</el-button></span></el-tooltip>
@@ -49,10 +50,10 @@ import taskEditor from './taskEditor.vue';
 import taskResults from './taskResults.vue';
 import { taskMetricSummary, taskProgress, taskStatusLabels, taskStatusType, taskTime } from './taskModel';
 import { useTaskWorkbench } from './taskState';
-const { tasks, machines, metrics, loading, saving, executingIds, selectedTaskIds, runningTaskCount, maxParallelTasks,
+const { tasks, machines, metrics, loading, saving, executingIds, cancellingIds, selectedTaskIds, runningTaskCount, maxParallelTasks,
   isTaskRunning, onSelectionChange, executeSelectedTasks, exportingId, editorVisible, resultVisible,
   progressError, lastPolledAt, startPolling, stopPolling, refreshTasks,
-  draft, selectedTask, expandedRows, machineFor, metricsFor, selectCategory, loadPage, addTask, editTask, saveTask, executeTask, deleteTask, viewResult, exportTask, canImport, importKnowledge } = useTaskWorkbench();
+  draft, selectedTask, expandedRows, syncingExpanded, machineFor, metricsFor, selectCategory, loadPage, addTask, editTask, saveTask, executeTask, cancelTask, deleteTask, viewResult, exportTask, canImport, importKnowledge } = useTaskWorkbench();
 const filters = reactive({ status: '', keyword: '' });
 const applied = ref({ status: '', keyword: '' });
 const filteredTasks = computed(() => tasks.value.filter(task => {
@@ -63,7 +64,10 @@ const filteredTasks = computed(() => tasks.value.filter(task => {
 }));
 function search() { applied.value = { ...filters }; expandedRows.value = []; }
 function resetSearch() { Object.assign(filters, { status: '', keyword: '' }); search(); }
-function onExpand(_row: VerifyTaskDto, expanded: VerifyTaskDto[]) { expandedRows.value = expanded.map(task => task.id); }
+function onExpand(_row: VerifyTaskDto, expanded: VerifyTaskDto[]) {
+  if (syncingExpanded.value) return;
+  expandedRows.value = expanded.map(task => task.id);
+}
 function canSelectTask(task: VerifyTaskDto) { return !isTaskRunning(task); }
 onMounted(loadPage);
 onActivated(() => { startPolling(); void refreshTasks(); });

@@ -1,6 +1,14 @@
-param([string]$MySqlBin = 'C:\Program Files\MySQL\MySQL Server 8.4\bin')
+﻿param([string]$MySqlBin = 'C:\Program Files\MySQL\MySQL Server 8.4\bin')
 $ErrorActionPreference = 'Stop'
 $runtime = Join-Path $PSScriptRoot '.runtime'
+# 未显式给出 bin 且默认路径不存在时，复用 Start-MySql.ps1 记录到 instance.json 的 bin。
+if (-not (Test-Path -LiteralPath (Join-Path $MySqlBin 'mysql.exe'))) {
+    $statePath = Join-Path $runtime 'instance.json'
+    if (Test-Path -LiteralPath $statePath) {
+        $stateBin = (Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).Bin
+        if ($stateBin -and (Test-Path -LiteralPath (Join-Path $stateBin 'mysql.exe'))) { $MySqlBin = $stateBin }
+    }
+}
 $client = Join-Path $MySqlBin 'mysql.exe'
 $clientConfig = Join-Path $runtime 'client.cnf'
 $snapshot = Join-Path $PSScriptRoot 'SeedData/initial-data.sql'

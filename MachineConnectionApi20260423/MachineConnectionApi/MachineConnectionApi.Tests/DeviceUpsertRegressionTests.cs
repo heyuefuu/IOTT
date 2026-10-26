@@ -129,6 +129,7 @@ internal static partial class DeviceUpsertRegressionTests
         store,
         new StubSyncService(),
         new StubActivityLog(),
+        new MachineConnectionApi.Services.ConnectionStatsStore(),
         NullLogger<DevicesController>.Instance);
 
     private static MachineDeviceDto GetOkValue(ActionResult<MachineDeviceDto> result) =>

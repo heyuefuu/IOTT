@@ -17,6 +17,31 @@ public sealed class NativeFocasApi : IFocasApi
     public bool SupportsProgramBlockRead => false;
     public bool SupportsModalReads => false;
 
+    // FWLIB 会按"名字"懒加载以太网/系列驱动（fwlibe64.dll / fwlib0iD64.dll / fwlib30i64.dll）。
+    // 在 IIS(w3wp.exe) 里进程的 exe 目录与工作目录都不含应用目录，按名加载会失败，
+    // 使 cnc_allclibhndl3 立即返回 -15 (EW_HSSB)（实测：不设搜索目录 -15；SetDllDirectory 后 rc=0）。
+    // 因此在类型初始化时：把应用目录加入 DLL 搜索路径，并按绝对路径显式预加载。
+    static NativeFocasApi()
+    {
+        try
+        {
+            var dir = AppContext.BaseDirectory;
+            SetDllDirectory(dir);
+            foreach (var name in new[] { "fwlibe64.dll", "fwlib0iD64.dll", "fwlib30i64.dll" })
+            {
+                var path = Path.Combine(dir, name);
+                if (File.Exists(path)) LoadLibrary(path);
+            }
+        }
+        catch { /* 预加载失败不致命，后续调用会给出原始错误码 */ }
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "SetDllDirectoryW")]
+    private static extern bool SetDllDirectory(string lpPathName);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "LoadLibraryW")]
+    private static extern IntPtr LoadLibrary(string lpFileName);
+
     #region ── Native FOCAS2 DllImport ──────────────────────────────────
 
     // Connection
@@ -737,11 +762,13 @@ public sealed class NativeFocasApi : IFocasApi
         return ret;
     }
 
-    public int ReadParameter(int handle, int number, out int value)
+    public int ReadParameter(int handle, int number, short length, out int value)
     {
         value = 0;
         var parameter = new IODBPSD_1();
-        var ret = cnc_rdparam((ushort)handle, (short)number, 0, 8, parameter);
+        // length 由调用方给出：普通参数 8（4 字节）；2 字长参数（如 6750/6753/6754 时间类）用 8+32，
+        // 与现场可用样例 WindowsFormsAppforFanuc 的调用保持一致。
+        var ret = cnc_rdparam((ushort)handle, (short)number, 0, length, parameter);
         if (ret == EW_OK)
             value = parameter.ldata;
         return ret;
@@ -1005,7 +1032,7 @@ public sealed class NativeFocasApi : IFocasApi
         14 => "保留",
         15 => "外部报警信息（EX）",
         16 => "正向超程（软限位1）",
-        _ => "未知错误"
+        _ => $"未知报警状态 ({statusCode})"
     };
 
     private static double ScalePosition(POSELM position) =>

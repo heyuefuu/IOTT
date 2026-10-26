@@ -112,6 +112,12 @@ internal static class Program
             Console.WriteLine("Datacollection save regression tests passed.");
             return;
         }
+        if (args.Contains("--account-safety"))
+        {
+            MachineConnectionApi.Tests.AccountSafetyRegressionTests.RunAll();
+            Console.WriteLine("Account safety regression tests passed.");
+            return;
+        }
         MetricStoreInitializesEmptyLibraryAndPreservesExistingData();
         await MachineConnectionApi.Tests.CncGatewayRoutingRegressionTests.RunAll();
         if (args.Contains("--cnc-gateway"))
@@ -133,6 +139,7 @@ internal static class Program
         await MachineConnectionApi.Tests.DatacollectionSaveRegressionTests.RunAll();
         MachineConnectionApi.Tests.ApiAuthorizationRegressionTests.RunAll();
         await MachineConnectionApi.Tests.VerifyTaskRunnerRegressionTests.RunAll();
+        MachineConnectionApi.Tests.AccountSafetyRegressionTests.RunAll();
         await MachineConnectionApi.Tests.JsonFileStoreRegressionTests.ConcurrentUpdatesDoNotLoseRows();
         await MachineConnectionApi.Tests.DeviceUpsertRegressionTests.RunAll();
         await MachineConnectionApi.Tests.CsConnectivityServiceRegressionTests.RunAll();

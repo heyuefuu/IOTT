@@ -125,6 +125,19 @@ public sealed class VerifyTasksController : ControllerBase
         StatusCode(StatusCodes.Status503ServiceUnavailable,
             new { error = error.Message, taskId = error.TaskId, runId = error.RunId, resultPending = true });
 
+    [HttpPost("{id}/cancel")]
+    public ActionResult Cancel(string id)
+    {
+        var task = _store.ReadAll().FirstOrDefault(row => row.Id == id);
+        if (task is null) return NotFound();
+        if (task.Status != "running") return Conflict(new { error = "任务未在运行，无法终止" });
+        // Failed with a permanent reason is reported when it is not owned by this process
+        // (e.g. a run held by a previous process that is only replayed on recovery).
+        if (!_runner.CancelTask(id))
+            return Conflict(new { error = "运行不由当前进程持有，无法终止；请等待其自行结束或重启服务后恢复结果" });
+        return Accepted(new { taskId = id, message = "已请求终止当前验证任务，测量循环将在当前采样/传输结束后退出" });
+    }
+
     [HttpPost("recover-results")]
     public async Task<IActionResult> RecoverResults(CancellationToken ct)
     {
@@ -215,6 +228,8 @@ public sealed class VerifyTasksController : ControllerBase
 
         string Number(double? value) => value.HasValue && double.IsFinite(value.Value)
             ? value.Value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) : "待评分";
+        string Measured(double? value, string? unit) => value.HasValue && double.IsFinite(value.Value)
+            ? value.Value.ToString(unit == "count" ? "0" : "0.00", System.Globalization.CultureInfo.InvariantCulture) : "无可靠实测";
         var intro = new[]
         {
             $"任务名称：{run.TaskName}　运行编号：{run.RunId}",
@@ -232,7 +247,7 @@ public sealed class VerifyTasksController : ControllerBase
         var summaries = run.Metrics.Select(metric => (IReadOnlyList<string>)new[]
         {
             $"{metric.Code} {metric.Name}",
-            metric.Measurement.HasValue ? $"{Number(metric.Measurement)} {metric.Unit}" : metric.Value.Length > 0 ? $"{metric.Value}（无结构化实测值）" : "无可靠实测",
+            metric.Measurement.HasValue ? $"{Measured(metric.Measurement, metric.Unit)} {metric.Unit}" : metric.Value.Length > 0 ? $"{metric.Value}（无结构化实测值）" : "无可靠实测",
             metric.ExecutionStatus == "pending" && run.CompletedAt.Length > 0 ? "历史未记录" : metric.ExecutionStatus,
             string.IsNullOrWhiteSpace(metric.Result) ? metric.Status : metric.Result,
             Number(metric.Score),

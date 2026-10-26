@@ -224,7 +224,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onUnmounted, onMounted } from "vue";
+import { ref, reactive, onUnmounted, onMounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import { Link, Refresh } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { machineConnectionDevicesApi } from "@/api/machineConnectionDevices";
@@ -268,6 +269,12 @@ function getErr(e: unknown, fallback: string): string {
 // ---------- 设备与连接 ----------
 const devices = ref<{ id: string; name: string; protocol: string }[]>([]);
 const deviceForm = reactive({ deviceId: "" });
+const route = useRoute();
+
+const applyRequestedDevice = () => {
+	const id = typeof route.query.deviceId === "string" ? route.query.deviceId : "";
+	if (id && devices.value.some((device) => device.id === id)) deviceForm.deviceId = id;
+};
 const isConnected = ref(false);
 const connecting = ref(false);
 const connectedDeviceName = ref("");
@@ -277,6 +284,7 @@ const loadDevices = async () => {
 	try {
 		const list = await machineConnectionDevicesApi.list("Robot");
 		devices.value = list.map((d) => ({ id: d.id, name: d.name, protocol: d.protocol }));
+		applyRequestedDevice();
 	} catch (e: unknown) {
 		ElMessage.error(getErr(e, "加载设备列表失败"));
 	}
@@ -323,7 +331,7 @@ const writingPath = ref("");
 const rowIndex = new Map<string, AddressRow>();
 
 const toRow = (node: AddressNode): AddressRow => {
-	const row: AddressRow = {
+	const row = reactive<AddressRow>({
 		path: node.path,
 		displayName: node.displayName || node.path,
 		nodeType: node.nodeType,
@@ -332,7 +340,7 @@ const toRow = (node: AddressNode): AddressRow => {
 		isWritable: node.isWritable,
 		sourceId: node.sourceId,
 		hasChildren: node.nodeType === "Folder",
-	};
+	});
 	rowIndex.set(row.path, row);
 	return row;
 };
@@ -377,7 +385,7 @@ const handleSelectionChange = (rows: AddressRow[]) => {
 
 const applyReadResults = (tags: { address: string; value: unknown; quality: string; timestamp: string; errorMessage?: string | null }[]) => {
 	for (const tag of tags) {
-		const row = rowIndex.get(tag.address);
+		const row = rowIndex.get(tag.address) ?? Array.from(rowIndex.values()).find(item => item.path.toLowerCase() === tag.address.toLowerCase());
 		if (!row) continue;
 		row.value = tag.value;
 		row.quality = tag.errorMessage ? "Bad" : tag.quality;
@@ -530,6 +538,16 @@ onUnmounted(() => {
 
 onMounted(() => {
 	void loadDevices();
+});
+
+watch(() => route.query.deviceId, () => {
+	applyRequestedDevice();
+	isConnected.value = false;
+	connectedDeviceName.value = "";
+	connectionMode.value = "";
+	addressRows.value = [];
+	programRows.value = [];
+	stopAutoRefresh();
 });
 </script>
 

@@ -93,6 +93,7 @@ internal static class FocasError
     {
         -8 => true,   // EW_HANDLE  — handle no longer valid
         -16 => true,  // EW_BUS     — bus/socket error
+        -15 => true,  // EW_HSSB    — 实测首次连接/空闲后偶发；重连即可恢复（否则整批读失败）
         -7 => true,   // EW_UNEXP   — unexpected library state
         -6 => true,   // EW_SYSTEM  — system error in the library
         -2 => true,   // EW_RESET   — connection reset by the controller

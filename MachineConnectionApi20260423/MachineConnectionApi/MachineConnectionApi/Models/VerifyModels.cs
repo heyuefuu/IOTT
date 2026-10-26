@@ -25,6 +25,8 @@ public sealed class VerifyRunOptions
     public IReadOnlyList<string>? ConcurrentDeviceIds { get; set; }
     public IReadOnlyList<string>? TransferDeviceIds { get; set; }
     public bool AllowFileWrites { get; set; } = false;
+    /// <summary>Feasibility self-check: shorten durations and relax pass thresholds so all seven metrics can produce a result.</summary>
+    public bool Feasibility { get; set; }
 }
 
 public sealed class VerifyRunResponse

@@ -36,6 +36,9 @@
         <p v-else-if="concurrencyLimit && concurrentDeviceIds.length < concurrencyLimit" class="safety-note">当前 {{ concurrentDeviceIds.length }} 个目标少于规则上限 {{ concurrencyLimit }}，只能验证下限，不能作为最大连接数评分。</p>
       </el-form-item>
       <el-checkbox v-model="allowFileWrites">明确许可本任务写入并回读测试文件（默认不许可）</el-checkbox>
+      <el-alert v-if="fileMetricsSelected && !allowFileWrites" type="warning" :closable="false" show-icon class="safety-alert" title="已选文件类指标但未授权写入：这些指标会保持未评分。" />
+      <el-alert v-if="fileMetricsSelected && !hasTransferChannel" type="warning" :closable="false" show-icon class="safety-alert" title="当前设备未配置 FTP/SMB/NFS 文件通道：文件类指标无法实测。" />
+      <el-checkbox v-model="feasibility">可行性自检（稳定性只测 3 分钟、放宽达标线、独立连接模式、≤10 MiB 文件档）</el-checkbox>
       <el-alert type="warning" :closable="false" show-icon class="safety-alert" title="仅向规则指定的测试目录写入隔离测试文件；不自动执行 NC 程序，不覆盖既有程序。" description="请在受控测试环境确认目标与目录后授权。没有许可、没有真实附件，或协议不能保障隔离/不覆盖时，相关指标保持未评分。每日计划任务会沿用此项许可，可随时编辑取消。" />
       <p class="safety-note">读取地址、数据类型、测试目录、达标线与评分档位来自“评价指标管理”的版本化规则；开始运行后按本轮快照执行，不读取旧指标库的隐藏阈值。</p>
       <p v-if="task.scheduleType === 'daily'" class="schedule-note">该任务保留每日 {{ task.scheduleTime }} 的自动执行设置。</p>
@@ -65,6 +68,13 @@ const allowFileWrites = computed({
   get: () => props.task?.options?.allowFileWrites === true,
   set: (value: boolean) => { if (props.task) { props.task.options ??= {}; props.task.options.allowFileWrites = value; } },
 });
+const feasibility = computed({
+  get: () => props.task?.options?.feasibility === true,
+  set: (value: boolean) => { if (props.task) { props.task.options ??= {}; props.task.options.feasibility = value; } },
+});
+const fileMetricsSelected = computed(() => (props.task?.metricIds ?? []).some(id => ['transfer-protocol', 'file-integrity', 'transfer-speed', 'file-size'].includes(id)));
+const selectedMachine = computed(() => props.machines.find(machine => machine.id === props.task?.machineId));
+const hasTransferChannel = computed(() => Boolean(selectedMachine.value?.transfer || selectedMachine.value?.extendedProperties?.transferDeviceId));
 const concurrencyLimit = computed(() => props.metrics.find(metric => metric.id === 'max-connections')?.automation?.test.maxConnections);
 const allSelected = computed(() => props.metrics.length > 0 && props.metrics.every(metric => props.task?.metricIds.includes(metric.id)));
 const partSelected = computed(() => Boolean(props.task?.metricIds.length) && !allSelected.value);

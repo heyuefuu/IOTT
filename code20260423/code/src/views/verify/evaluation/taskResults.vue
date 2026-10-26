@@ -48,6 +48,7 @@
           <template #default="scope">
             <div class="metric-label">{{ scope.row.code }} {{ metricName(scope.row.metricId, scope.row.name) }}</div>
             <strong class="measured-value">{{ measurement(scope.row) }}</strong>
+            <p v-if="!hasMeasurement(scope.row)" class="unrated-reason">{{ scope.row.detail || '展开查看评分依据与本轮证据' }}</p>
             <p class="reference">来源：{{ measurementSource(scope.row.measurementSource) }}</p>
           </template>
         </el-table-column>
@@ -95,7 +96,14 @@ function bands(id: string) { return metricRule(id)?.scoreBands.map(band => `≥$
 function percent(value?: number) { return typeof value === 'number' && Number.isFinite(value) ? Number(Math.max(0, Math.min(100, value)).toFixed(2)) : 0; }
 function judgment(status: string) { return ({ passed: '达标', failed: '未达标', error: '执行错误', unrated: '未判定', pending: '待判定', running: '待判定' } as Record<string, string>)[status] || '待判定'; }
 function measurement(metric: VerifyMetricResult) {
-  return typeof metric.measurement === 'number' && Number.isFinite(metric.measurement) ? `${metric.measurement} ${metric.unit || ''}` : metric.value || '暂无可靠实测';
+  if (typeof metric.measurement === 'number' && Number.isFinite(metric.measurement)) {
+    const value = metric.unit === 'count' ? metric.measurement.toFixed(0) : metric.measurement.toFixed(2);
+    return `${value} ${metric.unit || ''}`;
+  }
+  return metric.value || '暂无可靠实测';
+}
+function hasMeasurement(metric: VerifyMetricResult) {
+  return typeof metric.measurement === 'number' && Number.isFinite(metric.measurement);
 }
 function measurementSource(source?: string) { return source === 'current-run' ? '本轮实测' : source === 'configuration' ? '配置统计（非通信实测）' : source || '未记录'; }
 </script>
@@ -110,6 +118,7 @@ function measurementSource(source?: string) { return source === 'current-run' ? 
 .score-summary { font-size: 13px; color: var(--el-text-color-secondary); margin-bottom: 12px; }
 .metric-label { color: var(--el-text-color-secondary); font-size: 13px; }
 .measured-value { display: block; color: var(--el-text-color-primary); font-size: 16px; margin-top: 7px; overflow-wrap: anywhere; }
+.unrated-reason { margin-top: 6px; color: var(--el-color-warning); font-size: 12px; line-height: 1.5; white-space: normal; }
 .reference { margin-top: 7px; color: var(--el-text-color-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
 .metric-detail { white-space: pre-wrap; padding: 16px 30px; overflow-wrap: anywhere; }
 .metric-detail p { margin-bottom: 10px; }

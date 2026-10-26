@@ -21,7 +21,7 @@ using Microsoft.Extensions.Logging;
 ///   RootRelativePath — 传输操作的根目录（相对 MountPoint），默认空
 /// </summary>
 [ProtocolDriver(ProtocolType.NFS, "NFS", "FANUC", "Makino", "*")]
-public sealed partial class NfsTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSpaceBrowser
+public sealed partial class NfsTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSpaceBrowser, INCProgramDelete
 {
     private const int BufferSize = 81920;
     private readonly ILogger<NfsTransferDriver> _logger;
@@ -160,6 +160,15 @@ public sealed partial class NfsTransferDriver : IProtocolDriver, INCProgramTrans
         }
         sw.Stop();
         return new() { Success = true, TransferId = transferId, BytesTransferred = bytes, Duration = sw.Elapsed };
+    }
+
+    public Task<bool> DeleteProgramAsync(string remotePath, CancellationToken ct = default)
+    {
+        var target = ResolvePath(remotePath, null);
+        if (!File.Exists(target)) return Task.FromResult(false);
+        File.Delete(target);
+        _logger.LogInformation("NFS deleted {Path}", target);
+        return Task.FromResult(true);
     }
 
     public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)

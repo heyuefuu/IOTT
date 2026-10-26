@@ -37,6 +37,7 @@ dist-ssr/
 !.env.example
 !.env.sample
 appsettings.Local.json
+iott-launcher.config.json
 
 # ---- Logs & runtime ----
 logs/
@@ -46,6 +47,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# ---- Gateway runtime data (generated sample data) & backups ----
+App_Data/
+*.bak
+backups/
+
 # ---- Host scratch / vendor extract ----
 tmp/
 reverse-engineering/
@@ -53,6 +59,11 @@ hncsdk_*/
 nclink-api-server-*/
 host-check/
 upx/
+
+# ---- Local FOCAS probe artifacts ----
+/FocasProbe.*
+/Fwlib*.dll
+/fwlib*.dll
 
 # ---- Archives & crash dumps ----
 *.rar

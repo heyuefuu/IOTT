@@ -63,7 +63,7 @@ internal static partial class DeviceUpsertRegressionTests
 
     private static DevicesController ConnectionController(MemoryDeviceStore store, HttpClient client) => new(
         new CredentialClientFactory(client), new ConfigurationBuilder().Build(), store,
-        new StubSyncService(), new StubActivityLog(), NullLogger<DevicesController>.Instance);
+        new StubSyncService(), new StubActivityLog(), new MachineConnectionApi.Services.ConnectionStatsStore(), NullLogger<DevicesController>.Instance);
 
     private static JsonElement ConnectionJson(IActionResult result) => result is OkObjectResult response
         ? JsonSerializer.SerializeToElement(response.Value)

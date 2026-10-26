@@ -446,6 +446,116 @@ public class ProgramTransferController : ControllerBase
         return File(stream, artifact.ContentType, artifact.FileName);
     }
 
+    /// <summary>比较设备上两个程序文件（大小 + SHA256，并给出首处差异字节偏移）。</summary>
+    [HttpPost("{deviceId}/compare")]
+    public async Task<ActionResult<ProgramCompareResponse>> Compare(
+        string deviceId,
+        [FromBody] CompareProgramRequest request,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.PathA) || string.IsNullOrWhiteSpace(request.PathB))
+            return BadRequest("PathA and PathB are required");
+
+        var device = await _deviceRepo.GetByIdAsync(deviceId, ct);
+        if (device is null) return NotFound($"Device {deviceId} not found");
+
+        var resolution = await ResolveConnectedDriverAsync(device, ct);
+        if (resolution.ErrorResult is not null)
+            return resolution.ErrorResult;
+
+        await using var driver = resolution.Driver!;
+        if (driver is not INCProgramTransfer transferDriver)
+            return BadRequest("Device driver does not support NC program transfer");
+
+        try
+        {
+            var (bytesA, errorA) = await DownloadToBytesAsync(transferDriver, request.PathA, ct);
+            if (errorA is not null)
+                return StatusCode(502, new { error = $"读取 {request.PathA} 失败：{errorA}" });
+
+            var (bytesB, errorB) = await DownloadToBytesAsync(transferDriver, request.PathB, ct);
+            if (errorB is not null)
+                return StatusCode(502, new { error = $"读取 {request.PathB} 失败：{errorB}" });
+
+            var minLength = Math.Min(bytesA.Length, bytesB.Length);
+            long? firstDifference = null;
+            for (var i = 0; i < minLength; i++)
+            {
+                if (bytesA[i] == bytesB[i]) continue;
+                firstDifference = i;
+                break;
+            }
+            if (firstDifference is null && bytesA.Length != bytesB.Length)
+                firstDifference = minLength;
+
+            return Ok(new ProgramCompareResponse
+            {
+                PathA = request.PathA,
+                PathB = request.PathB,
+                Equal = firstDifference is null,
+                SizeA = bytesA.Length,
+                SizeB = bytesB.Length,
+                Sha256A = Convert.ToHexString(SHA256.HashData(bytesA)),
+                Sha256B = Convert.ToHexString(SHA256.HashData(bytesB)),
+                FirstDifferenceOffset = firstDifference,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "NC program compare failed for device {DeviceId}", deviceId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>删除设备上的程序文件（需驱动实现 INCProgramDelete）。</summary>
+    [HttpPost("{deviceId}/delete")]
+    public async Task<IActionResult> DeleteProgram(
+        string deviceId,
+        [FromBody] DeleteProgramRequest request,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.RemotePath))
+            return BadRequest("RemotePath is required");
+
+        var device = await _deviceRepo.GetByIdAsync(deviceId, ct);
+        if (device is null) return NotFound($"Device {deviceId} not found");
+
+        var resolution = await ResolveConnectedDriverAsync(device, ct);
+        if (resolution.ErrorResult is not null)
+            return resolution.ErrorResult;
+
+        await using var driver = resolution.Driver!;
+        if (driver is not INCProgramDelete deleter)
+            return StatusCode(501, new { error = "该设备协议不支持删除程序文件" });
+
+        try
+        {
+            var deleted = await deleter.DeleteProgramAsync(request.RemotePath, ct);
+            if (!deleted)
+                return StatusCode(404, new { error = "文件不存在或删除失败" });
+
+            _logger.LogInformation("NC program deleted on device {DeviceId}: {RemotePath}", deviceId, request.RemotePath);
+            return Ok(new { success = true, remotePath = request.RemotePath });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "NC program delete failed for device {DeviceId}", deviceId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    private static async Task<(byte[] Data, string? Error)> DownloadToBytesAsync(
+        INCProgramTransfer driver,
+        string remotePath,
+        CancellationToken ct)
+    {
+        using var buffer = new MemoryStream();
+        var result = await driver.DownloadProgramAsync(remotePath, buffer, ct: ct);
+        return result.Success
+            ? (buffer.ToArray(), null)
+            : (Array.Empty<byte>(), result.ErrorMessage ?? "download failed");
+    }
+
     private async Task<ResolvedDriverResult> ResolveConnectedDriverAsync(Device device, CancellationToken ct)
     {
         if (device.ConnectionConfig.Transfer is not null)
@@ -595,4 +705,27 @@ public record ResumeUploadRequest
 {
     public required string TransferId { get; init; }
     public long Offset { get; init; }
+}
+
+public record CompareProgramRequest
+{
+    public required string PathA { get; init; }
+    public required string PathB { get; init; }
+}
+
+public record DeleteProgramRequest
+{
+    public required string RemotePath { get; init; }
+}
+
+public record ProgramCompareResponse
+{
+    public required string PathA { get; init; }
+    public required string PathB { get; init; }
+    public bool Equal { get; init; }
+    public long SizeA { get; init; }
+    public long SizeB { get; init; }
+    public string Sha256A { get; init; } = "";
+    public string Sha256B { get; init; } = "";
+    public long? FirstDifferenceOffset { get; init; }
 }

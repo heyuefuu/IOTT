@@ -26,6 +26,18 @@ public sealed partial class VerifyAutomationService
         { MarkUnrated(metric, "未选择传输协议标准集合，本轮未上传。"); return; }
         string Protocol(VerifyMeasurementTarget target) => EvaluationAutomationRules.NormalizeProtocol(
             target.ResolvedTransferProtocol ?? target.Transfer?.Protocol ?? target.Protocol);
+        // The Host device DTO does not always carry the inline transfer block (older rows / restart).
+        // Resolve the protocol from the Host verification snapshot so a correctly configured FTP/SMB/NFS
+        // device is not reported as missing an explicit transfer target.
+        foreach (var target in targets)
+        {
+            if (target.ResolvedTransferProtocol is not null || target.Transfer is not null) continue;
+            var snapshot = await _measurements.GetTransferSnapshotAsync(target, ct);
+            if (snapshot.Supported && !string.IsNullOrWhiteSpace(snapshot.Protocol))
+                target.ResolvedTransferProtocol = snapshot.Protocol;
+            metric.Evidence.Add($"{target.Id}: transfer snapshot {snapshot.Detail}");
+        }
+
         if (standards.Any(protocol => !targets.Any(target => Protocol(target) == protocol)))
         { MarkUnrated(metric, "部分标准协议缺少显式传输目标，不能把未测协议当作支持或不支持；本轮未上传。"); return; }
         var samples = item.Files.Where(file => file.SizeBytes is { } bytes

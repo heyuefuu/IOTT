@@ -12,7 +12,7 @@ using IndustrialIoT.Protocols.Registration;
 using Microsoft.Extensions.Logging;
 
 [ProtocolDriver(ProtocolType.FTP, "FTP", "*")]
-public partial class FtpTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSpaceBrowser
+public partial class FtpTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSpaceBrowser, INCProgramDelete
 {
     private readonly ILogger<FtpTransferDriver> _logger;
     private AsyncFtpClient? _client;
@@ -287,6 +287,22 @@ public partial class FtpTransferDriver : IProtocolDriver, INCProgramTransfer, IA
                 Duration = sw.Elapsed,
                 ErrorMessage = ex.Message
             };
+        }
+    }
+
+    public async Task<bool> DeleteProgramAsync(string remotePath, CancellationToken ct = default)
+    {
+        EnsureConnected();
+        try
+        {
+            await _client!.DeleteFile(remotePath, ct);
+            _logger.LogInformation("FTP deleted {RemotePath}", remotePath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "FTP delete failed for {RemotePath}", remotePath);
+            return false;
         }
     }
 

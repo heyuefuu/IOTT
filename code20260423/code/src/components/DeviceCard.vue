@@ -1,6 +1,6 @@
 <template>
 	<el-card
-		:class="{ offline: device.status === 'offline' }"
+		:class="{ offline: device.status === 'offline', unknown: device.status === 'unknown' }"
 		shadow="hover"
 		:body-style="{ padding: '16px' }"
 		class="device-card"
@@ -109,7 +109,7 @@ interface Device {
 	ip: string;
 	port: number;
 	protocol: string;
-	status: "running" | "standby" | "alarm" | "offline";
+	status: "unknown" | "running" | "standby" | "alarm" | "offline";
 	parameters: Record<string, any>;
 	lastOnline?: string;
 	collectionFrequency?: number;
@@ -171,6 +171,10 @@ const handleReport = () => {
 	&.offline {
 		opacity: 0.7;
 		filter: grayscale(30%);
+	}
+
+	&.unknown {
+		opacity: 0.85;
 	}
 
 	.card-header {

@@ -41,7 +41,7 @@ internal sealed partial class FocasAddressMapper
         public FocasProgramInfo? ProgramInfo { get; set; }
         public Dictionary<int, byte[]> PmcBytes { get; } = [];
         public string? ProgramBlock { get; set; }
-        public (int StatusCode, string Message)? AlarmStatusInfo { get; set; }
+        public (int AlarmNo, string Message)? AlarmInfo { get; set; }
 
         /// <summary>Scalar reads keyed by API name (spindle speed, feed rate, tool id, ...).</summary>
         public Dictionary<string, object> Scalars { get; } = [];
@@ -195,21 +195,21 @@ internal sealed partial class FocasAddressMapper
         // /CNC/Alarm/Active
         if (path.Equals("/cnc/alarm/active", StringComparison.OrdinalIgnoreCase))
         {
-            var (statusCode, _) = GetAlarmStatusInfo(cache);
-            return (statusCode != 0, DataType.Bool);
+            var (alarmNo, _) = GetAlarmInfo(cache);
+            return (alarmNo != 0, DataType.Bool);
         }
 
         // /CNC/Alarm/Code
         if (path.Equals("/cnc/alarm/code", StringComparison.OrdinalIgnoreCase))
         {
-            var (statusCode, _) = GetAlarmStatusInfo(cache);
-            return (statusCode, DataType.Int32);
+            var (alarmNo, _) = GetAlarmInfo(cache);
+            return (alarmNo, DataType.Int32);
         }
 
         // /CNC/Alarm/Message
         if (path.Equals("/cnc/alarm/message", StringComparison.OrdinalIgnoreCase))
         {
-            var (_, msg) = GetAlarmStatusInfo(cache);
+            var (_, msg) = GetAlarmInfo(cache);
             return (msg, DataType.String);
         }
 
@@ -377,7 +377,10 @@ internal sealed partial class FocasAddressMapper
         if (cache is not null && cache.Parameters.TryGetValue(number, out var cached))
             return cached;
 
-        int rc = _api.ReadParameter(_handle, number, out var value);
+        // 时间类参数（6750 开机/6753 切削秒/6754 切削分）在 0i-D 上是"2 字长(8 字节)"，
+        // 必须按样例那样用 length = 8 + 32 读取；其余参数用 8。
+        short length = number is 6750 or 6753 or 6754 ? (short)(8 + 32) : (short)8;
+        int rc = _api.ReadParameter(_handle, number, length, out var value);
         ThrowIfError(rc, "ReadParameter");
         if (cache is not null)
             cache.Parameters[number] = value;
@@ -469,16 +472,16 @@ internal sealed partial class FocasAddressMapper
         return block;
     }
 
-    private (int StatusCode, string Message) GetAlarmStatusInfo(BatchReadCache? cache)
+    private (int AlarmNo, string Message) GetAlarmInfo(BatchReadCache? cache)
     {
-        if (cache?.AlarmStatusInfo is { } alarm)
+        if (cache?.AlarmInfo is { } alarm)
             return alarm;
 
-        int rc = _api.ReadAlarmStatus(_handle, out var statusCode, out var message);
-        ThrowIfError(rc, "ReadAlarmStatus");
-        alarm = (statusCode, message);
+        int rc = _api.ReadAlarm(_handle, out var alarmNo, out var message);
+        ThrowIfError(rc, "ReadAlarm");
+        alarm = (alarmNo, string.IsNullOrWhiteSpace(message) ? "无报警" : message.Trim());
         if (cache is not null)
-            cache.AlarmStatusInfo = alarm;
+            cache.AlarmInfo = alarm;
         return alarm;
     }
 
@@ -510,10 +513,10 @@ internal sealed partial class FocasAddressMapper
             "/cnc/fanuc/time/cuttingseconds" => ReadFanucDuration(6753, 6754, cache),
             "/cnc/fanuc/time/workingseconds" => ReadFanucDuration(6751, 6752, cache),
             "/cnc/fanuc/time/poweronseconds" => ReadFanucPowerOnSeconds(cache),
-            // Shares GetAlarmStatusInfo with /CNC/Alarm/* — one cnc_alarm2 per batch even when
-            // both families are configured on the same device.
-            "/cnc/fanuc/alarm/status" => (GetAlarmStatusInfo(cache).StatusCode, DataType.Int32),
-            "/cnc/fanuc/alarm/message" => (GetAlarmStatusInfo(cache).Message, DataType.String),
+            // Shares GetAlarmInfo with /CNC/Alarm/* — one cnc_alarm per batch even when
+            // both alarm families are configured.
+            "/cnc/fanuc/alarm/status" => (GetAlarmInfo(cache).AlarmNo, DataType.Int32),
+            "/cnc/fanuc/alarm/message" => (GetAlarmInfo(cache).Message, DataType.String),
             _ => throw new ArgumentException($"Unknown FANUC address: '{path}'")
         };
     }

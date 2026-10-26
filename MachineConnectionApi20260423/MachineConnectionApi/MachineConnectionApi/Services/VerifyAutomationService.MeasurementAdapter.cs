@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json.Serialization;
 using MachineConnectionApi.Models;
 
@@ -17,12 +17,25 @@ public interface IVerifyMeasurementAdapter
     Task<VerifyAttachmentValidation> ValidateAttachmentAsync(EvaluationFile file, CancellationToken ct);
     Task<VerifyTransferObservation> TransferAsync(VerifyMeasurementTarget target, EvaluationFile file, string directory,
         string remoteName, Action<double> reportFraction, CancellationToken ct);
+
+    /// <summary>
+    /// Connections mode: open <paramref name="count"/> independent connections to the same device and read
+    /// the point on each concurrently. Each connection must be a separate transport (fresh HttpClient +
+    /// handler here; the Host creates a fresh verification driver per request, not the pooled one).
+    /// </summary>
+    Task<VerifyConnectionsObservation> MeasureConnectionsAsync(VerifyMeasurementTarget target, int count,
+        string address, string dataType, int timeoutMs, CancellationToken ct);
+
+    /// <summary>Server-side transfer snapshot (supported protocol + transfer endpoint) for a device.</summary>
+    Task<VerifyTransferSnapshot> GetTransferSnapshotAsync(VerifyMeasurementTarget target, CancellationToken ct);
 }
 
 public sealed record VerifyReadObservation(bool Supported, bool HasEvidence, bool Success, string Detail, string? Protocol = null);
 public sealed record VerifyAttachmentValidation(bool Valid, string Detail);
 public sealed record VerifyTransferObservation(bool Supported, bool HasEvidence, bool Success, bool IntegrityVerified,
     long UploadedBytes, double UploadSeconds, string Detail);
+public sealed record VerifyConnectionsObservation(bool Supported, bool HasEvidence, int SuccessCount, int Requested, string Detail);
+public sealed record VerifyTransferSnapshot(bool Supported, string Protocol, string Detail);
 
 public sealed class VerifyMeasurementTarget
 {
@@ -41,7 +54,7 @@ public sealed class VerifyMeasurementTarget
 
     // Loaded once per run's target object, not retained in an adapter-wide/history cache. Selecting
     // a rule address bypasses this cache. The tuple contains only an already-configured Host tag.
-    [JsonIgnore] internal (string Address, string DataType)? ConfiguredReadPoint { get; set; }
+    [JsonIgnore] internal List<(string Address, string DataType)>? ConfiguredReadPoints { get; set; }
     [JsonIgnore] internal bool ReadPointResolved { get; set; }
     [JsonIgnore] internal string? ResolvedTransferProtocol { get; set; }
 

@@ -56,6 +56,9 @@ public sealed partial class GskWebServerDriver
         if (TryGetProperty(payload, Tail(address), out var exact)) return exact;
         if (TryGetProperty(payload, address, out exact)) return exact;
         if (TryGetProperty(payload, "value", out exact)) return exact;
+        // 部分固件把计数/单值包成 {"num":N}（如 /tool-offsets/total-count、/info/alarms/total-count、
+        // /info/history/total-count）——直接取 num，否则按对象解析会判为 Bad。
+        if (payload.ValueKind == JsonValueKind.Object && TryGetProperty(payload, "num", out var numValue)) return numValue;
         return payload;
     }
 

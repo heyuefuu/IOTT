@@ -179,6 +179,14 @@ public sealed partial class CsConnectivityService
                 break;
             }
 
+            if (!IsClientAllowed(svc, client))
+            {
+                _logger.LogWarning("服务端 {Id} 拒绝未在白名单的客户端 {Remote}", svc.Id,
+                    client.Client.RemoteEndPoint);
+                client.Close();
+                continue;
+            }
+
             if (!runtime.ConnectionSlots.Wait(0))
             {
                 client.Close();
@@ -221,6 +229,54 @@ public sealed partial class CsConnectivityService
             svc.ClientCount = runtime.Connections.Count;
             runtime.ConnectionSlots.Release();
         }
+    }
+
+    /// <summary>按白名单判定客户端是否允许接入（空名单=不限制）。</summary>
+    private static bool IsClientAllowed(CsServerService svc, TcpClient client)
+    {
+        if (svc.AllowedIps is not { Count: > 0 }) return true;
+        if (client.Client.RemoteEndPoint is not IPEndPoint endpoint) return false;
+
+        var text = endpoint.Address.ToString();
+        foreach (var raw in svc.AllowedIps)
+        {
+            var rule = raw?.Trim();
+            if (string.IsNullOrEmpty(rule)) continue;
+            if (rule.Contains('/'))
+            {
+                if (CidrContains(rule, endpoint.Address)) return true;
+            }
+            else if (rule.EndsWith('.'))
+            {
+                if (text.StartsWith(rule, StringComparison.Ordinal)) return true;
+            }
+            else if (string.Equals(rule, text, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool CidrContains(string cidr, IPAddress address)
+    {
+        var parts = cidr.Split('/');
+        if (parts.Length != 2 || !IPAddress.TryParse(parts[0], out var network) ||
+            !int.TryParse(parts[1], out var prefix))
+            return false;
+
+        var netBytes = network.GetAddressBytes();
+        var addrBytes = address.GetAddressBytes();
+        if (netBytes.Length != addrBytes.Length || prefix < 0 || prefix > netBytes.Length * 8)
+            return false;
+
+        for (var i = 0; i < netBytes.Length; i++)
+        {
+            var bits = Math.Clamp(prefix - i * 8, 0, 8);
+            var mask = bits == 0 ? 0 : (0xFF << (8 - bits)) & 0xFF;
+            if ((netBytes[i] & mask) != (addrBytes[i] & mask)) return false;
+        }
+        return true;
     }
 
     private void StopAllServers()

@@ -38,7 +38,8 @@
 					:title="`${weightIssues.length} 组同级权重未达到 100%，请调整后用于评价`">
 					{{ weightIssues.join('；') }}
 				</el-alert>
-				<el-table ref="table" :data="rows" row-key="id" default-expand-all border
+				<el-table :data="rows" row-key="id" :expand-row-keys="expandedMetricIds" border
+					@expand-change="onMetricExpand"
 					:row-class-name="({ row }: { row: MetricRow }) => `metric-${row.level}`" empty-text="暂无评价指标，请添加一级分类">
 					<el-table-column label="分类 / 项目名称" min-width="260">
 						<template #default="{ row }"><span :class="{ 'category-name': row.level !== 'item' }">{{ row.node.name }}</span></template>
@@ -104,7 +105,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
-import { ElMessage, ElMessageBox, type TableInstance } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { Download, Plus } from "@element-plus/icons-vue";
 import { isAxiosError } from "axios";
 import { evaluationApi, type EvaluationCategory, type EvaluationConfig, type EvaluationFile, type EvaluationItem } from "@/api/evaluation";
@@ -119,11 +120,13 @@ const config = computed(() => configs.value[category.value]);
 const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref("");
-const table = ref<TableInstance>();
 const editing = ref<MetricEdit | null>(null);
 const standardVisible = ref(false);
 const standardJson = ref("");
 const rows = computed(() => metricRows(config.value?.indicators ?? []));
+const expandedByCategory = ref<Record<EvaluationCategory, string[]>>({ machine: [], machining: [] });
+const expandedInitialized = ref<Partial<Record<EvaluationCategory, boolean>>>({});
+const expandedMetricIds = computed(() => expandedByCategory.value[category.value]);
 const evidenceLabels = { standard: "标准规范", protocol: "勾选协议", file: "测试文件" };
 const sections = computed(() => config.value?.indicators ?? []);
 const subcategories = computed(() => sections.value.flatMap(section => section.children));
@@ -139,13 +142,51 @@ const weightIssues = computed(() => {
 	return groups.filter(group => !weightBalanced(sumWeights(group.nodes))).map(group => `${group.name} ${sumWeights(group.nodes)}%`);
 });
 
+function expandableMetricIds() {
+	return rows.value.filter(row => (row.children?.length ?? 0) > 0).flatMap(row => [
+		row.id,
+		...(row.children ?? []).filter(child => (child.children?.length ?? 0) > 0).map(child => child.id),
+	]);
+}
+
+function restoreExpansion() {
+	const valid = new Set(expandableMetricIds());
+	const initialized = expandedInitialized.value[category.value] === true;
+	const previous = expandedByCategory.value[category.value];
+	expandedByCategory.value[category.value] = initialized ? previous.filter(id => valid.has(id)) : [...valid];
+	expandedInitialized.value[category.value] = true;
+}
+
+function onMetricExpand(row: MetricRow, expanded: boolean) {
+	const current = new Set(expandedByCategory.value[category.value]);
+	if (expanded) current.add(row.id); else current.delete(row.id);
+	expandedByCategory.value[category.value] = [...current];
+}
+
+function expandMetricAncestors(target: MetricEdit) {
+	if (!target.parentId) return;
+	const current = new Set(expandedByCategory.value[category.value]);
+	current.add(target.parentId);
+	if (target.level === "item") {
+		const section = sections.value.find(item => item.children.some(child => child.id === target.parentId));
+		if (section) current.add(section.id);
+	}
+	expandedByCategory.value[category.value] = [...current];
+}
+
 async function load(force = false) {
-	if (config.value && !force) return;
+	if (config.value && !force) {
+		await nextTick();
+		restoreExpansion();
+		return;
+	}
 	loading.value = true;
 	errorMessage.value = "";
 	try {
 		configs.value[category.value] = await evaluationApi.getConfig(category.value);
 		dirty.value[category.value] = false;
+		await nextTick();
+		restoreExpansion();
 	} catch {
 		errorMessage.value = "评价指标加载失败，请刷新重试";
 	} finally {
@@ -177,6 +218,8 @@ async function saveConfig() {
 		configs.value[currentCategory] = await evaluationApi.saveConfig(clone(config.value));
 		dirty.value[currentCategory] = false;
 		errorMessage.value = "";
+		await nextTick();
+		restoreExpansion();
 		ElMessage.success("评价指标配置已保存");
 	} catch (error) {
 		errorMessage.value = isAxiosError(error) && error.response?.status === 409
@@ -201,7 +244,7 @@ async function saveEdit(target: MetricEdit) {
 	dirty.value[category.value] = true;
 	await saveConfig();
 	await nextTick();
-	setExpanded(true);
+	expandMetricAncestors(target);
 }
 
 async function weightChanged(row: MetricRow) {
@@ -222,10 +265,7 @@ async function remove(row: MetricRow) {
 }
 
 function setExpanded(expanded: boolean) {
-	for (const row of rows.value) {
-		table.value?.toggleRowExpansion(row, expanded);
-		for (const child of row.children ?? []) table.value?.toggleRowExpansion(child, expanded);
-	}
+	expandedByCategory.value[category.value] = expanded ? expandableMetricIds() : [];
 }
 
 function saveBlob(blob: Blob, name: string) {

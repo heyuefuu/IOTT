@@ -38,8 +38,8 @@
 						</el-col>
 						<el-col :span="6">
 							<el-statistic
-								:title="'离线设备'"
-								:value="offlineDevicesCount"
+								:title="'未知设备'"
+								:value="unknownDevicesCount"
 							/>
 						</el-col>
 						<el-col :span="6">
@@ -73,7 +73,7 @@
 							label="最后更新"
 							width="180"
 						/>
-						<el-table-column label="操作" width="150">
+						<el-table-column label="操作" width="340">
 							<template #default="scope">
 								<el-button
 									type="primary"
@@ -81,6 +81,20 @@
 									@click="viewDetails(scope.row)"
 								>
 									查看详情
+								</el-button>
+								<el-button
+									type="warning"
+									size="small"
+									@click="diagnoseDevice(scope.row)"
+								>
+									健康诊断
+								</el-button>
+								<el-button
+									type="success"
+									size="small"
+									@click="openCollection(scope.row)"
+								>
+									采集入库
 								</el-button>
 							</template>
 						</el-table-column>
@@ -151,14 +165,29 @@
 				</span>
 			</template>
 		</el-dialog>
+
+		<PointCollectionDialog
+			v-model="collectionDialogVisible"
+			:device-id="collectionDevice?.id ?? ''"
+			:device-name="collectionDevice?.name ?? ''"
+			:session="collectionSession"
+			@start="startPointCollection"
+			@stop="stopPointCollection"
+		/>
 	</div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { VideoCamera } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { machineConnectionDevicesApi, type DeviceDto } from "@/api/machineConnectionDevices";
+import {
+	getDeviceRuntimeStatus,
+	type DeviceRuntimeStatus,
+} from "@/stores/deviceRuntimeStatus";
+import PointCollectionDialog from "@/components/PointCollectionDialog.vue";
+import { usePointCollection } from "@/composables/usePointCollection";
 
 interface Device {
 	id: string;
@@ -175,22 +204,43 @@ const isMonitoring = ref(false);
 const monitoringInterval = ref<number | null>(null);
 const detailDialogVisible = ref(false);
 const selectedDevice = ref<Device | null>(null);
+const pointCollection = usePointCollection();
+const collectionDialogVisible = ref(false);
+const collectionDevice = ref<Device | null>(null);
+const collectionSession = computed(() =>
+	collectionDevice.value
+		? pointCollection.sessionFor(collectionDevice.value.id, collectionDevice.value.name)
+		: null,
+);
+
+function openCollection(device: Device) {
+	collectionDevice.value = device;
+	collectionDialogVisible.value = true;
+}
+
+function startPointCollection(deviceId: string) {
+	const name = collectionDevice.value?.id === deviceId
+		? collectionDevice.value.name
+		: devices.value.find((device) => device.id === deviceId)?.name ?? deviceId;
+	void pointCollection.start(deviceId, name);
+}
+
+function stopPointCollection(deviceId: string) {
+	pointCollection.stop(deviceId);
+}
 
 const nowText = () => new Date().toLocaleString();
-const mapStatus = (status: string) => {
-	if (status === "Online") return "在线";
-	if (status === "Error") return "告警";
-	return "离线";
-};
+const plcMonitorStatusText = (status: DeviceRuntimeStatus) =>
+	status === "online" ? "在线" : status === "error" ? "告警" : "未知";
 const toDevice = (device: DeviceDto): Device => ({
 	id: device.id,
 	name: device.name,
 	ip: device.host,
-	status: mapStatus(device.status),
+	status: plcMonitorStatusText(getDeviceRuntimeStatus(device.id)),
 	latency: "",
 	lastUpdate: device.lastSeenAt || device.createdAt || nowText(),
 	statusLogs: [
-		{ time: nowText(), message: `后端状态：${device.status}` },
+		{ time: nowText(), message: "初始状态：未检测" },
 	],
 });
 
@@ -204,7 +254,7 @@ const loadDevices = async () => {
 };
 
 const onlineDevicesCount = computed(() => devices.value.filter((d) => d.status === "在线").length);
-const offlineDevicesCount = computed(() => devices.value.filter((d) => d.status === "离线").length);
+const unknownDevicesCount = computed(() => devices.value.filter((d) => d.status === "未知").length);
 const alarmDevicesCount = computed(() => devices.value.filter((d) => d.status === "告警").length);
 
 const getStatusType = (status: string) => {
@@ -212,6 +262,8 @@ const getStatusType = (status: string) => {
 		case "在线": return "success";
 		case "离线": return "danger";
 		case "告警": return "warning";
+		case "故障": return "danger";
+		case "未知": return "info";
 		default: return "info";
 	}
 };
@@ -264,6 +316,27 @@ const stopMonitoring = () => {
 const viewDetails = (device: Device) => {
 	selectedDevice.value = { ...device, statusLogs: [...device.statusLogs] };
 	detailDialogVisible.value = true;
+};
+
+const diagnoseDevice = async (device: Device) => {
+	try {
+		const [diag, stats] = await Promise.all([
+			machineConnectionDevicesApi.diagnose(device.id),
+			machineConnectionDevicesApi.connectionStats(device.id, 24),
+		]);
+		const lines = [
+			`可达性：${diag.reachable ? "可达" : "不可达"}（模式 ${diag.mode}）`,
+			`端点：${diag.endpoint}  协议：${diag.protocol}`,
+			`原因：${diag.reason}`,
+			`近24h：成功率 ${stats.successRate}%（${stats.success}/${stats.total}），平均 ${stats.avgLatencyMs} ms，最大 ${stats.maxLatencyMs} ms，断线 ${stats.disconnectEvents} 次`,
+			diag.suggestions.length ? `建议：\n- ${diag.suggestions.join("\n- ")}` : "",
+		].filter(Boolean);
+		await ElMessageBox.alert(lines.join("\n"), `健康诊断：${device.name}`, {
+			confirmButtonText: "关闭",
+		});
+	} catch (error) {
+		ElMessage.error(error instanceof Error ? error.message : "诊断失败");
+	}
 };
 
 onMounted(loadDevices);

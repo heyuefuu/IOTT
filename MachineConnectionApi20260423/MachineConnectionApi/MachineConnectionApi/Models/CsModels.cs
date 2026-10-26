@@ -76,12 +76,25 @@ public class CsServerService
     public int Port { get; set; }
     public string? Description { get; set; }
     public int MaxClients { get; set; } = 100;
+    /// <summary>客户端 IP 白名单：精确 IP、CIDR（如 192.168.1.0/24）或网段前缀（如 192.168.1.）；为空表示不限制。</summary>
+    public List<string> AllowedIps { get; set; } = [];
+    /// <summary>对外提供的数据点位（用于 server 模式主动推送）。</summary>
+    public List<CsServerPoint> Points { get; set; } = [];
     /// <summary>运行状态：运行中 / 停止。</summary>
     public string Status { get; set; } = "停止";
     /// <summary>当前连入的客户端数量（实时）。</summary>
     public int ClientCount { get; set; }
     /// <summary>最近一次客户端接入时间。</summary>
     public string? LastAccess { get; set; }
+}
+
+/// <summary>服务端对外提供的数据点位（server 主动推送时读取的设备点位）。</summary>
+public class CsServerPoint
+{
+    public string DeviceId { get; set; } = "";
+    public string Address { get; set; } = "";
+    public string DataType { get; set; } = "Float";
+    public string? Label { get; set; }
 }
 
 /// <summary>服务端当前的一条客户端连接。</summary>

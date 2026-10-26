@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>IottMqttBroker</AssemblyName>
+    <RootNamespace>IottMqttBroker</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="MQTTnet">
+      <HintPath>..\DeviceSimGateway\bin\Debug\net8.0\MQTTnet.dll</HintPath>
+    </Reference>
+    <Reference Include="MQTTnet.Server">
+      <HintPath>..\DeviceSimGateway\bin\Debug\net8.0\MQTTnet.Server.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

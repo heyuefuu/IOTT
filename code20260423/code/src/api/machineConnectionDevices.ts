@@ -1,4 +1,5 @@
 import { createMachineConnectionClient } from './machineConnectionClient'
+import { markDeviceError, markDeviceOnline } from '@/stores/deviceRuntimeStatus'
 
 /** 与 MachineConnectionApi / Industrial IoT 文档中设备 DTO 一致（枚举为 JSON 字符串） */
 export type DeviceTypeApi = 'CNC' | 'PLC' | 'Robot'
@@ -111,6 +112,30 @@ const client = createMachineConnectionClient({
 	headers: { 'Content-Type': 'application/json' },
 })
 
+export interface DeviceDiagnoseResult {
+	deviceId: string
+	reachable: boolean
+	mode: string
+	latencyMs: number
+	protocol: string
+	endpoint: string
+	reason: string
+	suggestions: string[]
+}
+
+export interface ConnectionStatsSummary {
+	total: number
+	success: number
+	failure: number
+	successRate: number
+	avgLatencyMs: number
+	maxLatencyMs: number
+	disconnectEvents: number
+	lastSuccessAt?: string | null
+	lastFailureAt?: string | null
+	windowHours: number
+}
+
 export const machineConnectionDevicesApi = {
 	async list(type?: string): Promise<DeviceDto[]> {
 		const res = await client.get<DeviceDto[]>('/api/devices', {
@@ -150,14 +175,58 @@ export const machineConnectionDevicesApi = {
 	},
 
 	async testConnection(id: string): Promise<ConnectionTestResult> {
-		const res = await client.post<ConnectionTestResult>(
-			`/api/devices/${encodeURIComponent(id)}/test-connection`,
+		try {
+			const res = await client.post<ConnectionTestResult>(
+				`/api/devices/${encodeURIComponent(id)}/test-connection`,
+			)
+			if (res.data.success) markDeviceOnline(id)
+			else markDeviceError(id)
+			return res.data
+		} catch (error) {
+			markDeviceError(id)
+			throw error
+		}
+	},
+
+	async diagnose(id: string): Promise<DeviceDiagnoseResult> {
+		try {
+			const res = await client.get<DeviceDiagnoseResult>(
+				`/api/devices/${encodeURIComponent(id)}/diagnose`,
+			)
+			if (res.data.reachable) markDeviceOnline(id)
+			else markDeviceError(id)
+			return res.data
+		} catch (error) {
+			markDeviceError(id)
+			throw error
+		}
+	},
+
+	async connectionStats(id: string, hours = 24): Promise<ConnectionStatsSummary> {
+		const res = await client.get<ConnectionStatsSummary>(
+			`/api/devices/${encodeURIComponent(id)}/connection-stats`,
+			{ params: { hours } },
+		)
+		return res.data
+	},
+
+	/** 按设备模板一键创建设备（Host 可覆盖模板默认 IP） */
+	async createFromTemplate(
+		templateId: string,
+		name: string,
+		host: string,
+	): Promise<DeviceDto> {
+		const params = new URLSearchParams()
+		if (name) params.set('name', name)
+		if (host) params.set('host', host)
+		const res = await client.post<DeviceDto>(
+			`/api/devices/from-template/${encodeURIComponent(templateId)}?${params.toString()}`,
 		)
 		return res.data
 	},
 
 	async downloadTemplate(): Promise<Blob> {
-		const res = await client.get('/api/devices/template', {
+		const res = await client.get('/api/devices/template.xlsx', {
 			responseType: 'blob',
 		})
 		return res.data
@@ -166,6 +235,14 @@ export const machineConnectionDevicesApi = {
 	/** 完整设备配置（含传输通道与凭据），可在另一台机器导入或放入源码 SeedData/devices.json */
 	async exportDevices(): Promise<Blob> {
 		const res = await client.get('/api/devices/export', {
+			responseType: 'blob',
+		})
+		return res.data
+	},
+
+	/** 设备清单 Excel（不含口令） */
+	async exportDevicesXlsx(): Promise<Blob> {
+		const res = await client.get('/api/devices/export.xlsx', {
 			responseType: 'blob',
 		})
 		return res.data

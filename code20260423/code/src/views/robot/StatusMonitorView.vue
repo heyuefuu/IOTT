@@ -38,8 +38,8 @@
 						</el-col>
 						<el-col :span="6">
 							<el-statistic
-								:title="'待机中'"
-								:value="idleRobotsCount"
+								:title="'未知'"
+								:value="unknownRobotsCount"
 							/>
 						</el-col>
 						<el-col :span="6">
@@ -97,7 +97,7 @@
 							label="最后更新"
 							width="180"
 						/>
-						<el-table-column label="操作" width="150">
+						<el-table-column label="操作" width="340">
 							<template #default="scope">
 								<el-button
 									type="primary"
@@ -105,6 +105,20 @@
 									@click="viewDetails(scope.row)"
 								>
 									查看详情
+								</el-button>
+								<el-button
+									type="warning"
+									size="small"
+									@click="diagnoseRobot(scope.row)"
+								>
+									健康诊断
+								</el-button>
+								<el-button
+									type="success"
+									size="small"
+									@click="openCollection(scope.row)"
+								>
+									采集入库
 								</el-button>
 							</template>
 						</el-table-column>
@@ -179,14 +193,29 @@
 				</span>
 			</template>
 		</el-dialog>
+
+		<PointCollectionDialog
+			v-model="collectionDialogVisible"
+			:device-id="collectionDevice?.id ?? ''"
+			:device-name="collectionDevice?.name ?? ''"
+			:session="collectionSession"
+			@start="startPointCollection"
+			@stop="stopPointCollection"
+		/>
 	</div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { VideoCamera } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { machineConnectionDevicesApi, type DeviceDto } from "@/api/machineConnectionDevices";
+import {
+	getDeviceRuntimeStatus,
+	type DeviceRuntimeStatus,
+} from "@/stores/deviceRuntimeStatus";
+import PointCollectionDialog from "@/components/PointCollectionDialog.vue";
+import { usePointCollection } from "@/composables/usePointCollection";
 
 interface Robot {
 	id: string;
@@ -205,22 +234,43 @@ const isMonitoring = ref(false);
 const monitoringInterval = ref<number | null>(null);
 const detailDialogVisible = ref(false);
 const selectedRobot = ref<Robot | null>(null);
+const pointCollection = usePointCollection();
+const collectionDialogVisible = ref(false);
+const collectionDevice = ref<Robot | null>(null);
+const collectionSession = computed(() =>
+	collectionDevice.value
+		? pointCollection.sessionFor(collectionDevice.value.id, collectionDevice.value.name)
+		: null,
+);
+
+function openCollection(robot: Robot) {
+	collectionDevice.value = robot;
+	collectionDialogVisible.value = true;
+}
+
+function startPointCollection(deviceId: string) {
+	const name = collectionDevice.value?.id === deviceId
+		? collectionDevice.value.name
+		: robots.value.find((robot) => robot.id === deviceId)?.name ?? deviceId;
+	void pointCollection.start(deviceId, name);
+}
+
+function stopPointCollection(deviceId: string) {
+	pointCollection.stop(deviceId);
+}
 
 const nowText = () => new Date().toLocaleString();
-const mapStatus = (status: string) => {
-	if (status === "Online") return "运行中";
-	if (status === "Error") return "故障";
-	return "待机中";
-};
+const robotMonitorStatusText = (status: DeviceRuntimeStatus) =>
+	status === "online" ? "运行中" : status === "error" ? "故障" : "未知";
 const toRobot = (device: DeviceDto): Robot => ({
 	id: device.id,
 	name: device.name,
 	model: device.model,
-	status: mapStatus(device.status),
+	status: robotMonitorStatusText(getDeviceRuntimeStatus(device.id)),
 	protocol: device.protocol,
 	errorMessage: "",
 	latency: "",
-	statusLogs: [{ time: nowText(), message: `后端状态：${device.status}` }],
+	statusLogs: [{ time: nowText(), message: "初始状态：未检测" }],
 	lastUpdate: device.lastSeenAt || device.createdAt || nowText(),
 });
 
@@ -234,15 +284,25 @@ const loadRobots = async () => {
 };
 
 const runningRobotsCount = computed(() => robots.value.filter((r) => r.status === "运行中").length);
-const idleRobotsCount = computed(() => robots.value.filter((r) => r.status === "待机中").length);
+const unknownRobotsCount = computed(() => robots.value.filter((r) => r.status === "未知").length);
 const errorRobotsCount = computed(() => robots.value.filter((r) => r.status === "故障").length);
 
 const getStatusType = (status: string) => {
 	switch (status) {
-		case "运行中": return "success";
-		case "待机中": return "info";
-		case "故障": return "danger";
-		default: return "warning";
+		case "运行中":
+		case "在线":
+			return "success";
+		case "待机中":
+			return "info";
+		case "故障":
+		case "离线":
+			return "danger";
+		case "告警":
+			return "warning";
+		case "未知":
+			return "info";
+		default:
+			return "info";
 	}
 };
 
@@ -291,6 +351,27 @@ const stopMonitoring = () => {
 const viewDetails = (robot: Robot) => {
 	selectedRobot.value = JSON.parse(JSON.stringify(robot));
 	detailDialogVisible.value = true;
+};
+
+const diagnoseRobot = async (robot: Robot) => {
+	try {
+		const [diag, stats] = await Promise.all([
+			machineConnectionDevicesApi.diagnose(robot.id),
+			machineConnectionDevicesApi.connectionStats(robot.id, 24),
+		]);
+		const lines = [
+			`可达性：${diag.reachable ? "可达" : "不可达"}（模式 ${diag.mode}）`,
+			`端点：${diag.endpoint}  协议：${diag.protocol}`,
+			`原因：${diag.reason}`,
+			`近24h：成功率 ${stats.successRate}%（${stats.success}/${stats.total}），平均 ${stats.avgLatencyMs} ms，最大 ${stats.maxLatencyMs} ms，断线 ${stats.disconnectEvents} 次`,
+			diag.suggestions.length ? `建议：\n- ${diag.suggestions.join("\n- ")}` : "",
+		].filter(Boolean);
+		await ElMessageBox.alert(lines.join("\n"), `健康诊断：${robot.name}`, {
+			confirmButtonText: "关闭",
+		});
+	} catch (error) {
+		ElMessage.error(error instanceof Error ? error.message : "诊断失败");
+	}
 };
 
 onMounted(loadRobots);

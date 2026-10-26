@@ -19,6 +19,9 @@ public sealed class BusinessApiAuthorizationFilter(IAuthService auth) : IAuthori
             return;
         }
 
+        // 供业务审计（如读写操作历史）取当前操作人
+        context.HttpContext.Items["mc.username"] = session.Username;
+
         var permissions = context.ActionDescriptor is ControllerActionDescriptor action
             ? RequiredPermissions(action.ControllerName, action.ActionName)
             : ["system_manage"];
@@ -33,7 +36,7 @@ public sealed class BusinessApiAuthorizationFilter(IAuthService auth) : IAuthori
     {
         ("SystemAuth", "Me" or "Logout") or ("SystemStatus", "Get") => [],
         ("SystemUsers", "ListPermissions") => [],
-        ("SystemUsers", _) => ["permission_manage"],
+        ("SystemUsers" or "Roles", _) => ["permission_manage"],
         ("SystemLogs", _) => ["log_manage"],
         ("Verify" or "VerifyTasks" or "Metrics" or "ReportTemplates" or "ConnectionVerification", _) => ["report_manage"],
         ("EvaluationIndicators" or "EvaluationKnowledge", _) => ["report_manage"],
@@ -42,6 +45,7 @@ public sealed class BusinessApiAuthorizationFilter(IAuthService auth) : IAuthori
         ("InfluxSettings", _) => ["config_manage"],
         ("Devices", "List" or "GetById") => ["device_manage", "data_read", "data_write", "report_manage"],
         ("Devices" or "Collection" or "PlcCapabilities", _) => ["device_manage"],
+        ("DeviceOperationLogs", _) => ["device_manage", "data_read", "log_manage"],
         ("DataReadWrite", "WriteTags") => ["data_write", "device_manage"],
         ("DataReadWrite" or "AddressSpace" or "NCLinkDiagnostics", _) => ["data_read", "device_manage"],
         ("Datacollection", "Sync") => ["device_manage"],

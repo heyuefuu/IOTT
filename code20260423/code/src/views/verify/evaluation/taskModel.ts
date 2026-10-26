@@ -28,7 +28,7 @@ export function newTask(metricIds: string[]): VerifyTaskDto {
   return { id: '', name: '', type: 'performance', status: 'pending', priority: '中', deviceId: '', machineId: '',
     metricIds: [...metricIds], params: '', description: '', createdAt: new Date().toISOString(), completedAt: null,
     executionTime: '', result: '', detail: '', scheduleType: 'none', scheduleTime: '', lastRunJson: '', currentRunJson: '', activeRunId: null,
-    options: { allowFileWrites: false, concurrentDeviceIds: [] } };
+    options: { allowFileWrites: false, concurrentDeviceIds: [], feasibility: false } };
 }
 export function taskRun(task: VerifyTaskDto, source: 'display' | 'history' = 'display'): VerifyRunResponse | null {
   const current = source === 'display' && task.status === 'running';

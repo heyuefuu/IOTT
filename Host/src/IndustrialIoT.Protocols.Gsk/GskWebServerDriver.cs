@@ -145,9 +145,33 @@ public sealed partial class GskWebServerDriver :
         if (!TryResolveReadEndpoint(normalized, out var client, out var requestPath, out var error))
             return BadTag(address, dataType, error);
 
-        using var document = await GetJsonAsync(client, requestPath, ct);
-        var value = ExtractAddressValue(document.RootElement, normalized);
-        return ToTagValue(address, dataType, value);
+        // 这些前缀必须带参数（真机对"裸路径"返回 405/404）：提前给出明确原因，不去打无意义的 405。
+        var prefixLower = Prefix(normalized).ToLowerInvariant();
+        if (prefixLower is "macro" or "softplc" or "diagnose" or "alarm" or "tool" or "toollife" &&
+            string.IsNullOrWhiteSpace(TailPart(normalized, 0)))
+        {
+            return BadTag(address, dataType,
+                $"GSK 地址不完整：/{Prefix(normalized)} 需要参数；示例 /Macro:100、/SoftPlc:R:100、/Diagnose:10:0、/Alarm:0、/Tool:10、/ToolLife.Current:1");
+        }
+
+        try
+        {
+            using var document = await GetJsonAsync(client, requestPath, ct);
+            var value = ExtractAddressValue(document.RootElement, normalized);
+            return ToTagValue(address, dataType, value);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (HttpRequestException ex)
+        {
+            // 单点失败不能中断整批：返回 Bad + 明确原因（含状态码与路径），由调用方按点展示
+            return BadTag(address, dataType,
+                $"设备返回 {(int?)ex.StatusCode ?? 0}（路径 {requestPath}）：该端点在当前固件上不可用或地址不匹配；" +
+                "请改用带参数的地址（如 /Macro:100）或 /Realtime.*、/Static、/Param:<id>:<axis>");
+        }
+        catch (Exception ex)
+        {
+            return BadTag(address, dataType, $"读取失败（路径 {requestPath}）：{ex.Message}");
+        }
     }
 
     public async Task<IReadOnlyList<TagValue>> ReadTagsAsync(IReadOnlyList<TagReadRequest> requests, CancellationToken ct = default)

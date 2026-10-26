@@ -102,10 +102,68 @@ public sealed partial class VerifyAutomationService
         SetMeasurement(metric, rule, longest.TotalMinutes, "min", "按本轮采样中所有选定设备同时应用读成功的最长连续时段计分；不是TCP建连或历史在线时长。");
     }
 
+    private async Task MeasureIndependentConnectionsAsync(VerifyMetricResult metric, EvaluationAutomationRule rule,
+        IReadOnlyList<VerifyMeasurementTarget> selected, VerifyRunOptions options, Action<double> progress, CancellationToken ct)
+    {
+        var target = selected.FirstOrDefault();
+        if (target is null)
+        {
+            MarkUnrated(metric, "No device selected for the independent-connection test.");
+            return;
+        }
+        var maximum = rule.Test.MaxConnections;
+        var failureLimit = rule.Test.FailureLimit;
+        if (maximum < 1 || failureLimit < 1)
+        {
+            MarkUnrated(metric, "maxConnections and failureLimit must be greater than zero.");
+            return;
+        }
+
+        var best = 0;
+        var stopped = false;
+        metric.Evidence.Add($"connections mode: device {target.Name}, levels 1..{maximum}, stop after {failureLimit} failed attempts");
+        for (var level = 1; level <= maximum; level++)
+        {
+            var levelOk = false;
+            for (var attempt = 1; attempt <= failureLimit; attempt++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var observation = await _measurements.MeasureConnectionsAsync(target, level,
+                    rule.Test.ReadAddress ?? string.Empty, rule.Test.ReadDataType ?? string.Empty,
+                    options.ProbeTimeoutMs, ct);
+                if (!observation.Supported)
+                {
+                    MarkUnrated(metric, observation.Detail);
+                    return;
+                }
+                metric.Evidence.Add($"level {level}, attempt {attempt}: {observation.SuccessCount}/{observation.Requested} independent connections; {observation.Detail}");
+                if (observation.SuccessCount == level) { levelOk = true; best = level; break; }
+            }
+            progress(level * 100d / maximum);
+            if (!levelOk) { stopped = true; break; }
+        }
+
+        if (best == 0)
+        {
+            MarkUnrated(metric, "No independent connection could be verified against the same device.");
+            return;
+        }
+        SetMeasurement(metric, rule, best, "count",
+            "Maximum independent connections to the same device; every level uses separate HTTP connections and the Host creates a fresh verification driver per read (never the pooled connection).");
+        metric.Detail = stopped
+            ? $"Max verified independent connections {best}/{maximum} (stopped after the failure limit)"
+            : $"Max verified independent connections {best}/{maximum}";
+    }
+
     private async Task MeasureConcurrencyAsync(VerifyMetricResult metric, EvaluationAutomationRule rule,
         IReadOnlyList<VerifyMeasurementTarget> selected, IReadOnlyList<VerifyMeasurementTarget> all, VerifyRunOptions options,
         Action<double> progress, CancellationToken ct)
     {
+        if (string.Equals(rule.Test.ConcurrencyMode, "connections", StringComparison.Ordinal))
+        {
+            await MeasureIndependentConnectionsAsync(metric, rule, selected, options, progress, ct);
+            return;
+        }
         if (!string.Equals(rule.Test.ConcurrencyMode, "devices", StringComparison.Ordinal))
         {
             MarkUnrated(metric, $"{rule.Test.ConcurrencyMode}模式需要独立同设备连接测量适配器；现有HTTP读复用连接，不能冒充独立连接数或设备数。");

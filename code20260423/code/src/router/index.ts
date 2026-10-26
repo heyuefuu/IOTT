@@ -33,6 +33,11 @@ const routes: RouteRecordRaw[] = [
                 component: () => import('../views/industrial/MachinePropertyView.vue')
             },
             {
+                path: 'template',
+                name: 'IndustrialTemplate',
+                component: () => import('../views/industrial/DeviceTemplateView.vue')
+            },
+            {
                 path: 'import',
                 name: 'IndustrialImport',
                 component: () => import('../views/plc/CollectionImportView.vue'),
@@ -191,6 +196,21 @@ const routes: RouteRecordRaw[] = [
                 path: 'permission',
                 name: 'Permission',
                 component: () => import('../views/system/PermissionManageView.vue')
+            },
+            {
+                path: 'role',
+                name: 'SystemRole',
+                component: () => import('../views/system/RoleManageView.vue')
+            },
+            {
+                path: 'data-output',
+                name: 'SystemDataOutput',
+                component: () => import('../views/system/DataOutputView.vue')
+            },
+            {
+                path: 'operation-log',
+                name: 'SystemOperationLog',
+                component: () => import('../views/system/DeviceOperationLogView.vue')
             }
         ]
     },

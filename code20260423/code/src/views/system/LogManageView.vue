@@ -36,6 +36,13 @@
 								style="width: 150px"
 							/>
 						</el-form-item>
+						<el-form-item label="设备">
+							<el-input
+								v-model="filterForm.device"
+								placeholder="设备名称/ID"
+								style="width: 160px"
+							/>
+						</el-form-item>
 						<el-form-item label="关键词">
 							<el-input
 								v-model="filterForm.keyword"
@@ -85,8 +92,14 @@
 							label="操作用户"
 							width="120"
 						/>
+						<el-table-column prop="device" label="设备" width="140">
+							<template #default="scope">{{ scope.row.device || "-" }}</template>
+						</el-table-column>
 						<el-table-column prop="action" label="操作内容" />
-						<el-table-column prop="ip" label="IP地址" width="150" />
+						<el-table-column prop="ip" label="IP地址" width="130" />
+						<el-table-column prop="result" label="结果" width="90">
+							<template #default="scope">{{ scope.row.result || "-" }}</template>
+						</el-table-column>
 						<el-table-column
 							prop="timestamp"
 							label="操作时间"
@@ -137,6 +150,12 @@
 					<el-descriptions-item label="操作内容">{{
 						selectedLog.action
 					}}</el-descriptions-item>
+					<el-descriptions-item label="设备">{{
+						selectedLog.device || "-"
+					}}</el-descriptions-item>
+					<el-descriptions-item label="结果">{{
+						selectedLog.result || "-"
+					}}</el-descriptions-item>
 					<el-descriptions-item label="IP地址">{{
 						selectedLog.ip
 					}}</el-descriptions-item>
@@ -181,6 +200,7 @@ const pageSize = ref(10);
 const filterForm = reactive({
 	logType: "",
 	user: "",
+	device: "",
 	keyword: "",
 	dateRange: [] as any[],
 });
@@ -192,6 +212,7 @@ const selectedLog = ref<Log | null>(null);
 const buildQuery = () => ({
 	type: filterForm.logType || undefined,
 	user: filterForm.user || undefined,
+	device: filterForm.device || undefined,
 	keyword: filterForm.keyword || undefined,
 });
 
@@ -250,6 +271,16 @@ const filteredLogs = computed(() => {
 		result = result.filter((log) => log.user.includes(filterForm.user));
 	}
 
+	// 设备过滤
+	if (filterForm.device) {
+		const device = filterForm.device.toLowerCase();
+		result = result.filter(
+			(log) =>
+				(log.device ?? "").toLowerCase().includes(device) ||
+				log.detail.toLowerCase().includes(device),
+		);
+	}
+
 	// 关键词过滤
 	if (filterForm.keyword) {
 		const keyword = filterForm.keyword.toLowerCase();
@@ -289,6 +320,7 @@ const resetFilter = () => {
 	Object.assign(filterForm, {
 		logType: "",
 		user: "",
+		device: "",
 		keyword: "",
 		dateRange: [],
 	});

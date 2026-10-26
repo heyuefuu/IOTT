@@ -1,0 +1,14 @@
+{
+  "ConnectionStrings": {
+    "MachineCollection": "Server=127.0.0.1;Port=3307;Database=MachineCollection;User ID=iott;Password=917a5357d432e1280ae2ac93ac3a49ba58a1a32b7f71ca15b353f16ccab68476;DateTimeKind=Utc;"
+  },
+  "IndustrialIoT": {
+    "BaseUrl": "http://localhost:5199"
+  },
+  "Verify": {
+    "Simulate": true
+  },
+  "Database": {
+    "ServerVersion": "8.4.0"
+  }
+}

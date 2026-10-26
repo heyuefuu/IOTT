@@ -134,6 +134,21 @@
 						<el-option label="查看者" value="viewer" />
 					</el-select>
 				</el-form-item>
+				<el-form-item label="分配角色(多选)">
+					<el-select
+						v-model="currentUser.roles"
+						multiple
+						placeholder="可选择多个角色，生效权限取并集"
+						style="width: 100%"
+					>
+						<el-option
+							v-for="r in roleOptions"
+							:key="r.key"
+							:label="r.name"
+							:value="r.key"
+						/>
+					</el-select>
+				</el-form-item>
 				<el-form-item label="状态" prop="status">
 					<el-switch
 						v-model="currentUser.status"
@@ -195,6 +210,7 @@ import {
 	businessSystemApi,
 	type AppUserDto,
 	type PermissionDto,
+	type RoleDto,
 } from "@/api/businessSystem";
 
 type User = AppUserDto;
@@ -212,6 +228,8 @@ const pagedUsers = computed(() => {
 
 // 所有权限
 const allPermissions = ref<PermissionDto[]>([]);
+// 可分配角色（来自角色管理）
+const roleOptions = ref<RoleDto[]>([]);
 
 // 用户对话框
 const userDialogVisible = ref(false);
@@ -224,6 +242,7 @@ const currentUser = reactive<User>({
 	role: "viewer",
 	status: "启用",
 	permissions: ["data_read"],
+	roles: [],
 	lastLogin: "",
 });
 
@@ -240,6 +259,7 @@ const createEmptyUser = (): User => ({
 	role: "viewer",
 	status: "启用",
 	permissions: ["data_read"],
+	roles: [],
 	lastLogin: "",
 });
 
@@ -254,6 +274,14 @@ const loadUsers = async () => {
 
 const loadPermissions = async () => {
 	allPermissions.value = await businessSystemApi.listPermissions();
+};
+
+const loadRoleOptions = async () => {
+	try {
+		roleOptions.value = await businessSystemApi.listRoles();
+	} catch {
+		/* 角色清单可选 */
+	}
 };
 
 // 获取角色类型
@@ -371,6 +399,7 @@ const handleCurrentChange = (current: number) => {
 onMounted(() => {
 	void loadUsers();
 	void loadPermissions();
+	void loadRoleOptions();
 });
 </script>
 

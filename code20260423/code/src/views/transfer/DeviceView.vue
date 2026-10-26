@@ -51,13 +51,21 @@
 				<el-table-column prop="protocol" label="协议" width="100" />
 				<el-table-column prop="status" label="状态" width="100">
 					<template #default="scope">
-						<el-tag :type="getStatusType(scope.row.status)">
-							{{ scope.row.status }}
+						<el-tag :type="getStatusType(getDeviceStatusText(scope.row))">
+							{{ getDeviceStatusText(scope.row) }}
 						</el-tag>
 					</template>
 				</el-table-column>
-				<el-table-column label="操作" width="200">
+				<el-table-column label="操作" width="300">
 					<template #default="scope">
+						<el-button
+							type="success"
+							size="small"
+							:loading="testingDeviceId === scope.row.id"
+							@click="testDeviceRow(scope.row)"
+						>
+							连接测试
+						</el-button>
 						<el-button
 							type="primary"
 							size="small"
@@ -267,6 +275,10 @@ import {
 	type DeviceDto,
 	type CreateDeviceRequest,
 } from "@/api/machineConnectionDevices";
+import {
+	getDeviceRuntimeStatus,
+	type DeviceRuntimeStatus,
+} from "@/stores/deviceRuntimeStatus";
 import { TRANSFER_PROTOCOLS } from "./transferRecordMetrics";
 import SerialPortSettings from "./SerialPortSettings.vue";
 
@@ -539,16 +551,41 @@ const refreshDeviceList = () => {
 };
 
 // 获取状态类型
+const testingDeviceId = ref("");
+const deviceRuntimeStatusText = (status: DeviceRuntimeStatus) =>
+	status === "online" ? "在线" : status === "error" ? "异常" : "未知";
+const getDeviceStatusText = (device: Device) => deviceRuntimeStatusText(getDeviceRuntimeStatus(device.id));
 const getStatusType = (status: string) => {
 	switch (status) {
 		case "在线":
 			return "success";
-		case "离线":
+		case "异常":
 			return "danger";
 		default:
 			return "info";
 	}
 };
+
+async function testDeviceRow(device: Device) {
+	if (testingDeviceId.value) return;
+	testingDeviceId.value = device.id;
+	try {
+		const result = await machineConnectionDevicesApi.testConnection(device.id);
+		if (result.success && result.mode === "tcp") {
+			ElMessage.warning(`TCP 端口可达，协议尚未验证${result.errorMessage ? `：${result.errorMessage}` : ""}`);
+		} else if (result.success && result.mode === "driver") {
+			ElMessage.success(result.latency ? `协议连接成功，延迟 ${result.latency}` : "协议连接成功");
+		} else if (result.success) {
+			ElMessage.warning("连接探测成功，但未返回协议验证结果");
+		} else {
+			ElMessage.error(result.errorMessage || "连接失败");
+		}
+	} catch (e: unknown) {
+		ElMessage.error(getErr(e, "连接测试失败"));
+	} finally {
+		testingDeviceId.value = "";
+	}
+}
 
 // 保存当前参数后，按设备 ID 调用驱动连接测试。
 const testConnection = async () => {

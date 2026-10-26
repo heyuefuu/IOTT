@@ -21,11 +21,13 @@ public sealed partial class HttpVerifyMeasurementAdapter : IVerifyMeasurementAda
     private static readonly HashSet<string> FileExtensions = new(StringComparer.OrdinalIgnoreCase) { ".nc", ".ncg", ".txt", ".xml", ".prg" };
     private readonly IHttpClientFactory _clients;
     private readonly string _attachmentDirectory;
+    private readonly IDeviceCollectionPointStore? _pointStore;
 
-    public HttpVerifyMeasurementAdapter(IHttpClientFactory clients, string? attachmentDirectory = null)
+    public HttpVerifyMeasurementAdapter(IHttpClientFactory clients, string? attachmentDirectory = null, IDeviceCollectionPointStore? pointStore = null)
     {
         _clients = clients;
         _attachmentDirectory = attachmentDirectory ?? Path.Combine(AppContext.BaseDirectory, "App_Data", "evaluation-attachments");
+        _pointStore = pointStore;
     }
 
     public async Task<VerifyReadObservation> ReadAsync(VerifyMeasurementTarget target, string address, string dataType, int timeoutMs, CancellationToken ct)
@@ -48,28 +50,62 @@ public sealed partial class HttpVerifyMeasurementAdapter : IVerifyMeasurementAda
     private async Task<VerifyReadObservation> ReadCoreAsync(VerifyMeasurementTarget target, string address, string dataType,
         int timeoutMs, string protocol, CancellationToken ct)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(timeoutMs);
         try
         {
             var client = _clients.CreateClient("IndustrialIoT");
             var source = "评价规则点位";
+            var candidates = new List<(string Address, string DataType)>();
             if (string.IsNullOrWhiteSpace(address))
             {
                 source = "本轮已配置的设备采集点位";
                 if (!target.ReadPointResolved)
                 {
-                    using var config = await client.GetAsync($"api/collection-config/{Uri.EscapeDataString(target.Id)}", timeout.Token);
+                    using var configTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    configTimeout.CancelAfter(Math.Max(timeoutMs, 3000));
+                    using var config = await client.GetAsync($"api/collection-config/{Uri.EscapeDataString(target.Id)}", configTimeout.Token);
                     if (!config.IsSuccessStatusCode) return Unknown($"读取现有设备点位失败（HTTP {(int)config.StatusCode}）；未猜测点位。", protocol);
-                    using var json = await JsonDocument.ParseAsync(await config.Content.ReadAsStreamAsync(timeout.Token), cancellationToken: timeout.Token);
+                    using var json = await JsonDocument.ParseAsync(await config.Content.ReadAsStreamAsync(configTimeout.Token), cancellationToken: configTimeout.Token);
                     if (json.RootElement.ValueKind != JsonValueKind.Array) return Unknown("设备点位响应格式无效；未猜测点位。", protocol);
-                    target.ConfiguredReadPoint = FirstConfiguredPoint(json.RootElement, target.Id);
+                    target.ConfiguredReadPoints = ConfiguredPoints(json.RootElement, target.Id, 20);
+                    // "点位配置" writes the device's saved points to the gateway Datacollection store, not
+                    // to Host collection profiles. Fall back to that store so a point selected in the UI is
+                    // actually used instead of reporting "no valid collection point".
+                    foreach (var point in _pointStore?.FindReadableCandidates(target.Id, 20) ?? [])
+                        if (!target.ConfiguredReadPoints.Contains(point)) target.ConfiguredReadPoints.Add(point);
+                    target.ConfiguredReadPoints = OrderCandidates(target.ConfiguredReadPoints);
                     target.ReadPointResolved = true;
                 }
-                if (target.ConfiguredReadPoint is not { } point)
+                if (target.ConfiguredReadPoints is not { Count: > 0 })
                     return Unknown("未配置规则读取地址，设备也没有有效采集点位；本轮未发起应用读。", protocol);
-                (address, dataType) = point;
+                candidates.AddRange(target.ConfiguredReadPoints);
             }
+            else
+            {
+                candidates.Add((address, dataType));
+            }
+
+            VerifyReadObservation? last = null;
+            foreach (var candidate in candidates)
+            {
+                var observation = await ReadOneAsync(client, target, candidate.Address, candidate.DataType, timeoutMs, protocol, source, ct);
+                if (observation.Success) return observation;
+                last = observation;
+                if (target.VerificationConfigurationChanged) return observation;
+            }
+            return last ?? Unknown("未取得任何可验证的应用读结果。", protocol);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or IOException)
+        { return Unknown($"应用读未取得可验证响应（{ex.GetType().Name}），不能以HTTP/TCP连通代替。", protocol); }
+    }
+
+    private async Task<VerifyReadObservation> ReadOneAsync(HttpClient client, VerifyMeasurementTarget target,
+        string address, string dataType, int timeoutMs, string protocol, string source, CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(timeoutMs);
+        try
+        {
             if (address.Length > 500 || address.Any(char.IsControl) || !ReadTypes.Contains(dataType))
                 return Unknown("读取地址或Host数据类型无效；本轮未发起应用读。", protocol);
 
@@ -87,7 +123,7 @@ public sealed partial class HttpVerifyMeasurementAdapter : IVerifyMeasurementAda
                 // Only an explicit operation marker set inside the actual read callback is evidence.
                 // A 502 or 'Read failed:' string also occurs during connection/SDK initialization.
                 if (response.StatusCode == HttpStatusCode.BadGateway && code == "operation-failed")
-                    return new(true, true, false, $"{source} {address}/{dataType} 本轮实际应用读失败。", protocol);
+                    return new(false, true, false, $"{source} {address}/{dataType} 本轮实际应用读失败。", protocol);
                 return Unknown($"应用读未取得可靠结果（HTTP {(int)response.StatusCode}，{code}）。", protocol);
             }
             if (code != "completed" || !root.TryGetProperty("tags", out var tags) || tags.ValueKind != JsonValueKind.Array)
@@ -111,6 +147,119 @@ public sealed partial class HttpVerifyMeasurementAdapter : IVerifyMeasurementAda
         { return Unknown($"应用读未取得可验证响应（{ex.GetType().Name}），不能以HTTP/TCP连通代替。", protocol); }
     }
 
+    public async Task<VerifyConnectionsObservation> MeasureConnectionsAsync(VerifyMeasurementTarget target, int count,
+        string address, string dataType, int timeoutMs, CancellationToken ct)
+    {
+        if (count < 1) return new(false, false, 0, count, "count must be >= 1");
+        using var client = _clients.CreateClient("IndustrialIoT");
+        var candidates = new List<(string Address, string DataType)>();
+        if (!string.IsNullOrWhiteSpace(address))
+        {
+            candidates.Add((address, dataType));
+        }
+        else
+        {
+            if (!target.ReadPointResolved)
+            {
+                using var configTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                configTimeout.CancelAfter(Math.Max(timeoutMs, 3000));
+                using var config = await client.GetAsync($"api/collection-config/{Uri.EscapeDataString(target.Id)}", configTimeout.Token);
+                if (!config.IsSuccessStatusCode) return new(false, false, 0, count, $"collection-config HTTP {(int)config.StatusCode}");
+                using var json = await JsonDocument.ParseAsync(await config.Content.ReadAsStreamAsync(configTimeout.Token), cancellationToken: configTimeout.Token);
+                if (json.RootElement.ValueKind != JsonValueKind.Array) return new(false, false, 0, count, "invalid collection-config response");
+                target.ConfiguredReadPoints = ConfiguredPoints(json.RootElement, target.Id, 20);
+                foreach (var point in _pointStore?.FindReadableCandidates(target.Id, 20) ?? [])
+                    if (!target.ConfiguredReadPoints.Contains(point)) target.ConfiguredReadPoints.Add(point);
+                target.ConfiguredReadPoints = OrderCandidates(target.ConfiguredReadPoints);
+                target.ReadPointResolved = true;
+            }
+            if (target.ConfiguredReadPoints is not { Count: > 0 })
+                return new(false, false, 0, count, "no rule address and no valid configured points");
+            candidates.AddRange(target.ConfiguredReadPoints);
+        }
+
+        var protocol = EvaluationAutomationRules.NormalizeProtocol(target.Protocol);
+        if (IsSimulatedProtocol(protocol))
+            return new(false, false, 0, count, "Simulated drivers are not verification evidence.");
+        if (protocol is "FTP" or "FTPS" or "SFTP" or "SMB" or "NFS" or "SERIAL" or "GSKRMFILETRANSFER")
+            return new(false, false, 0, count, "This protocol has no application point read interface.");
+
+        (string Address, string DataType)? selected = null;
+        string? lastDetail = null;
+        await target.VerificationGate.WaitAsync(ct);
+        try
+        {
+            if (target.VerificationConfigurationChanged) return new(false, false, 0, count, "Configuration changed during this run.");
+            foreach (var candidate in candidates)
+            {
+                var probe = await ReadOneAsync(client, target, candidate.Address, candidate.DataType, timeoutMs, protocol, "independent-connection-probe", ct);
+                if (probe.Success) { selected = candidate; break; }
+                lastDetail = probe.Detail;
+                if (target.VerificationConfigurationChanged) return new(false, false, 0, count, "Configuration changed during probe.");
+            }
+        }
+        finally { target.VerificationGate.Release(); }
+        if (selected is null) return new(true, true, 0, count, lastDetail ?? "no readable point");
+
+        var results = await Task.WhenAll(Enumerable.Range(0, count).Select(async index =>
+        {
+            using var handler = new SocketsHttpHandler
+            {
+                MaxConnectionsPerServer = 1,
+                PooledConnectionLifetime = TimeSpan.Zero,
+                ConnectTimeout = TimeSpan.FromMilliseconds(Math.Max(1000, timeoutMs)),
+            };
+            using var http = new HttpClient(handler)
+            {
+                BaseAddress = client.BaseAddress,
+                Timeout = TimeSpan.FromMilliseconds(Math.Max(3000, timeoutMs * 3)),
+            };
+            var observation = await ReadOneAsync(http, target, selected.Value.Address, selected.Value.DataType,
+                timeoutMs, protocol, $"independent-connection-{index + 1}", ct);
+            return observation.Success;
+        }));
+        var successes = results.Count(x => x);
+        return new(true, true, successes, count,
+            $"{successes}/{count} independent connections read {selected.Value.Address}/{selected.Value.DataType} with quality Good");
+    }
+
+    public async Task<VerifyTransferSnapshot> GetTransferSnapshotAsync(VerifyMeasurementTarget target, CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(8));
+        try
+        {
+            using var client = _clients.CreateClient("IndustrialIoT");
+            using var response = await client.GetAsync(
+                $"api/program-transfer/{Uri.EscapeDataString(target.Id)}/verification/snapshot", timeout.Token);
+            if (!response.IsSuccessStatusCode) return new(false, "", $"snapshot HTTP {(int)response.StatusCode}");
+            using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(timeout.Token), cancellationToken: timeout.Token);
+            var root = json.RootElement;
+            var supported = root.TryGetProperty("supported", out var s) && s.ValueKind == JsonValueKind.True;
+            var protocol = root.TryGetProperty("protocol", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() ?? "" : "";
+            return new(supported, protocol, supported ? $"snapshot protocol {protocol}" : "snapshot not supported");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or IOException)
+        { return new(false, "", $"snapshot failed: {ex.GetType().Name}"); }
+    }
+
+    private static List<(string Address, string DataType)> OrderCandidates(List<(string Address, string DataType)> points) =>
+        points.Select((point, index) => (point, index))
+            .OrderBy(x => Preferred(x.point.Address) ? 0 : 1)
+            .ThenBy(x => x.index)
+            .Select(x => x.point)
+            .ToList();
+
+    private static bool Preferred(string address)
+    {
+        if (address.StartsWith("/Realtime.", StringComparison.OrdinalIgnoreCase)) return true;
+        var trimmed = address.TrimStart('/');
+        foreach (var prefix in new[] { "HR", "IR", "C", "DI" })
+            if (trimmed.Length > prefix.Length && trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                && char.IsDigit(trimmed[prefix.Length])) return true;
+        return false;
+    }
     public async Task<VerifyReadObservation> ReadTransferDirectoryAsync(VerifyMeasurementTarget target, string directory, int timeoutMs, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -183,8 +332,9 @@ public sealed partial class HttpVerifyMeasurementAdapter : IVerifyMeasurementAda
         string remoteName, Action<double> reportFraction, CancellationToken ct) =>
         TransferCoreAsync(target, file, directory, remoteName, reportFraction, ct);
 
-    private static (string Address, string DataType)? FirstConfiguredPoint(JsonElement profiles, string deviceId)
+    private static List<(string Address, string DataType)> ConfiguredPoints(JsonElement profiles, string deviceId, int max)
     {
+        var points = new List<(string Address, string DataType)>();
         foreach (var profile in profiles.EnumerateArray())
         {
             if (Text(profile, "deviceId") != deviceId || !profile.TryGetProperty("groups", out var groups) || groups.ValueKind != JsonValueKind.Array) continue;
@@ -195,14 +345,14 @@ public sealed partial class HttpVerifyMeasurementAdapter : IVerifyMeasurementAda
                 {
                     var address = Text(tag, "address");
                     var dataType = Text(tag, "dataType");
-                    if (!string.IsNullOrWhiteSpace(address) && address.Length <= 500 && !address.Any(char.IsControl) && ReadTypes.Contains(dataType))
-                        return (address, dataType);
+                    if (string.IsNullOrWhiteSpace(address) || address.Length > 500 || address.Any(char.IsControl) || !ReadTypes.Contains(dataType)) continue;
+                    if (!points.Contains((address, dataType))) points.Add((address, dataType));
+                    if (points.Count >= max) return points;
                 }
             }
         }
-        return null;
+        return points;
     }
-
     // Mirrors Host VerificationConfiguration.Fingerprint v1. Only the digest crosses this boundary;
     // the Host obtains credentials itself and returns a keyed revision covering secret changes too.
     internal static string ConfigurationFingerprint(VerifyMeasurementTarget target) => Convert.ToHexString(SHA256.HashData(

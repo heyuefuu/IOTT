@@ -69,6 +69,17 @@ internal static partial class EvaluationPipelineRegressionTests
             reportFraction(0.75);
             return Task.FromResult(TargetTransfer?.Invoke(target, file) ?? Transfer(file));
         }
+        public Task<VerifyConnectionsObservation> MeasureConnectionsAsync(VerifyMeasurementTarget target, int count,
+            string address, string dataType, int timeoutMs, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(new VerifyConnectionsObservation(false, false, 0, count, "fixture connections are not configured"));
+        }
+        public Task<VerifyTransferSnapshot> GetTransferSnapshotAsync(VerifyMeasurementTarget target, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(new VerifyTransferSnapshot(false, target.Protocol, "fixture transfer snapshot is not configured"));
+        }
     }
 
     private sealed class RouteHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> route) : HttpMessageHandler

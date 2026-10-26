@@ -58,6 +58,18 @@ export interface ProgramTransferCapability {
     limitation?: string | null;
 }
 
+/** 与 IndustrialIoT ProgramCompareResponse 一致 */
+export interface ProgramCompareResult {
+    pathA: string;
+    pathB: string;
+    equal: boolean;
+    sizeA: number;
+    sizeB: number;
+    sha256A: string;
+    sha256B: string;
+    firstDifferenceOffset?: number | null;
+}
+
 const jsonClient = createMachineConnectionClient({
     baseURL,
     timeout: 300_000,
@@ -196,6 +208,33 @@ export const machineConnectionProgramTransferApi = {
             /* ignore */
         }
         throw new Error(msg);
+    },
+
+    /** 比较设备上两个程序文件（大小 + SHA256 + 首处差异偏移） */
+    async compare(
+        deviceId: string,
+        pathA: string,
+        pathB: string,
+    ): Promise<ProgramCompareResult> {
+        const res = await jsonClient.post<ProgramCompareResult>(
+            `/api/program-transfer/${encodeURIComponent(deviceId)}/compare`,
+            { pathA: pathA.trim(), pathB: pathB.trim() },
+        );
+        return res.data;
+    },
+
+    /** 删除设备上指定路径的程序文件（需驱动支持删除） */
+    async remove(deviceId: string, remotePath: string): Promise<void> {
+        const res = await jsonClient.post<{ error?: string; detail?: string }>(
+            `/api/program-transfer/${encodeURIComponent(deviceId)}/delete`,
+            { remotePath: remotePath.trim() },
+            { validateStatus: () => true },
+        );
+        if (res.status >= 200 && res.status < 300) return;
+        const body = res.data as { error?: string; detail?: string };
+        throw new Error(
+            body?.error?.trim() || body?.detail?.trim() || `删除失败 (HTTP ${res.status})`,
+        );
     },
 
     async history(deviceId: string): Promise<ProgramTransferResponse[]> {

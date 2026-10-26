@@ -216,7 +216,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import { Refresh } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { machineConnectionDevicesApi } from "@/api/machineConnectionDevices";
@@ -238,6 +239,12 @@ const form = reactive({
 	start: "40001",
 	count: 20,
 });
+const route = useRoute();
+
+const applyRequestedDevice = () => {
+	const id = typeof route.query.deviceId === "string" ? route.query.deviceId : "";
+	if (id && devices.value.some((device) => device.id === id)) form.deviceId = id;
+};
 
 const loading = ref(false);
 const error = ref("");
@@ -569,9 +576,15 @@ onMounted(async () => {
 	try {
 		const list = await machineConnectionDevicesApi.list("Robot");
 		devices.value = list.map((d) => ({ id: d.id, name: d.name }));
+		applyRequestedDevice();
 	} catch (e: unknown) {
 		ElMessage.error(getErr(e, "加载设备列表失败"));
 	}
+});
+
+watch(() => route.query.deviceId, () => {
+	applyRequestedDevice();
+	resetData();
 });
 
 onUnmounted(stopAutoRefresh);

@@ -1,0 +1,591 @@
+{
+  "Sections": [
+    {
+      "Name": "\u8FD0\u884C (Launcher)",
+      "Expanded": true,
+      "Items": [
+        {
+          "Key": "HostPort",
+          "Value": "5173",
+          "ReadOnly": false
+        },
+        {
+          "Key": "GatewayPort",
+          "Value": "5087",
+          "ReadOnly": false
+        },
+        {
+          "Key": "FrontendPort",
+          "Value": "4171",
+          "ReadOnly": false
+        },
+        {
+          "Key": "MySqlPort",
+          "Value": "3307",
+          "ReadOnly": false
+        },
+        {
+          "Key": "MockPort",
+          "Value": "5199",
+          "ReadOnly": false
+        },
+        {
+          "Key": "InfluxPort",
+          "Value": "8181",
+          "ReadOnly": false
+        }
+      ]
+    },
+    {
+      "Name": "\u9009\u9879 (Toggles)",
+      "Expanded": true,
+      "Items": [
+        {
+          "Key": "SkipMySql",
+          "Value": "false",
+          "ReadOnly": false
+        },
+        {
+          "Key": "SkipFrontend",
+          "Value": "false",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Force",
+          "Value": "false",
+          "ReadOnly": false
+        },
+        {
+          "Key": "NoBuild",
+          "Value": "false",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Background",
+          "Value": "false",
+          "ReadOnly": false
+        },
+        {
+          "Key": "UseMock",
+          "Value": "true",
+          "ReadOnly": false
+        },
+        {
+          "Key": "GatewayUseMock",
+          "Value": "true",
+          "ReadOnly": false
+        },
+        {
+          "Key": "UseInflux",
+          "Value": "true",
+          "ReadOnly": false
+        },
+        {
+          "Key": "VerifySimulate",
+          "Value": "true",
+          "ReadOnly": false
+        }
+      ]
+    },
+    {
+      "Name": "MySQL",
+      "Expanded": false,
+      "Items": [
+        {
+          "Key": "Bin",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataDir",
+          "Value": "deploy/mysql/.runtime/data",
+          "ReadOnly": false
+        },
+        {
+          "Key": "ServerVersion",
+          "Value": "8.4.0",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Database1",
+          "Value": "IndustrialIoT",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Database2",
+          "Value": "MachineCollection",
+          "ReadOnly": false
+        },
+        {
+          "Key": "AppUser",
+          "Value": "iott",
+          "ReadOnly": false
+        },
+        {
+          "Key": "AppPassword",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "RootPassword",
+          "Value": "",
+          "ReadOnly": false
+        }
+      ]
+    },
+    {
+      "Name": "Host (IndustrialIoT.Host)",
+      "Expanded": false,
+      "Items": [
+        {
+          "Key": "ConnectionStrings.Default",
+          "Value": "Server=127.0.0.1;Port=3307;Database=IndustrialIoT;User ID=iott;Password=3ce399ee9dde089602c40bc2a265965042b0849ba492bfbefe3e141e14c965f0;DateTimeKind=Utc;",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Urls",
+          "Value": "http://localhost:5173",
+          "ReadOnly": false
+        },
+        {
+          "Key": "AllowedHosts",
+          "Value": "*",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Database.ServerVersion",
+          "Value": "8.4.0",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Serilog.MinimumLevel.Default",
+          "Value": "Information",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Serilog.Override.Microsoft.AspNetCore",
+          "Value": "Warning",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Serilog.Override.Microsoft.EntityFrameworkCore",
+          "Value": "Warning",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Gskrm.Mode",
+          "Value": "Ipc",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Gskrm.IpcBaseUrl",
+          "Value": "http://127.0.0.1:39123",
+          "ReadOnly": false
+        },
+        {
+          "Key": "RobotAddressMaps.Huazhong.Nodes",
+          "Value": "[]",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Mqtt.Enabled",
+          "Value": "(\u4EE3\u7801\u672A\u5B9E\u73B0\uFF0C\u6052\u4E3A\u542F\u7528)",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Mqtt.BrokerHost",
+          "Value": "localhost",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Mqtt.BrokerPort",
+          "Value": "1883",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Mqtt.ClientId",
+          "Value": "industrial-iot-local",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Mqtt.TopicPattern",
+          "Value": "industrial-iot/devices/{deviceId}/data",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Mqtt.Username",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Mqtt.Password",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Database.Enabled",
+          "Value": "false",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.HttpWebhook.Enabled",
+          "Value": "false",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.HttpWebhook.EndpointUrl",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.HttpWebhook.BearerToken",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Kafka.Enabled",
+          "Value": "false",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Kafka.BootstrapServers",
+          "Value": "localhost:9092",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Kafka.Topic",
+          "Value": "industrial-iot-data",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Kafka.Acks",
+          "Value": "Leader",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Kafka.LingerMs",
+          "Value": "5",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Kafka.BatchSize",
+          "Value": "65536",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Kafka.SaslUsername",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DataOutput.Kafka.SaslPassword",
+          "Value": "",
+          "ReadOnly": false
+        }
+      ]
+    },
+    {
+      "Name": "Gateway (MachineConnectionApi)",
+      "Expanded": false,
+      "Items": [
+        {
+          "Key": "ConnectionStrings.MachineCollection",
+          "Value": "Server=127.0.0.1;Port=3307;Database=MachineCollection;User ID=iott;Password=3ce399ee9dde089602c40bc2a265965042b0849ba492bfbefe3e141e14c965f0;DateTimeKind=Utc;",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Urls",
+          "Value": "http://localhost:5087",
+          "ReadOnly": false
+        },
+        {
+          "Key": "AllowedHosts",
+          "Value": "*",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Database.ServerVersion",
+          "Value": "8.4.0",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Logging.Default",
+          "Value": "Information",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Logging.Microsoft.AspNetCore",
+          "Value": "Warning",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.BaseUrl",
+          "Value": "http://localhost:5173",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.DevicesPath",
+          "Value": "api/Devices",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.DataPath",
+          "Value": "api/data",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.AddressSpacePath",
+          "Value": "api/addressspace",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.CollectionConfigPath",
+          "Value": "api/collection-config",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.CollectionPath",
+          "Value": "api/collection",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.BatchImportPath",
+          "Value": "api/batch-import",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.ConnectionVerificationPath",
+          "Value": "api/connection-verification",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.PlcCapabilitiesPath",
+          "Value": "api/plc/capabilities",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.NCLinkPath",
+          "Value": "api/nclink",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.ProgramTransferPath",
+          "Value": "api/program-transfer",
+          "ReadOnly": false
+        },
+        {
+          "Key": "IndustrialIoT.DeviceSeedPath",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Mqtt.Enabled",
+          "Value": "true",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Mqtt.Host",
+          "Value": "127.0.0.1",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Mqtt.Port",
+          "Value": "1883",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Mqtt.ClientId",
+          "Value": "MachineConnectionApi",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Mqtt.Username",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Mqtt.Password",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Mqtt.UseTls",
+          "Value": "false",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Mqtt.TopicPrefix",
+          "Value": "machines/telemetry",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Mqtt.QualityOfService",
+          "Value": "1",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Mqtt.ConnectTimeoutSeconds",
+          "Value": "10",
+          "ReadOnly": false
+        },
+        {
+          "Key": "InfluxDB.Enabled",
+          "Value": "true",
+          "ReadOnly": false
+        },
+        {
+          "Key": "InfluxDB.Url",
+          "Value": "http://127.0.0.1:8181",
+          "ReadOnly": false
+        },
+        {
+          "Key": "InfluxDB.Token",
+          "Value": "apiv3_103U2DEgK8Q3w-LsdJzV6mL67AtlIVJTSWEUj6olklXcDxrq5mdwP5NBQSLEIiAu-WH8cXx2fGuVhCYl7zV7EQ",
+          "ReadOnly": false
+        },
+        {
+          "Key": "InfluxDB.Org",
+          "Value": "default",
+          "ReadOnly": false
+        },
+        {
+          "Key": "InfluxDB.Bucket",
+          "Value": "machine_collection",
+          "ReadOnly": false
+        },
+        {
+          "Key": "InfluxDB.Measurement",
+          "Value": "datapoint",
+          "ReadOnly": false
+        },
+        {
+          "Key": "InfluxDB.WriteTimeoutSeconds",
+          "Value": "15",
+          "ReadOnly": false
+        },
+        {
+          "Key": "InfluxDB.WriteRetryCount",
+          "Value": "2",
+          "ReadOnly": false
+        },
+        {
+          "Key": "InfluxDB.WriteRetryDelayMs",
+          "Value": "500",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Env.EVALUATION_PDF_FONT",
+          "Value": "",
+          "ReadOnly": false
+        }
+      ]
+    },
+    {
+      "Name": "InfluxDB (Docker)",
+      "Expanded": false,
+      "Items": [
+        {
+          "Key": "DockerExe",
+          "Value": "D:\\docker\\resources\\bin\\docker.exe",
+          "ReadOnly": false
+        },
+        {
+          "Key": "DockerDesktopExe",
+          "Value": "D:\\docker\\Docker Desktop.exe",
+          "ReadOnly": false
+        },
+        {
+          "Key": "ComposeFile",
+          "Value": "deploy/influxdb/compose.yaml",
+          "ReadOnly": false
+        },
+        {
+          "Key": "StartScript",
+          "Value": "deploy/influxdb/Start-InfluxDb.ps1",
+          "ReadOnly": false
+        },
+        {
+          "Key": "BindAddress",
+          "Value": "127.0.0.1",
+          "ReadOnly": false
+        },
+        {
+          "Key": "AutoStartDockerDesktop",
+          "Value": "true",
+          "ReadOnly": false
+        },
+        {
+          "Key": "StartTimeoutSeconds",
+          "Value": "120",
+          "ReadOnly": false
+        }
+      ]
+    },
+    {
+      "Name": "Frontend (Vite)",
+      "Expanded": false,
+      "Items": [
+        {
+          "Key": "Dir",
+          "Value": "code20260423/code",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Port",
+          "Value": "4171",
+          "ReadOnly": false
+        },
+        {
+          "Key": "Host",
+          "Value": "0.0.0.0",
+          "ReadOnly": false
+        },
+        {
+          "Key": "VITE_MACHINE_CONNECTION_API",
+          "Value": "/machine-connection",
+          "ReadOnly": false
+        },
+        {
+          "Key": "VITE_MACHINE_CONNECTION_PROXY_TARGET",
+          "Value": "http://localhost:5087",
+          "ReadOnly": false
+        },
+        {
+          "Key": "VITE_MACHINE_CONNECTION_PORT",
+          "Value": "5087",
+          "ReadOnly": false
+        },
+        {
+          "Key": "VITE_INDUSTRIAL_IOT_API",
+          "Value": "/industrial-iot",
+          "ReadOnly": false
+        },
+        {
+          "Key": "VITE_INDUSTRIAL_IOT_PROXY_TARGET",
+          "Value": "http://localhost:5173",
+          "ReadOnly": false
+        },
+        {
+          "Key": "VITE_INDUSTRIAL_IOT_PORT",
+          "Value": "5173",
+          "ReadOnly": false
+        },
+        {
+          "Key": "VITE_APP_TITLE",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "VITE_APP_API_BASE_URL",
+          "Value": "",
+          "ReadOnly": false
+        },
+        {
+          "Key": "VITE_APP_DEBUG",
+          "Value": "",
+          "ReadOnly": false
+        }
+      ]
+    }
+  ]
+}

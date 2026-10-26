@@ -322,7 +322,7 @@ public sealed class SimulatedFocasApi : IFocasApi
         return 0;
     }
 
-    public int ReadParameter(int handle, int number, out int value)
+    public int ReadParameter(int handle, int number, short length, out int value)
     {
         if (!IsValidHandle(handle)) { value = 0; return -1; }
         value = number switch
@@ -751,7 +751,7 @@ public interface IFocasApi
     int ReadToolId(int handle, out int toolId);
     int ReadMaxToolGroup(int handle, out int maxGroup);
     int ReadMacroVariable(int handle, int number, out double value);
-    int ReadParameter(int handle, int number, out int value);
+    int ReadParameter(int handle, int number, short length, out int value);
     int StartProgramDownload(int handle);
     int DownloadProgramChunk(int handle, byte[] data, int length);
     int EndProgramDownload(int handle);

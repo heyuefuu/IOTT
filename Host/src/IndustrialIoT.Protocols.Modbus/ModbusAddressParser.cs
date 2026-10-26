@@ -22,10 +22,32 @@ public static class ModbusAddressParser
 
     private static readonly (string Prefix, ModbusRegisterType Type)[] PrefixMap =
     [
+        // PLC 软元件前缀（三菱 FX/Q 风格）。长前缀必须排在短前缀之前。
+        ("ZR", ModbusRegisterType.HoldingRegister),
+        ("SM", ModbusRegisterType.Coil),
+        ("SD", ModbusRegisterType.HoldingRegister),
+        ("SB", ModbusRegisterType.Coil),
+        ("SW", ModbusRegisterType.HoldingRegister),
+        ("CN", ModbusRegisterType.HoldingRegister),
         ("HR", ModbusRegisterType.HoldingRegister),
         ("IR", ModbusRegisterType.InputRegister),
         ("DI", ModbusRegisterType.DiscreteInput),
+        ("M",  ModbusRegisterType.Coil),
+        ("X",  ModbusRegisterType.DiscreteInput),
+        ("Y",  ModbusRegisterType.Coil),
+        ("S",  ModbusRegisterType.Coil),
+        ("L",  ModbusRegisterType.Coil),
+        ("F",  ModbusRegisterType.Coil),
+        ("B",  ModbusRegisterType.Coil),
+        ("D",  ModbusRegisterType.HoldingRegister),
+        ("R",  ModbusRegisterType.HoldingRegister),
+        ("T",  ModbusRegisterType.HoldingRegister),
         ("C",  ModbusRegisterType.Coil),
+        ("W",  ModbusRegisterType.HoldingRegister),
+        ("V",  ModbusRegisterType.HoldingRegister),
+        ("Z",  ModbusRegisterType.HoldingRegister),
+        ("U",  ModbusRegisterType.HoldingRegister),
+        ("G",  ModbusRegisterType.HoldingRegister),
     ];
 
     /// <summary>Modicon 区号前缀（4x / 3x / 1x / 0x），其后为 0 基协议地址。</summary>

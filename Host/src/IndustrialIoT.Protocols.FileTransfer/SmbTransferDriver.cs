@@ -12,7 +12,7 @@ using SMBLibrary.Client;
 using ConnectionState = IndustrialIoT.Domain.Enums.ConnectionState;
 
 [ProtocolDriver(ProtocolType.SMB, "SMB", "*")]
-public partial class SmbTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSpaceBrowser
+public partial class SmbTransferDriver : IProtocolDriver, INCProgramTransfer, IAddressSpaceBrowser, INCProgramDelete
 {
     private readonly ILogger<SmbTransferDriver> _logger;
     private SMB2Client? _smbClient;
@@ -367,6 +367,42 @@ public partial class SmbTransferDriver : IProtocolDriver, INCProgramTransfer, IA
                 sw.Stop();
                 _logger.LogError(ex, "SMB resume upload failed for transfer {TransferId}", transferId);
                 return CreateFailedResult(transferId, sw, ex.Message);
+            }
+        }, ct);
+    }
+
+    public async Task<bool> DeleteProgramAsync(string remotePath, CancellationToken ct = default)
+    {
+        EnsureConnected();
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                var status = _fileStore!.CreateFile(
+                    out var fileHandle, out _,
+                    FileTransferRemotePath.NormalizeSmbPath(remotePath),
+                    AccessMask.DELETE | AccessMask.SYNCHRONIZE,
+                    SMBLibrary.FileAttributes.Normal,
+                    ShareAccess.None,
+                    CreateDisposition.FILE_OPEN,
+                    CreateOptions.FILE_DELETE_ON_CLOSE | CreateOptions.FILE_NON_DIRECTORY_FILE,
+                    null);
+
+                if (status != NTStatus.STATUS_SUCCESS)
+                {
+                    _logger.LogWarning("SMB delete open failed: {Path} ({Status})", remotePath, status);
+                    return false;
+                }
+
+                _fileStore.CloseFile(fileHandle);
+                _logger.LogInformation("SMB deleted {Path}", remotePath);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SMB delete failed for {Path}", remotePath);
+                return false;
             }
         }, ct);
     }

@@ -180,6 +180,22 @@
 						style="width: 200px"
 					/>
 				</el-form-item>
+				<el-form-item label="客户端白名单">
+					<el-input
+						v-model="allowedIpsText"
+						type="textarea"
+						:rows="3"
+						placeholder="每行一个 IP / CIDR（192.168.1.0/24）/ 网段前缀（192.168.1.）；留空不限制"
+					/>
+				</el-form-item>
+				<el-form-item label="对外点位">
+					<el-input
+						v-model="pointsText"
+						type="textarea"
+						:rows="4"
+						placeholder="每行一个点位：设备ID,地址,数据类型[,标签]，如 dev-abc,/CNC/x,Float,主轴转速"
+					/>
+				</el-form-item>
 			</el-form>
 			<template #footer>
 				<span class="dialog-footer">
@@ -323,6 +339,27 @@ const currentService = reactive<CsServerService & { rootDirectory: string }>({
 	lastAccess: "",
 });
 
+const allowedIpsText = ref("");
+const pointsText = ref("");
+
+const parseAllowedIps = (text: string): string[] =>
+	text
+		.split(/\r?\n/)
+		.map((s) => s.trim())
+		.filter(Boolean);
+
+const parsePoints = (text: string) =>
+	text
+		.split(/\r?\n/)
+		.map((s) => s.trim())
+		.filter(Boolean)
+		.map((line) => {
+			const [deviceId = "", address = "", dataType = "Float", ...rest] =
+				line.split(",").map((s) => s.trim());
+			return { deviceId, address, dataType, label: rest.join(",") || undefined };
+		})
+		.filter((p) => p.deviceId && p.address);
+
 const directoryDialogVisible = ref(false);
 const directoryLoading = ref(false);
 const directoryListing = ref<CsServerDirectoryListing | null>(null);
@@ -400,6 +437,8 @@ const openAddServiceDialog = () => {
 		clientCount: 0,
 		lastAccess: "",
 	});
+	allowedIpsText.value = "";
+	pointsText.value = "";
 	serviceDialogVisible.value = true;
 };
 
@@ -408,6 +447,10 @@ const openEditServiceDialog = (service: CsServerService) => {
 	directoryDialogVisible.value = false;
 	isEditing.value = true;
 	Object.assign(currentService, { ...service, rootDirectory: service.rootDirectory ?? "" });
+	allowedIpsText.value = (service.allowedIps ?? []).join("\n");
+	pointsText.value = (service.points ?? [])
+		.map((p) => [p.deviceId, p.address, p.dataType, p.label].filter(Boolean).join(","))
+		.join("\n");
 	serviceDialogVisible.value = true;
 };
 
@@ -426,6 +469,8 @@ const saveService = async () => {
 
 	const payload = { ...currentService,
 		rootDirectory: currentService.type === "FtpServer" ? currentService.rootDirectory.trim() || null : null,
+		allowedIps: parseAllowedIps(allowedIpsText.value),
+		points: parsePoints(pointsText.value),
 	};
 	try {
 		if (isEditing.value) {

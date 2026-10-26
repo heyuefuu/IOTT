@@ -43,3 +43,61 @@ export function formatFileSize(size: number): string {
 	if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(2)} MB`;
 	return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
+
+export function formatDuration(seconds: number): string {
+	if (!Number.isFinite(seconds) || seconds <= 0) return "-";
+	const total = Math.round(seconds);
+	if (total < 60) return `${total}s`;
+	const minutes = Math.floor(total / 60);
+	const restSeconds = total % 60;
+	if (minutes < 60)
+		return `${minutes}m${restSeconds.toString().padStart(2, "0")}s`;
+	const hours = Math.floor(minutes / 60);
+	return `${hours}h${(minutes % 60).toString().padStart(2, "0")}m`;
+}
+
+/** 预计剩余时间（秒）；仅对进行中/已暂停且已产生进度的记录返回，否则 null。 */
+export function getTransferEtaSeconds(
+	row: ProgramTransferResponse,
+	nowMs = Date.now(),
+): number | null {
+	if (row.status !== "InProgress" && row.status !== "Paused") return null;
+	if (row.fileSize <= 0 || row.bytesTransferred <= 0) return null;
+	if (row.bytesTransferred >= row.fileSize) return 0;
+	const durationMs = getDurationMs(row, nowMs);
+	if (durationMs <= 0) return null;
+	const bytesPerMs = row.bytesTransferred / durationMs;
+	if (bytesPerMs <= 0) return null;
+	return (row.fileSize - row.bytesTransferred) / bytesPerMs / 1000;
+}
+
+/** 进度条颜色：绿=成功、红=失败、黄=已暂停、蓝=传输中、灰=等待。 */
+export function transferProgressColor(row: ProgramTransferResponse): string {
+	switch (row.status) {
+		case "Completed":
+			return "#67C23A";
+		case "Failed":
+			return "#F56C6C";
+		case "Paused":
+			return "#E6A23C";
+		case "InProgress":
+			return "#409EFF";
+		default:
+			return "#909399";
+	}
+}
+
+export function transferProgressStatus(
+	row: ProgramTransferResponse,
+): "success" | "exception" | "warning" | undefined {
+	switch (row.status) {
+		case "Completed":
+			return "success";
+		case "Failed":
+			return "exception";
+		case "Paused":
+			return "warning";
+		default:
+			return undefined;
+	}
+}

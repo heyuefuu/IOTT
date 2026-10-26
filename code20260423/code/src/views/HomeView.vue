@@ -48,8 +48,8 @@
 						<div class="overview-card-content">
 							<div class="overview-value">{{ totalDevices }}</div>
 							<div class="overview-desc">
-								在线: {{ onlineDevices }} / 离线:
-								{{ offlineDevices }}
+								在线: {{ onlineDevices }} / 离线: {{ offlineDevices }} / 未知:
+								{{ unknownDevices }}
 							</div>
 						</div>
 					</el-card>
@@ -346,6 +346,7 @@ import {
 	Bell,
 } from "@element-plus/icons-vue";
 import DeviceCard from "@/components/DeviceCard.vue";
+import { getDeviceRuntimeStatus } from "@/stores/deviceRuntimeStatus";
 import { machineConnectionDevicesApi, type DeviceDto } from "@/api/machineConnectionDevices";
 import { machineConnectionCollectionApi } from "@/api/machineConnectionCollection";
 import { businessSystemApi, type SystemLogDto } from "@/api/businessSystem";
@@ -371,17 +372,27 @@ const loadDashboard = async () => {
 };
 
 const totalDevices = computed(() => devices.value.length);
-const onlineDevices = computed(() => devices.value.filter((d) => d.status === "Online").length);
-const offlineDevices = computed(() => Math.max(totalDevices.value - onlineDevices.value, 0));
+const onlineDevices = computed(
+	() => devices.value.filter((d) => getDeviceRuntimeStatus(d.id) === "online").length,
+);
+const unknownDevices = computed(
+	() => devices.value.filter((d) => getDeviceRuntimeStatus(d.id) === "unknown").length,
+);
+const offlineDevices = computed(() =>
+	Math.max(totalDevices.value - onlineDevices.value - unknownDevices.value, 0),
+);
 const totalTasks = computed(() => Object.keys(collectionStatus.value).length);
 const activeTasks = computed(() => Object.values(collectionStatus.value).filter((s) => s.isRunning).length);
 const runningTasks = activeTasks;
 const completedTasks = computed(() => Math.max(totalTasks.value - activeTasks.value, 0));
-const totalAlarms = computed(() =>
-	devices.value.filter((d) => d.status === "Error").length +
-	Object.values(collectionStatus.value).reduce((sum, s) => sum + (s.totalErrors || 0), 0),
+const totalAlarms = computed(
+	() =>
+		devices.value.filter((d) => getDeviceRuntimeStatus(d.id) === "error").length +
+		Object.values(collectionStatus.value).reduce((sum, s) => sum + (s.totalErrors || 0), 0),
 );
-const criticalAlarms = computed(() => devices.value.filter((d) => d.status === "Error").length);
+const criticalAlarms = computed(
+	() => devices.value.filter((d) => getDeviceRuntimeStatus(d.id) === "error").length,
+);
 const normalAlarms = computed(() => Math.max(totalAlarms.value - criticalAlarms.value, 0));
 const systemUptime = ref("加载中");
 const lastRestartTime = ref("加载中");
@@ -427,20 +438,28 @@ const recentActivities = computed(() =>
 );
 
 const recentDevices = computed(() =>
-	devices.value.slice(0, 6).map((device) => ({
-		id: device.id,
-		name: device.name,
-		type: (device.type === "PLC" ? "plc" : device.type === "Robot" ? "robot" : "nc") as "nc" | "plc" | "robot",
-		ip: device.host,
-		port: device.port,
-		protocol: device.protocol,
-		status: (device.status === "Online" ? "running" : device.status === "Error" ? "alarm" : "offline") as "running" | "standby" | "alarm" | "offline",
-		parameters: {
-			品牌: device.brand,
-			型号: device.model,
-		},
-		lastCommunication: device.lastSeenAt || device.createdAt,
-	})),
+	devices.value.slice(0, 6).map((device) => {
+		const runtime = getDeviceRuntimeStatus(device.id);
+		return {
+			id: device.id,
+			name: device.name,
+			type: (device.type === "PLC" ? "plc" : device.type === "Robot" ? "robot" : "nc") as "nc" | "plc" | "robot",
+			ip: device.host,
+			port: device.port,
+			protocol: device.protocol,
+			status: (runtime === "online" ? "running" : runtime === "error" ? "offline" : "unknown") as
+				| "unknown"
+				| "running"
+				| "standby"
+				| "alarm"
+				| "offline",
+			parameters: {
+				品牌: device.brand,
+				型号: device.model,
+			},
+			lastCommunication: device.lastSeenAt || device.createdAt,
+		};
+	}),
 );
 
 const navigateTo = (path: string) => {

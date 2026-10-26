@@ -1,4 +1,4 @@
-namespace IndustrialIoT.Protocols.Modbus;
+﻿namespace IndustrialIoT.Protocols.Modbus;
 
 using System.Buffers.Binary;
 using SocketException = System.Net.Sockets.SocketException;
@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 using static IndustrialIoT.Protocols.Modbus.ModbusAddressParser;
 
 [ProtocolDriver(ProtocolType.ModbusTCP, "Inovance", "汇川", "广数", "广州数控", "GSK", "MICRO-T400")]
-public sealed class ModbusTcpDriver : IProtocolDriver
+public sealed class ModbusTcpDriver : IProtocolDriver, IAddressSpaceBrowser
 {
     private readonly ILogger<ModbusTcpDriver> _logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
@@ -25,6 +25,14 @@ public sealed class ModbusTcpDriver : IProtocolDriver
 
     public ProtocolType Protocol => ProtocolType.ModbusTCP;
     public ConnectionState State => _state;
+
+    // Generic Modbus devices have no browsable namespace; serve the static register template so
+    // selected points can be configured from the device page.
+    public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
+        => Task.FromResult(ModbusAddressSpace.Browse(parentPath));
+
+    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
+        => Task.FromResult(ModbusAddressSpace.Export(format));
 
     public DriverCapabilities Capabilities =>
         DriverCapabilities.Read | DriverCapabilities.Write |

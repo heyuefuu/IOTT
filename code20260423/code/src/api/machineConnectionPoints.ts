@@ -107,15 +107,28 @@ export const machineConnectionPointsApi = {
 
     async exportAddressSpace(
         deviceId: string,
-        format: "CSV" | "JSON" | "Excel" = "CSV",
+        format: "CSV" | "JSON" | "Excel" | "XLSX" | "XML" = "CSV",
+        opts: { company?: string; project?: string } = {},
     ): Promise<{ blob: Blob; fileName: string; contentType: string }> {
-        const res = await client.get(
-            `/api/addressspace/${encodeURIComponent(deviceId)}/export`,
-            {
-                params: { format },
-                responseType: "blob",
-            },
-        );
+        const fmt = format.toUpperCase();
+        const isXlsx = fmt === "XLSX";
+        const isXml = fmt === "XML";
+        const url = isXlsx
+            ? `/api/addressspace/${encodeURIComponent(deviceId)}/export.xlsx`
+            : isXml
+              ? `/api/addressspace/${encodeURIComponent(deviceId)}/export.xml`
+              : `/api/addressspace/${encodeURIComponent(deviceId)}/export`;
+
+        const metaParams = {
+            ...(opts.company ? { company: opts.company } : {}),
+            ...(opts.project ? { project: opts.project } : {}),
+        };
+        const res = await client.get(url, {
+            params: isXlsx || isXml
+                ? metaParams
+                : { format: fmt === "EXCEL" ? "Excel" : fmt },
+            responseType: "blob",
+        });
 
         const contentType =
             res.headers?.["content-type"] ?? "application/octet-stream";
@@ -123,11 +136,37 @@ export const machineConnectionPointsApi = {
             | string
             | undefined;
 
+        const ext = isXlsx
+            ? "xlsx"
+            : isXml
+              ? "xml"
+              : fmt === "EXCEL"
+                ? "xlsx"
+                : fmt.toLowerCase();
         const fileName =
-            extractFileName(disposition) ??
-            `address_space_${deviceId}.${format.toLowerCase()}`;
+            extractFileName(disposition) ?? `address_space_${deviceId}.${ext}`;
 
         return { blob: res.data as Blob, fileName, contentType };
+    },
+
+    /** 批量导出多台设备地址空间为 zip（每台一个 xlsx） */
+    async exportAddressBatchXlsx(
+        deviceIds: string[],
+        opts: { company?: string; project?: string } = {},
+    ): Promise<{ blob: Blob; fileName: string }> {
+        const params: Record<string, string> = {
+            deviceIds: deviceIds.join(","),
+        };
+        if (opts.company) params.company = opts.company;
+        if (opts.project) params.project = opts.project;
+        const res = await client.get("/api/addressspace/export-batch.zip", {
+            params,
+            responseType: "blob",
+        });
+        return {
+            blob: res.data as Blob,
+            fileName: `address_space_batch_${Date.now()}.zip`,
+        };
     },
 
     /**

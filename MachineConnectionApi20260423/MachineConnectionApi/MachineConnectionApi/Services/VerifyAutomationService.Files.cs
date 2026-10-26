@@ -16,11 +16,24 @@ public sealed partial class VerifyAutomationService
         { MarkUnrated(metric, "文件测试必须明确选择一个设备，不自动选择或写入其他设备。"); return; }
         var sizes = metric.MetricId switch
         {
-            "file-integrity" => new[] { 0.1, 1, 10, 20 },
+            "file-integrity" => options.Feasibility ? new[] { 0.1, 1, 10 } : new[] { 0.1, 1, 10, 20 },
             "transfer-speed" => new[] { 10d },
-            "file-size" => new[] { 1d, 10, 200 },
+            // file-size follows the rule's configured attachments instead of a hard-coded
+            // 1/10/200 MiB ladder: an environment without a 200 MiB-capable channel could never
+            // be measured, and a rule shipping only 1/10 MiB attachments was reported as missing.
+            "file-size" => item.Files
+                .Where(file => file.SizeBytes is > 0)
+                .Select(file => file.SizeBytes!.Value / (1024d * 1024d))
+                .Distinct()
+                .OrderBy(size => size)
+                .ToArray(),
             _ => throw new ArgumentException("没有定义的文件测试。"),
         };
+        if (sizes.Length == 0)
+        {
+            MarkUnrated(metric, "未配置文件大小档位（需要至少一个已上传校验附件）；本轮未上传。");
+            return;
+        }
         var files = new List<EvaluationFile>();
         var missing = false;
         foreach (var size in sizes)
@@ -59,6 +72,13 @@ public sealed partial class VerifyAutomationService
             metric.Evidence.Add($"附件 {file.Id}/{file.Name}，本轮远端文件 {remoteName}: {outcome.Detail}");
             if (!outcome.Supported || !outcome.HasEvidence)
             {
+                // If earlier attachments already produced verified evidence, keep the partial result
+                // instead of discarding every file metric because a later transfer lost the channel.
+                if (passed > 0)
+                {
+                    metric.Evidence.Add("A later attachment produced no current-run evidence; keeping the verified attachments as a partial result.");
+                    break;
+                }
                 MarkUnrated(metric, "当前设备/协议未提供安全文件往返测量，或没有可靠本轮传输证据；不能评为0分。" + outcome.Detail);
                 return;
             }

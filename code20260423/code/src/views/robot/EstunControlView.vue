@@ -201,7 +201,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import { Refresh, VideoPlay, VideoPause } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { machineConnectionDevicesApi } from "@/api/machineConnectionDevices";
@@ -224,6 +225,12 @@ interface EstunDevice {
 
 const devices = ref<EstunDevice[]>([]);
 const deviceId = ref("");
+const route = useRoute();
+
+const applyRequestedDevice = () => {
+	const id = typeof route.query.deviceId === "string" ? route.query.deviceId : "";
+	if (id && devices.value.some((device) => device.id === id)) deviceId.value = id;
+};
 const snapshot = ref<EstunSnapshot | null>(null);
 const lastError = ref("");
 
@@ -264,6 +271,7 @@ const loadDevices = async () => {
 		devices.value = list
 			.filter((d) => d.protocol === ESTUN_PROTOCOL)
 			.map((d) => ({ id: d.id, name: d.name, host: d.host, port: d.port }));
+		applyRequestedDevice();
 		if (devices.value.length === 1 && !deviceId.value) {
 			deviceId.value = devices.value[0]!.id;
 		}
@@ -493,6 +501,11 @@ const formatAnalog = (v: number) =>
 
 onMounted(() => {
 	void loadDevices();
+});
+
+watch(() => route.query.deviceId, () => {
+	applyRequestedDevice();
+	handleDeviceChange();
 });
 
 onUnmounted(() => {

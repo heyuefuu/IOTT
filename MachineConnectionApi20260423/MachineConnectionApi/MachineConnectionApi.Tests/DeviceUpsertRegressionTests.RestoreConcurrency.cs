@@ -113,7 +113,7 @@ internal static partial class DeviceUpsertRegressionTests
         new(handler) { BaseAddress = new Uri("http://restore.fixture/") };
     private static DevicesController RestoreController(HttpClient client, IDeviceStore store) => new(
         new CredentialClientFactory(client), new ConfigurationBuilder().Build(), store,
-        RestoreService(client, store), new StubActivityLog(), NullLogger<DevicesController>.Instance);
+        RestoreService(client, store), new StubActivityLog(), new MachineConnectionApi.Services.ConnectionStatsStore(), NullLogger<DevicesController>.Instance);
 
     private sealed class RestoreTestHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond) : HttpMessageHandler
     {

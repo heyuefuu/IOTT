@@ -63,7 +63,7 @@ internal static partial class DeviceUpsertRegressionTests
         var factory = new CredentialClientFactory(client);
         var configuration = new ConfigurationBuilder().Build();
         var sync = new DeviceUpstreamSyncService(factory, store, configuration, NullLogger<DeviceUpstreamSyncService>.Instance);
-        return new DevicesController(factory, configuration, store, sync, new StubActivityLog(), NullLogger<DevicesController>.Instance);
+        return new DevicesController(factory, configuration, store, sync, new StubActivityLog(), new MachineConnectionApi.Services.ConnectionStatsStore(), NullLogger<DevicesController>.Instance);
     }
 
     private sealed class ConnectionSyncHandler : HttpMessageHandler

@@ -14,7 +14,16 @@
 			</template>
 		</el-table-column>
 		<el-table-column label="进度" width="160">
-			<template #default="scope"><el-progress :percentage="getTransferPercent(scope.row)" /></template>
+			<template #default="scope">
+				<el-progress
+					:percentage="getTransferPercent(scope.row)"
+					:color="transferProgressColor(scope.row)"
+					:status="transferProgressStatus(scope.row)"
+				/>
+			</template>
+		</el-table-column>
+		<el-table-column label="预计剩余" width="110">
+			<template #default="scope">{{ formatEta(scope.row) }}</template>
 		</el-table-column>
 		<el-table-column label="文件大小" width="120">
 			<template #default="scope">{{ formatFileSize(scope.row.fileSize) }}</template>
@@ -45,12 +54,21 @@
 import type { ProgramTransferResponse } from "@/api/machineConnectionProgramTransfer";
 import {
 	calculateTransferSpeed,
+	formatDuration,
 	formatFileSize,
 	getIntegrityState,
+	getTransferEtaSeconds,
 	getTransferPercent,
+	transferProgressColor,
+	transferProgressStatus,
 } from "./transferRecordMetrics";
 
 defineProps<{ records: ProgramTransferResponse[]; loading: boolean; nowMs: number }>();
+
+const formatEta = (row: ProgramTransferResponse) => {
+	const seconds = getTransferEtaSeconds(row, Date.now());
+	return seconds == null ? "-" : formatDuration(seconds);
+};
 
 const statusType = (status: string) => ({
 	Completed: "success", Failed: "danger", InProgress: "warning", Paused: "warning",

@@ -10,6 +10,8 @@ public static class EvaluationAutomationRules
         "Bool", "Int8", "UInt8", "Int16", "UInt16", "Int32", "UInt32", "Int64", "UInt64", "Float", "Double", "String", "ByteArray",
     };
 
+    private const double EqualityTolerance = 0.005;
+
     public static EvaluationAutomationRule? DefaultFor(string metricId) => metricId switch
     {
         "industrial-protocol" => new() { Unit = "%", ScoringMode = "linear" },
@@ -94,20 +96,22 @@ public static class EvaluationAutomationRules
     public static double? Score(EvaluationAutomationRule rule, double value)
     {
         if (!ValidRule(rule) || !ValidValue(value, rule.Unit)) return null;
-        if (rule.ScoringMode == "linear") return value;
-        return rule.ScoreBands.Where(band => value >= band.Min).OrderByDescending(band => band.Min).FirstOrDefault()?.Score;
+        var rounded = Math.Round(value, 2, MidpointRounding.AwayFromZero);
+        if (rule.ScoringMode == "linear") return rounded;
+        return rule.ScoreBands.Where(band => rounded >= band.Min).OrderByDescending(band => band.Min).FirstOrDefault()?.Score;
     }
 
     /// <summary>Pass/fail is independent of score. Null means no valid pass rule or measurement.</summary>
     public static bool? Judge(EvaluationAutomationRule rule, double value)
     {
         if (!ValidRule(rule) || !ValidValue(value, rule.Unit) || rule.PassRule is not { } pass
-            || !TryConvert(value, rule.Unit, pass.Unit, out var converted)) return null;
+            || !TryConvert(pass.Threshold, pass.Unit, rule.Unit, out var threshold)) return null;
+        var rounded = Math.Round(value, 2, MidpointRounding.AwayFromZero);
         return pass.Comparison switch
         {
-            "gte" => converted >= pass.Threshold,
-            "lte" => converted <= pass.Threshold,
-            "eq" => converted == pass.Threshold,
+            "gte" => rounded >= threshold - EqualityTolerance,
+            "lte" => rounded <= threshold + EqualityTolerance,
+            "eq" => Math.Abs(rounded - threshold) <= EqualityTolerance,
             _ => null,
         };
     }

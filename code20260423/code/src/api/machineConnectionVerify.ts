@@ -27,6 +27,8 @@ export interface VerifyRunOptions {
     concurrentDeviceIds?: string[] | null;
     /** Explicit permission for isolated file-test writes; never authorizes NC execution. */
     allowFileWrites?: boolean;
+    /** Feasibility self-check: shorten durations and relax pass thresholds so all seven metrics can produce a result. */
+    feasibility?: boolean;
 }
 
 export interface VerifyMetricResult {
@@ -152,6 +154,11 @@ export const machineConnectionVerifyApi = {
 
     async startTasks(taskIds: string[]): Promise<VerifyTaskRunResult[]> {
         return (await client.post<VerifyTaskRunResult[]>("/api/verify/tasks/start-batch", taskIds, { timeout: 30_000 })).data;
+    },
+
+    /** 请求终止一个正在执行的验证任务；由服务端取消其测量循环并留痕为“已终止”。 */
+    async cancelTask(id: string): Promise<void> {
+        await client.post(`/api/verify/tasks/${enc(id)}/cancel`, undefined, { timeout: 30_000 });
     },
 
     /** 导出最近一次已结束运行的实测、评分、配置快照及证据。 */

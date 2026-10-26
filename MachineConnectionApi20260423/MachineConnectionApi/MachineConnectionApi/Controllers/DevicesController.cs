@@ -21,7 +21,10 @@ public class DevicesController : IndustrialIoTProxyControllerBase
     private readonly IConfiguration _configuration;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ISystemActivityLog _activityLog;
+    private readonly ConnectionStatsStore _connectionStats;
     private readonly ILogger<DevicesController> _logger;
+    // 与 DeviceTemplatesController 共用同一 JSON（JsonFileStore 按路径静态锁，读写一致）
+    private static readonly JsonFileStore<DeviceTemplateDto> DeviceTemplates = new("device-templates.json");
 
     public DevicesController(
         IHttpClientFactory httpClientFactory,
@@ -29,6 +32,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         IDeviceStore store,
         IDeviceUpstreamSyncService sync,
         ISystemActivityLog activityLog,
+        ConnectionStatsStore connectionStats,
         ILogger<DevicesController> logger)
         : base(httpClientFactory, logger)
     {
@@ -37,6 +41,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         _store = store;
         _sync = sync;
         _activityLog = activityLog;
+        _connectionStats = connectionStats;
         _logger = logger;
     }
 
@@ -102,8 +107,45 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         item = item with { UpstreamSynced = sync.Success, UpstreamError = sync.Error };
         _store.Update(rows => { rows.Add(item); return 0; });
         _activityLog.Write("operation", "创建设备",
-            $"{item.Name}（{item.Type} · {item.Protocol} · {item.Host}:{item.Port}）{(sync.Success ? "已同步上游" : "上游同步失败")}");
+            $"{item.Name}（{item.Type} · {item.Protocol} · {item.Host}:{item.Port}）{(sync.Success ? "已同步上游" : "上游同步失败")}",
+            device: item.Name, result: sync.Success ? "成功" : "失败");
         return Ok(Redact(item));
+    }
+
+    /// <summary>按设备模板一键创建设备（型号/协议/端口等取自模板，Host 可覆盖）。</summary>
+    [HttpPost("from-template/{templateId}")]
+    public async Task<ActionResult<MachineDeviceDto>> CreateFromTemplate(
+        string templateId,
+        [FromQuery] string? name,
+        [FromQuery] string? host,
+        CancellationToken ct)
+    {
+        var template = DeviceTemplates.ReadAll().FirstOrDefault(t => t.Id == templateId);
+        if (template is null) return NotFound(new { error = "模板不存在" });
+        if (string.IsNullOrWhiteSpace(template.Protocol))
+            return BadRequest(new { error = "模板缺少协议，无法创建设备" });
+
+        var effectiveHost = !string.IsNullOrWhiteSpace(host) ? host : template.Host;
+        if (string.IsNullOrWhiteSpace(effectiveHost))
+            return BadRequest(new { error = "请提供设备 Host（模板未配置默认 IP）" });
+
+        var request = new MachineDeviceUpsertRequest
+        {
+            Name = string.IsNullOrWhiteSpace(name) ? $"{template.Name}-{DateTime.Now:HHmmss}" : name,
+            Type = string.IsNullOrWhiteSpace(template.Type) ? "CNC" : template.Type,
+            Brand = template.Brand,
+            Model = template.Model,
+            Protocol = template.Protocol,
+            Host = effectiveHost,
+            Port = template.Port ?? 502,
+            Username = template.Username,
+            Password = template.Password,
+            ConnectTimeoutMs = template.ConnectTimeoutMs,
+            ReadTimeoutMs = template.ReadTimeoutMs,
+            ExtendedProperties = template.ExtendedProperties,
+            Transfer = template.Transfer,
+        };
+        return await Create(request, ct);
     }
 
     /// <summary>更新设备（本地保存并同步到上游）。未提供的字段沿用现有值。</summary>
@@ -167,7 +209,8 @@ public class DevicesController : IndustrialIoTProxyControllerBase
                 _logger.LogWarning("设备 {DeviceId} 更新期间被删除，回滚上游记录失败：{Error}", id, rollback.Error);
             return NotFound();
         }
-        _activityLog.Write("operation", "更新设备", $"{item.Name}（{item.Host}:{item.Port}）");
+        _activityLog.Write("operation", "更新设备", $"{item.Name}（{item.Host}:{item.Port}）",
+            device: item.Name, result: "成功");
         return Ok(Redact(item));
     }
 
@@ -189,7 +232,8 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         var sync = await _sync.DeleteAsync(id, ct);
         if (!sync.Success)
             _logger.LogWarning("设备 {DeviceId} 上游删除未成功：{Error}", id, sync.Error);
-        _activityLog.Write("operation", "删除设备", target.Name);
+        _activityLog.Write("operation", "删除设备", target.Name,
+            device: target.Name, result: sync.Success ? "成功" : "部分成功");
         return NoContent();
     }
 
@@ -211,31 +255,109 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         var item = _store.ReadAll().FirstOrDefault(x => x.Id == id);
         if (item is null) return NotFound();
 
+        var result = await RunConnectionTestAsync(item, ct);
+        _connectionStats.Record(id, result.Success, result.LatencyMs, result.Mode);
+        var latencyText = result.LatencyMs > 0 ? $"{result.LatencyMs:N0} ms" : null;
+        return Ok(new { success = result.Success, latency = latencyText, errorMessage = result.Error, mode = result.Mode });
+    }
+
+    /// <summary>连接健康诊断：返回可达性、失败原因与修复建议。</summary>
+    [HttpGet("{id}/diagnose")]
+    public async Task<IActionResult> Diagnose(string id, CancellationToken ct)
+    {
+        var item = _store.ReadAll().FirstOrDefault(x => x.Id == id);
+        if (item is null) return NotFound();
+
+        var result = await RunConnectionTestAsync(item, ct);
+        _connectionStats.Record(id, result.Success, result.LatencyMs, result.Mode);
+
+        var reason = result.Error ?? "连接失败";
+        var suggestions = new List<string>();
+
+        if (result.Success)
+        {
+            reason = result.Mode == "driver" ? "驱动级握手成功" : "TCP 端口可达（未经协议驱动验证）";
+            if (result.Mode != "driver")
+                suggestions.Add("端口可达但未通过协议驱动验证，请在采集服务在线时执行驱动级连接测试");
+        }
+        else if (result.Mode == "sync")
+        {
+            reason = result.Error ?? "设备未同步到采集服务";
+            suggestions.Add("确认采集服务(Host)已运行，并执行「上游同步」");
+        }
+        else if (UsesSerialPort(item.Protocol))
+        {
+            suggestions.Add("检查串口线缆、PortName 与波特率/数据位/校验位配置");
+        }
+        else
+        {
+            var msg = result.Error ?? "";
+            if (msg.Contains("refused", StringComparison.OrdinalIgnoreCase) || msg.Contains("积极拒绝"))
+            {
+                suggestions.Add("确认设备 IP/端口正确、设备已上电并开放对应端口");
+                suggestions.Add("核对协议端口（如 Modbus 502、S7 102、FINS 9600）");
+            }
+            else if (msg.Contains("timed out", StringComparison.OrdinalIgnoreCase) || msg.Contains("超时"))
+            {
+                suggestions.Add("检查网络可达性与防火墙策略");
+                suggestions.Add("适当增大连接超时 ConnectTimeoutMs");
+            }
+            else
+            {
+                suggestions.Add("核对协议类型、站号/单元号与设备接线");
+                suggestions.Add("确认采集服务(Host)已运行且该协议驱动已注册");
+            }
+        }
+
+        return Ok(new
+        {
+            deviceId = id,
+            reachable = result.Success,
+            mode = result.Mode,
+            latencyMs = result.LatencyMs,
+            protocol = item.Protocol,
+            endpoint = $"{item.Host}:{item.Port}",
+            reason,
+            suggestions,
+        });
+    }
+
+    /// <summary>连接质量统计（默认近 24h）：成功率/平均与最大响应/断线次数。</summary>
+    [HttpGet("{id}/connection-stats")]
+    public IActionResult ConnectionStats(string id, [FromQuery] int hours = 24)
+    {
+        var item = _store.ReadAll().FirstOrDefault(x => x.Id == id);
+        if (item is null) return NotFound();
+        return Ok(_connectionStats.Summarize(id, hours));
+    }
+
+    private async Task<(bool Success, long LatencyMs, string Mode, string? Error)> RunConnectionTestAsync(
+        MachineDeviceDto item, CancellationToken ct)
+    {
         if (item.UpstreamSynced == false && !item.RestoredFromUpstream)
         {
             var sync = await SyncForConnectionTestAsync(item, ct);
             if (!sync.Success)
-                return Ok(new { success = false, mode = "sync",
-                    errorMessage = $"设备配置同步采集服务失败，未执行连接测试：{sync.Error}" });
+                return (false, 0, "sync", $"设备配置同步采集服务失败，未执行连接测试：{sync.Error}");
         }
 
         var driver = await TryUpstreamDriverTestAsync(item, ct);
         if (driver is not null)
         {
-            MarkDriverStatus(id, driver.Success);
-            var latencyText = driver.Latency is { } latency ? $"{latency.TotalMilliseconds:N0} ms" : null;
-            return Ok(new { success = driver.Success, latency = latencyText, errorMessage = driver.ErrorMessage, mode = "driver" });
+            MarkDriverStatus(item.Id, driver.Success);
+            var latencyMs = driver.Latency is { } latency ? (long)latency.TotalMilliseconds : 0L;
+            return (driver.Success, latencyMs, "driver", driver.ErrorMessage);
         }
 
         if (UsesSdkPort(item.Protocol))
-            return Ok(new { success = false, errorMessage = "采集服务不可用，尚未完成广数 SDK 协议验证", mode = "driver" });
+            return (false, 0, "driver", "采集服务不可用，尚未完成广数 SDK 协议验证");
         if (UsesSerialPort(item.Protocol))
-            return Ok(new { success = false, errorMessage = "采集服务不可用，尚未打开串口，串口连接不执行 TCP 探测", mode = "driver" });
+            return (false, 0, "driver", "采集服务不可用，尚未打开串口，串口连接不执行 TCP 探测");
         if (string.Equals(item.Protocol, "EstunRobot", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(item.Protocol, "ModbusTCP", StringComparison.OrdinalIgnoreCase) &&
             (string.Equals(item.Brand?.Trim(), "ESTUN", StringComparison.OrdinalIgnoreCase) ||
              string.Equals(item.Brand?.Trim(), "埃斯顿", StringComparison.OrdinalIgnoreCase)))
-            return Ok(new { success = false, errorMessage = "采集服务不可用，未完成埃斯顿协议验证；请检查采集服务连接", mode = "driver" });
+            return (false, 0, "driver", "采集服务不可用，未完成埃斯顿协议验证；请检查采集服务连接");
 
         try
         {
@@ -244,12 +366,8 @@ public class DevicesController : IndustrialIoTProxyControllerBase
             timeout.CancelAfter(TimeSpan.FromMilliseconds(item.ConnectTimeoutMs > 0 ? item.ConnectTimeoutMs : 10000));
             var start = DateTimeOffset.Now;
             await tcp.ConnectAsync(item.Host, item.Port, timeout.Token);
-            var elapsed = DateTimeOffset.Now - start;
-            return Ok(new
-            {
-                success = true, latency = $"{elapsed.TotalMilliseconds:N0} ms", mode = "tcp",
-                errorMessage = "仅 TCP 端口可达，采集服务未完成协议驱动验证",
-            });
+            var elapsed = (long)(DateTimeOffset.Now - start).TotalMilliseconds;
+            return (true, elapsed, "tcp", "仅 TCP 端口可达，采集服务未完成协议驱动验证");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -257,7 +375,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         }
         catch (Exception ex)
         {
-            return Ok(new { success = false, errorMessage = ex.Message, mode = "tcp" });
+            return (false, 0, "tcp", ex.Message);
         }
     }
 
@@ -384,29 +502,91 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         return File(Encoding.UTF8.GetBytes(json), "application/json", $"devices-{DateTime.Now:yyyyMMdd-HHmmss}.json");
     }
 
+    private const string XlsxContentType =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    /// <summary>Excel(.xlsx) 设备导入模板（列与 CSV 模板一致）。</summary>
+    [HttpGet("template.xlsx")]
+    public IActionResult DownloadTemplateXlsx()
+    {
+        var rows = new List<IReadOnlyList<object?>>
+        {
+            new object?[]
+            {
+                "name", "type", "brand", "model", "protocol", "host", "port",
+                "username", "password", "connectTimeoutMs", "readTimeoutMs", "description",
+            },
+            new object?[]
+            {
+                "PLC-001", "PLC", "Siemens", "S7-1500", "ModbusTCP", "192.168.1.10", 502,
+                "", "", 10000, 5000, "示例行，可删除",
+            },
+        };
+        return File(ExcelBuilder.Build("设备导入模板", rows), XlsxContentType, "device-import-template.xlsx");
+    }
+
+    /// <summary>导出设备清单为 Excel（不含口令）。</summary>
+    [HttpGet("export.xlsx")]
+    public IActionResult ExportXlsx()
+    {
+        var devices = _store.ReadAll();
+        var rows = new List<IReadOnlyList<object?>>
+        {
+            new object?[]
+            {
+                "name", "type", "brand", "model", "protocol", "host", "port",
+                "username", "connectTimeoutMs", "readTimeoutMs", "status",
+            },
+        };
+        foreach (var d in devices)
+        {
+            rows.Add(new object?[]
+            {
+                d.Name, d.Type, d.Brand, d.Model, d.Protocol, d.Host, d.Port,
+                d.Username ?? "", d.ConnectTimeoutMs, d.ReadTimeoutMs, d.Status,
+            });
+        }
+        _activityLog.Write("operation", "导出设备(Excel)", $"共 {devices.Count} 台");
+        return File(ExcelBuilder.Build("设备清单", rows), XlsxContentType, $"devices-{DateTime.Now:yyyyMMdd-HHmmss}.xlsx");
+    }
+
     [HttpPost("import")]
     [Consumes("multipart/form-data")]
     public async Task<ActionResult<DeviceImportResult>> Import(IFormFile file, CancellationToken ct)
     {
         if (file.Length == 0) return BadRequest(new { error = "导入文件为空" });
-        await using var stream = file.OpenReadStream();
-        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        var text = await reader.ReadToEndAsync(ct);
 
-        // 「导出设备」生成的 JSON 保留完整配置；CSV 模板只含基础字段
-        var isJson = file.FileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
-            || text.TrimStart('\uFEFF', ' ', '\t', '\r', '\n').StartsWith('[');
         List<MachineDeviceDto>? snapshot = null;
         List<List<string>>? rows = null;
-        if (isJson)
+
+        var isExcel = file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)
+            || file.FileName.EndsWith(".xls", StringComparison.OrdinalIgnoreCase);
+        if (isExcel)
         {
-            try { snapshot = DeviceSnapshot.Parse(text.TrimStart('\uFEFF'), "导入文件"); }
-            catch (JsonException ex) { return BadRequest(new { error = ex.Message }); }
+            await using var excelStream = file.OpenReadStream();
+            try { rows = EvaluationSpreadsheetReader.Read(excelStream); }
+            catch (Exception ex) { return BadRequest(new { error = $"Excel 解析失败：{ex.Message}" }); }
+            if (rows.Count < 2) return BadRequest(new { error = "Excel 至少需要表头和一行设备数据" });
         }
         else
         {
-            rows = ParseCsv(text);
-            if (rows.Count < 2) return BadRequest(new { error = "CSV 至少需要表头和一行设备数据" });
+            await using var stream = file.OpenReadStream();
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            var text = await reader.ReadToEndAsync(ct);
+
+            // 「导出设备」生成的 JSON 保留完整配置；CSV 模板只含基础字段
+            var isJson = file.FileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                || text.TrimStart('\uFEFF', ' ', '\t', '\r', '\n').StartsWith('[');
+            if (isJson)
+            {
+                try { snapshot = DeviceSnapshot.Parse(text.TrimStart('\uFEFF'), "导入文件"); }
+                catch (JsonException ex) { return BadRequest(new { error = ex.Message }); }
+            }
+            else
+            {
+                rows = ParseCsv(text);
+                if (rows.Count < 2) return BadRequest(new { error = "CSV 至少需要表头和一行设备数据" });
+            }
         }
 
         using var registryOperation = await DeviceRegistryGate.EnterAsync(_store, ct);

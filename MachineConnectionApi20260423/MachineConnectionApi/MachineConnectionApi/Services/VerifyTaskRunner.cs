@@ -12,6 +12,8 @@ public interface IVerifyTaskRunner
     Task<VerifyTaskDto?> StartTaskAsync(string taskId, string trigger, CancellationToken ct);
     /// <summary>Replay completed results whose final task-store write failed; never repeat measurements.</summary>
     Task RetryPendingResultsAsync(CancellationToken ct);
+    /// <summary>请求终止仍在执行的运行（进程内）。返回 false 表示该任务未在本进程运行。</summary>
+    bool CancelTask(string taskId);
 }
 
 /// <summary>同一任务已在执行中（进程内互斥），重复提交被拒绝。</summary>
@@ -34,6 +36,7 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
     private readonly IDeviceStore? _devices;
     private readonly CancellationToken _shutdown;
     private readonly ConcurrentDictionary<string, byte> _runningTasks = new();
+    private readonly ConcurrentDictionary<string, Execution> _active = new();
     private readonly VerifyExecutionLeaseService _leases;
     private readonly VerifyTaskCompletionJournal? _journal;
     private readonly ConcurrentDictionary<string, VerifyTaskPendingCompletion> _pending = new();
@@ -52,6 +55,9 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
         public VerifyTaskDto Accepted { get; set; } = task;
         public Exception? SelectionError { get; set; }
         public IDisposable? Lease { get; set; }
+        /// <summary>Per-run cancellation owned by the runner; a user "终止" request cancels it.</summary>
+        public CancellationTokenSource? Cts { get; set; }
+        public bool CancelRequested { get; set; }
     }
 
     public VerifyTaskRunner(
@@ -76,7 +82,11 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
     public async Task<VerifyTaskDto?> RunTaskAsync(string taskId, string trigger, CancellationToken ct)
     {
         var execution = await BeginAsync(taskId, trigger, ct);
-        return execution is null ? null : await ExecuteAndReleaseAsync(execution, trigger, ct);
+        if (execution is null) return null;
+        // Synchronous /run also honours client disconnect plus an explicit 终止 request.
+        execution.Cts = CancellationTokenSource.CreateLinkedTokenSource(ct, _shutdown);
+        _active[taskId] = execution;
+        return await ExecuteAndReleaseAsync(execution, trigger, execution.Cts.Token);
     }
 
     public async Task<VerifyTaskDto?> StartTaskAsync(string taskId, string trigger, CancellationToken ct)
@@ -86,12 +96,25 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
         var accepted = execution.Accepted;
         // The runner and its dependencies are singletons. Do not use RequestAborted here: closing a
         // browser must not abort a 30-minute stability test. Shutdown is recovered on next startup.
+        // Explicit 终止 requests cancel this token instead.
+        execution.Cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdown);
+        _active[taskId] = execution;
         _ = Task.Run(async () =>
         {
-            try { await ExecuteAndReleaseAsync(execution, trigger, _shutdown); }
+            try { await ExecuteAndReleaseAsync(execution, trigger, execution.Cts!.Token); }
             catch (Exception ex) { WriteActivity("error", trigger, execution.Task.Name + "：" + ex.Message); }
         });
         return accepted;
+    }
+
+    /// <summary>终止正在执行的运行；请求取消其独占令牌，测量循环会在当前采样/传输超时内退出。</summary>
+    public bool CancelTask(string taskId)
+    {
+        if (!_active.TryGetValue(taskId, out var execution)) return false;
+        execution.CancelRequested = true;
+        try { execution.Cts?.Cancel(); }
+        catch (ObjectDisposedException) { return false; }
+        return true;
     }
 
     private async Task<Execution?> BeginAsync(string taskId, string trigger, CancellationToken ct)
@@ -192,7 +215,10 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
                 lock (execution.Gate)
                 {
                     response = JsonSerializer.Deserialize<VerifyRunResponse>(execution.Snapshot, JsonOptions) ?? new();
-                    Interrupt(response, ex is OperationCanceledException ? "执行中断" : "执行失败", ex.Message);
+                    var result = ex is OperationCanceledException
+                        ? execution.CancelRequested ? "已终止" : "执行中断"
+                        : "执行失败";
+                    Interrupt(response, result, ex.Message);
                 }
             }
             return await CompleteAsync(execution, response, trigger);
@@ -200,6 +226,8 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
         finally
         {
             lock (execution.Gate) execution.Finished = true;
+            _active.TryRemove(execution.Task.Id, out _);
+            try { execution.Cts?.Dispose(); } catch { }
             execution.Lease?.Dispose();
             _runningTasks.TryRemove(execution.Task.Id, out _);
         }

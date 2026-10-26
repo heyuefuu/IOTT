@@ -18,11 +18,15 @@ export interface SystemLogDto {
 	ip: string;
 	timestamp: string;
 	detail: string;
+	device?: string;
+	result?: string;
 }
 
 export interface SystemLogQuery {
 	type?: string;
 	user?: string;
+	device?: string;
+	result?: string;
 	keyword?: string;
 }
 
@@ -34,7 +38,19 @@ export interface AppUserDto {
 	role: string;
 	status: string;
 	permissions: string[];
+	roles?: string[];
 	lastLogin: string;
+}
+
+export interface RoleDto {
+	id: string;
+	key: string;
+	name: string;
+	description: string;
+	permissions: string[];
+	dataScopes?: string[];
+	builtIn: boolean;
+	createdAt: string;
 }
 
 export interface PermissionDto {
@@ -111,6 +127,28 @@ export const businessSystemApi = {
 			"/api/system/users/permissions",
 		);
 		return res.data ?? [];
+	},
+
+	async listRoles(): Promise<RoleDto[]> {
+		const res = await client.get<RoleDto[]>("/api/system/roles");
+		return res.data ?? [];
+	},
+
+	async createRole(role: Partial<RoleDto>): Promise<RoleDto> {
+		const res = await client.post<RoleDto>("/api/system/roles", role);
+		return res.data;
+	},
+
+	async updateRole(id: string, role: Partial<RoleDto>): Promise<RoleDto> {
+		const res = await client.put<RoleDto>(
+			`/api/system/roles/${enc(id)}`,
+			role,
+		);
+		return res.data;
+	},
+
+	async deleteRole(id: string): Promise<void> {
+		await client.delete(`/api/system/roles/${enc(id)}`);
 	},
 
 	async createUser(user: AppUserDto): Promise<AppUserDto> {

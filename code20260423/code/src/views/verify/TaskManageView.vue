@@ -91,6 +91,7 @@
 					border
 					row-key="id"
 					:expand-row-keys="expandedRows"
+					@expand-change="onTaskExpand"
 				>
 					<el-table-column type="expand">
 						<template #default="scope">
@@ -268,11 +269,11 @@
 										<div class="machine-option">
 											<span>{{ machine.name }}</span>
 											<el-tag
-												:type="machine.status === '在线' ? 'success' : 'warning'"
+												:type="getMachineStatusType(machine)"
 												size="small"
 												style="margin-left: 10px"
 											>
-												{{ machine.status }}
+												{{ getMachineStatusText(machine) }}
 											</el-tag>
 										</div>
 									</el-option>
@@ -479,6 +480,10 @@ import { ref, reactive, computed, onMounted } from "vue";
 import { Plus, Search } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { machineConnectionDevicesApi } from "@/api/machineConnectionDevices";
+import {
+	getDeviceRuntimeStatus,
+	type DeviceRuntimeStatus,
+} from "@/stores/deviceRuntimeStatus";
 import { businessValidationApi, type MetricDto } from "@/api/businessValidation";
 import { machineConnectionVerifyApi } from "@/api/machineConnectionVerify";
 import { downloadBlob } from "@/api/browserDownload";
@@ -512,10 +517,15 @@ interface Task {
 interface Machine {
 	id: string;
 	name: string;
-	status: string;
 	type: string;
 	ip: string;
 }
+
+const machineRuntimeStatusText = (status: DeviceRuntimeStatus) =>
+	status === "online" ? "在线" : status === "error" ? "故障" : "未知";
+const getMachineStatusText = (machine: Machine) => machineRuntimeStatusText(getDeviceRuntimeStatus(machine.id));
+const getMachineStatusType = (machine: Machine) =>
+	getDeviceRuntimeStatus(machine.id) === "online" ? "success" : getDeviceRuntimeStatus(machine.id) === "error" ? "danger" : "info";
 
 type MetricOption = MetricDto;
 
@@ -589,6 +599,9 @@ const taskCreateDialogVisible = ref(false);
 
 // 展开的行
 const expandedRows = ref<string[]>([]);
+function onTaskExpand(_row: Task, expanded: Task[]) {
+	expandedRows.value = expanded.map(task => task.id);
+}
 
 // 指标结果
 const metricResults = ref<MetricResult[]>([]);
@@ -618,7 +631,6 @@ const loadPageData = async () => {
 		machines.value = deviceList.map((device) => ({
 			id: device.id,
 			name: device.name,
-			status: device.status === "Online" ? "在线" : "离线",
 			type: device.type,
 			ip: device.host,
 		}));

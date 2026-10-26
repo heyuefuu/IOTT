@@ -35,50 +35,57 @@ public sealed class HNCBrandAdapter : IBrandAdapter
 
     private static readonly Dictionary<string, string> _pathToId = new(StringComparer.OrdinalIgnoreCase)
     {
-        // 主轴
-        ["/CNC/Spindle/Speed"] = "010302",
-        ["/CNC/Spindle/Load"] = "010303",
+        // 主轴（HNC 848 模型：010303=进给速度，010306=主轴倍率；模型未单独提供主轴转速/负载）
+        ["/CNC/Spindle/Speed"] = "010303",
+        ["/CNC/Spindle/Load"] = "010306",
 
-        // 程序
-        ["/CNC/Program/Number"] = "010304",
-        ["/CNC/Program/Status"] = "010305",
+        // 程序（01035409=主程序名，01035412=报警，010302=机床状态）
+        ["/CNC/Program/Number"] = "01035409",
+        ["/CNC/Program/Status"] = "01035412",
 
         // 系统状态
-        ["/CNC/Mode"] = "010306",
+        ["/CNC/Mode"] = "010302",
         ["/CNC/PartCount"] = "010307",
 
-        // 报警
-        ["/CNC/Alarm/Active"] = "010308",
-        ["/CNC/Alarm/Code"] = "010309",
-        ["/CNC/Alarm/Message"] = "01030A",
+        // 报警（01035412=报警）
+        ["/CNC/Alarm/Active"] = "01035412",
+        ["/CNC/Alarm/Code"] = "01035412",
+        ["/CNC/Alarm/Message"] = "01035412",
 
-        // 轴 — X
-        ["/CNC/Axis/X/Position"] = "010311",
-        ["/CNC/Axis/X/FeedRate"] = "010312",
+        // 轴 — X（01035022 丝杠：01=实际位置；01035020 驱动：03=指令速度）
+        ["/CNC/Axis/X/Position"] = "0103502201",
+        ["/CNC/Axis/X/FeedRate"] = "0103502003",
         // 轴 — Y
-        ["/CNC/Axis/Y/Position"] = "010321",
-        ["/CNC/Axis/Y/FeedRate"] = "010322",
+        ["/CNC/Axis/Y/Position"] = "0103512201",
+        ["/CNC/Axis/Y/FeedRate"] = "0103512003",
         // 轴 — Z
-        ["/CNC/Axis/Z/Position"] = "010331",
-        ["/CNC/Axis/Z/FeedRate"] = "010332",
-        // 轴 — A
-        ["/CNC/Axis/A/Position"] = "010341",
-        ["/CNC/Axis/A/FeedRate"] = "010342",
-        // 轴 — B
-        ["/CNC/Axis/B/Position"] = "010351",
-        ["/CNC/Axis/B/FeedRate"] = "010352",
-        // 轴 — C
-        ["/CNC/Axis/C/Position"] = "010361",
-        ["/CNC/Axis/C/FeedRate"] = "010362",
+        ["/CNC/Axis/Z/Position"] = "0103522201",
+        ["/CNC/Axis/Z/FeedRate"] = "0103522003",
+        // 轴 — A/B（模型以 AXIS_3/4/5 列表暴露）
+        ["/CNC/Axis/A/Position"] = "01035458",
+        ["/CNC/Axis/A/FeedRate"] = "01035459",
+        ["/CNC/Axis/B/Position"] = "01035460",
+        ["/CNC/Axis/B/FeedRate"] = "01035458",
+        // 轴 — C（010353 轴：01=实际位置，02=实际速度）
+        ["/CNC/Axis/C/Position"] = "0103532101",
+        ["/CNC/Axis/C/FeedRate"] = "0103532002",
 
         // 进给
-        ["/CNC/FeedRate"] = "010370",
-        ["/CNC/FeedOverride"] = "010371",
-        ["/CNC/SpindleOverride"] = "010372",
+        ["/CNC/FeedRate"] = "010303",
+        ["/CNC/FeedOverride"] = "010305",
+        ["/CNC/SpindleOverride"] = "010306",
     };
 
-    private static readonly Dictionary<string, string> _idToPath =
-        _pathToId.ToDictionary(kv => kv.Value, kv => kv.Key, StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string> _idToPath = BuildReverseMap();
+
+    private static Dictionary<string, string> BuildReverseMap()
+    {
+        // 多个标准路径可能映射到同一个 DataItem（如报警三字段都指向 01035412），
+        // 反向映射保留第一个，避免 ToDictionary 因重复键在静态构造时抛异常。
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, id) in _pathToId) map.TryAdd(id, path);
+        return map;
+    }
 
     public string MapPath(string standardPath)
         => _pathToId.TryGetValue(standardPath, out var id) ? id : standardPath;

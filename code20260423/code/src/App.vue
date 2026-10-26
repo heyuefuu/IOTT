@@ -129,6 +129,7 @@ const userDisplayName = computed(
 const rawMenuItems = [
 	{ path: "/", label: "首页", icon: Grid },
 	{ path: "/industrial/device", label: "CNC监控", icon: Monitor },
+	{ path: "/industrial/template", label: "设备模板", icon: Files },
 	{
 		path: "/plc/device",
 		label: "PLC监控",
@@ -165,7 +166,10 @@ const rawMenuItems = [
 		icon: Lock,
 		subItems: [
 			{ path: "/system/log", label: "日志管理" },
+			{ path: "/system/operation-log", label: "操作历史" },
 			{ path: "/system/permission", label: "权限管理" },
+			{ path: "/system/role", label: "角色管理" },
+			{ path: "/system/data-output", label: "数据出口" },
 		],
 	},
 ];

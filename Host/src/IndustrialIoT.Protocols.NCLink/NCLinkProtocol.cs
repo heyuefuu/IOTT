@@ -148,11 +148,19 @@ public static class NCLinkProtocol
         return values.Select(v =>
         {
             var obj = v!.AsObject();
+            // HNC returns { values: [..], code: "OK", id } instead of { value, quality, id }.
+            var valueNode = obj["value"];
+            if (valueNode is null && obj["values"] is JsonArray valueArray && valueArray.Count > 0)
+                valueNode = valueArray[0];
+            var codeText = obj["code"] is JsonValue codeValue && codeValue.TryGetValue<string>(out var text) ? text : null;
+            var quality = obj["quality"]?.GetValue<string>()
+                ?? (string.Equals(codeText, "OK", StringComparison.OrdinalIgnoreCase) ? "Good"
+                    : codeText is null ? null : "Bad");
             return new QueryResultValue
             {
                 Id = obj["id"]?.GetValue<string>() ?? "",
-                Value = obj["value"],
-                Quality = obj["quality"]?.GetValue<string>(),
+                Value = valueNode,
+                Quality = quality,
                 Timestamp = obj["timestamp"]?.GetValue<long>(),
             };
         }).ToList();

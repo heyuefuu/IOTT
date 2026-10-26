@@ -2,6 +2,7 @@ namespace IndustrialIoT.Host.Controllers;
 
 using IndustrialIoT.Application.DTOs;
 using IndustrialIoT.Domain.Enums;
+using IndustrialIoT.Domain.Interfaces;
 using IndustrialIoT.Infrastructure.Messaging;
 using IndustrialIoT.Messaging;
 using IndustrialIoT.Protocols.Abstractions;
@@ -15,10 +16,12 @@ public class CollectionController : ControllerBase
 {
     private readonly ICollectionPipeline _pipeline;
     private readonly MqttDataOutput? _mqttOutput;
+    private readonly IDeviceRepository _deviceRepo;
 
-    public CollectionController(ICollectionPipeline pipeline, MqttDataOutput? mqttOutput = null)
+    public CollectionController(ICollectionPipeline pipeline, IDeviceRepository deviceRepo, MqttDataOutput? mqttOutput = null)
     {
         _pipeline = pipeline;
+        _deviceRepo = deviceRepo;
         _mqttOutput = mqttOutput;
     }
 
@@ -36,6 +39,14 @@ public class CollectionController : ControllerBase
         [FromBody] StartCollectionRequest request,
         CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(request.DeviceId))
+            return BadRequest(new { error = "deviceId 必填" });
+
+        // 设备可能尚未从上游（网关）同步落库：此处快速失败并给出明确原因，
+        // 避免先返回 200+taskId，随后在后台以 "Device ... not found" 异步 fault。
+        if (await _deviceRepo.GetByIdAsync(request.DeviceId.Trim(), ct) is null)
+            return NotFound(new { error = $"设备不存在或尚未同步到 Host: {request.DeviceId}" });
+
         var profile = new DeviceCollectionProfile
         {
             DeviceId = request.DeviceId,

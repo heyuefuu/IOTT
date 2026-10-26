@@ -1,0 +1,7 @@
+{
+  "port": 5199,
+  "scenario": "Normal",
+  "seed": 42,
+  "devices": 30,
+  "notes": "默认参数；可被命令行 --port/--scenario/--seed/--devices 覆盖。场景: Normal | HighLatency | IntermittentFault | DataDrift | PartialBad"
+}

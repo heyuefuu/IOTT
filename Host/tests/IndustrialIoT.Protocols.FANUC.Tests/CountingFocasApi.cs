@@ -153,10 +153,10 @@ internal sealed class CountingFocasApi : IFocasApi
         return rc;
     }
 
-    public int ReadParameter(int handle, int number, out int value)
+    public int ReadParameter(int handle, int number, short length, out int value)
     {
-        var result = 0;
-        var rc = Count(nameof(ReadParameter), () => _inner.ReadParameter(handle, number, out result));
+        int result = 0;
+        var rc = Count(nameof(ReadParameter), () => _inner.ReadParameter(handle, number, length, out result));
         value = result;
         return rc;
     }

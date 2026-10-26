@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using MachineConnectionApi.Proxy;
+using MachineConnectionApi.Services;
+using System.IO.Compression;
 using System.Net;
+using System.Security;
 using System.Text;
 using System.Text.Json;
 
@@ -80,6 +83,179 @@ public class AddressSpaceController : IndustrialIoTProxyControllerBase
             : $"{AddressSpacePath}/{Uri.EscapeDataString(deviceId)}/export?format={Uri.EscapeDataString(format)}";
 
         return ProxyFileAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    private const string XlsxContentType =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    /// <summary>导出地址空间为 Excel(.xlsx)：取上游 CSV 导出后转换为 xlsx（可选公司/项目元数据头）。</summary>
+    [HttpGet("{deviceId}/export.xlsx")]
+    public async Task<IActionResult> ExportXlsx(
+        string deviceId,
+        [FromQuery] string? company,
+        [FromQuery] string? project,
+        CancellationToken ct)
+    {
+        var (ok, csv, error) = await TryFetchHostCsvAsync(deviceId, ct);
+        if (!ok) return StatusCode(StatusCodes.Status502BadGateway, new { error });
+        var rows = WithMetadata(ParseCsv(csv), deviceId, company, project);
+        var bytes = ExcelBuilder.Build("地址空间", rows);
+        return File(bytes, XlsxContentType, $"address_space_{deviceId}.xlsx");
+    }
+
+    /// <summary>批量导出多台设备的地址空间为 zip（每台一个 xlsx，按设备名分文件）。</summary>
+    [HttpGet("export-batch.zip")]
+    public async Task<IActionResult> ExportBatch(
+        [FromQuery] string deviceIds,
+        [FromQuery] string? company,
+        [FromQuery] string? project,
+        CancellationToken ct)
+    {
+        var ids = (deviceIds ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (ids.Length == 0)
+            return BadRequest(new { error = "deviceIds 不能为空" });
+
+        using var buffer = new MemoryStream();
+        var exported = 0;
+        using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var id in ids)
+            {
+                var (ok, csv, _) = await TryFetchHostCsvAsync(id, ct);
+                if (!ok) continue;
+                var rows = WithMetadata(ParseCsv(csv), id, company, project);
+                var bytes = ExcelBuilder.Build("地址空间", rows);
+                var entry = zip.CreateEntry($"address_space_{SanitizeXmlName(id)}.xlsx");
+                using var entryStream = entry.Open();
+                entryStream.Write(bytes);
+                exported++;
+            }
+        }
+
+        if (exported == 0)
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = "所有设备地址导出均失败或无数据" });
+
+        return File(buffer.ToArray(), "application/zip",
+            $"address_space_batch_{DateTimeOffset.Now:yyyyMMddHHmmss}.zip");
+    }
+
+    private static List<IReadOnlyList<object?>> WithMetadata(
+        List<IReadOnlyList<object?>> rows,
+        string deviceId,
+        string? company,
+        string? project)
+    {
+        if (string.IsNullOrWhiteSpace(company) && string.IsNullOrWhiteSpace(project))
+            return rows;
+
+        var withMeta = new List<IReadOnlyList<object?>>
+        {
+            new object?[] { "公司", company ?? "" },
+            new object?[] { "项目", project ?? "" },
+            new object?[] { "设备", deviceId },
+            new object?[] { "导出时间", DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss") },
+            new object?[] { },
+        };
+        withMeta.AddRange(rows);
+        return withMeta;
+    }
+
+    /// <summary>导出地址空间为 XML：取上游 CSV 导出后转换为 XML。</summary>
+    [HttpGet("{deviceId}/export.xml")]
+    public async Task<IActionResult> ExportXml(string deviceId, CancellationToken ct)
+    {
+        var (ok, csv, error) = await TryFetchHostCsvAsync(deviceId, ct);
+        if (!ok) return StatusCode(StatusCodes.Status502BadGateway, new { error });
+        var xml = BuildXml(ParseCsv(csv));
+        return File(Encoding.UTF8.GetBytes(xml), "application/xml", $"address_space_{deviceId}.xml");
+    }
+
+    private async Task<(bool Ok, string Csv, string? Error)> TryFetchHostCsvAsync(string deviceId, CancellationToken ct)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient("IndustrialIoT");
+            var path = $"{AddressSpacePath}/{Uri.EscapeDataString(deviceId)}/export?format=csv";
+            using var response = await client.GetAsync(path, ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, "", $"上游导出失败：HTTP {(int)response.StatusCode}");
+            var text = await response.Content.ReadAsStringAsync(ct);
+            if (string.IsNullOrWhiteSpace(text))
+                return (false, "", "上游导出为空（该协议可能不支持导出）");
+            return (true, text, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, "", ex.Message);
+        }
+    }
+
+    private static List<IReadOnlyList<object?>> ParseCsv(string text)
+    {
+        var rows = new List<IReadOnlyList<object?>>();
+        foreach (var raw in text.Replace("\r\n", "\n").Replace('\r', '\n').TrimStart('\uFEFF').Split('\n'))
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            rows.Add(SplitCsvLine(raw).Cast<object?>().ToList());
+        }
+        return rows;
+    }
+
+    private static List<string> SplitCsvLine(string line)
+    {
+        var cells = new List<string>();
+        var sb = new StringBuilder();
+        var inQuotes = false;
+        for (var i = 0; i < line.Length; i++)
+        {
+            var ch = line[i];
+            if (inQuotes)
+            {
+                if (ch == '"')
+                {
+                    if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; }
+                    else inQuotes = false;
+                }
+                else sb.Append(ch);
+            }
+            else if (ch == '"') inQuotes = true;
+            else if (ch == ',') { cells.Add(sb.ToString()); sb.Clear(); }
+            else sb.Append(ch);
+        }
+        cells.Add(sb.ToString());
+        return cells;
+    }
+
+    private static string BuildXml(List<IReadOnlyList<object?>> rows)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<AddressSpace>\n");
+        if (rows.Count > 0)
+        {
+            var headers = rows[0].Select(h => SanitizeXmlName(h?.ToString() ?? "")).ToList();
+            for (var r = 1; r < rows.Count; r++)
+            {
+                sb.Append("  <Node>\n");
+                var cells = rows[r];
+                for (var c = 0; c < headers.Count && c < cells.Count; c++)
+                {
+                    var value = SecurityElement.Escape(cells[c]?.ToString() ?? "") ?? "";
+                    sb.Append($"    <{headers[c]}>{value}</{headers[c]}>\n");
+                }
+                sb.Append("  </Node>\n");
+            }
+        }
+        sb.Append("</AddressSpace>");
+        return sb.ToString();
+    }
+
+    private static string SanitizeXmlName(string name)
+    {
+        var cleaned = new string(name.Where(ch => char.IsLetterOrDigit(ch) || ch == '_').ToArray());
+        if (string.IsNullOrEmpty(cleaned)) cleaned = "Field";
+        if (char.IsDigit(cleaned[0])) cleaned = "F" + cleaned;
+        return cleaned;
     }
 
     private string BuildBrowsePath(string deviceId, string? parentPath)

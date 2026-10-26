@@ -199,7 +199,7 @@ internal static partial class CncGatewayRoutingRegressionTests
     }
 
     private static DataReadWriteController DataController(HostFixture host, string body) => WithRequest(
-        new DataReadWriteController(host, Configuration, NullLogger<DataReadWriteController>.Instance), body);
+        new DataReadWriteController(host, Configuration, new MachineConnectionApi.Services.DeviceStore(), new MachineConnectionApi.Services.DeviceOperationLogStore(), NullLogger<DataReadWriteController>.Instance), body);
 
     private static ProgramTransferController TransferController(HostFixture host, string body = "", string query = "") => WithRequest(
         new ProgramTransferController(host, Configuration, NullLogger<ProgramTransferController>.Instance), body, query: query);

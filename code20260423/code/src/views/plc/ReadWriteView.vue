@@ -81,8 +81,16 @@
 												value="int"
 											/>
 											<el-option
+												label="32位无符号（双字）"
+												value="uint32"
+											/>
+											<el-option
 												label="浮点数"
 												value="float"
+											/>
+											<el-option
+												label="双精度浮点数"
+												value="double"
 											/>
 											<el-option
 												label="字符串"
@@ -187,8 +195,16 @@
 													value="int"
 												/>
 												<el-option
+													label="32位无符号（双字）"
+													value="uint32"
+												/>
+												<el-option
 													label="浮点数"
 													value="float"
+												/>
+												<el-option
+													label="双精度浮点数"
+													value="double"
 												/>
 												<el-option
 													label="字符串"
@@ -249,7 +265,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, onMounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import { Link, Edit, Plus, Reading } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { machineConnectionDevicesApi } from "@/api/machineConnectionDevices";
@@ -283,8 +300,12 @@ function toApiDataType(t: string): string {
 			return "UInt16";
 		case "int":
 			return "Int32";
+		case "uint32":
+			return "UInt32";
 		case "float":
 			return "Float";
+		case "double":
+			return "Double";
 		default:
 			return "String";
 	}
@@ -293,15 +314,43 @@ function toApiDataType(t: string): string {
 // 写入值按类型转换
 function coerceValue(t: string, v: string): unknown {
 	if (t === "bool") return v === "true" || v === "1";
-	if (t === "int" || t === "int16" || t === "uint16") return parseInt(v, 10);
-	if (t === "float") return parseFloat(v);
+	if (t === "int" || t === "int16" || t === "uint16" || t === "uint32")
+		return parseInt(v, 10);
+	if (t === "float" || t === "double") return parseFloat(v);
 	return v;
+}
+
+// 写入值范围校验（按类型）
+function validateValue(t: string, raw: string): string | null {
+	const v = raw.trim();
+	if (t === "bool") {
+		return ["true", "false", "1", "0"].includes(v.toLowerCase())
+			? null
+			: "布尔值只能为 true/false/1/0";
+	}
+	if (t === "string") return null;
+	if (t === "float" || t === "double") {
+		return Number.isFinite(Number(v)) ? null : "请输入合法浮点数";
+	}
+	const n = Number(v);
+	if (!Number.isInteger(n)) return "请输入整数";
+	const ranges: Record<string, [number, number]> = {
+		int16: [-32768, 32767],
+		uint16: [0, 65535],
+		int: [-2147483648, 2147483647],
+		uint32: [0, 4294967295],
+	};
+	const range = ranges[t];
+	if (range && (n < range[0] || n > range[1]))
+		return `数值超出 ${t} 范围 [${range[0]}, ${range[1]}]`;
+	return null;
 }
 
 const loadDevices = async () => {
 	try {
 		const list = await machineConnectionDevicesApi.list("PLC");
 		devices.value = list.map((d) => ({ id: d.id, name: d.name }));
+		applyRequestedDevice();
 	} catch (e: unknown) {
 		ElMessage.error(getErr(e, "加载设备列表失败"));
 	}
@@ -309,6 +358,12 @@ const loadDevices = async () => {
 
 // 设备表单
 const deviceForm = reactive({ deviceId: "" });
+const route = useRoute();
+
+const applyRequestedDevice = () => {
+	const id = typeof route.query.deviceId === "string" ? route.query.deviceId : "";
+	if (id && devices.value.some((device) => device.id === id)) deviceForm.deviceId = id;
+};
 const isConnected = ref(false);
 const connectedDeviceName = ref("");
 
@@ -428,6 +483,26 @@ const writeData = async () => {
 		return;
 	}
 
+	const invalid = validateValue(rwForm.dataType, rwForm.value);
+	if (invalid) {
+		ElMessage.warning(invalid);
+		return;
+	}
+
+	try {
+		await ElMessageBox.confirm(
+			`确定写入 ${rwForm.address}（${rwForm.dataType}）= ${rwForm.value} ？`,
+			"写入确认",
+			{
+				confirmButtonText: "写入",
+				cancelButtonText: "取消",
+				type: "warning",
+			},
+		);
+	} catch {
+		return;
+	}
+
 	try {
 		const res = await machineConnectionPointsApi.writeTags(
 			deviceForm.deviceId,
@@ -509,6 +584,28 @@ const batchWrite = async () => {
 		return;
 	}
 
+	const invalid = valid
+		.map((i) => validateValue(i.dataType, i.value))
+		.find((m) => m);
+	if (invalid) {
+		ElMessage.warning(invalid);
+		return;
+	}
+
+	try {
+		await ElMessageBox.confirm(
+			`确定批量写入 ${valid.length} 个项目？`,
+			"写入确认",
+			{
+				confirmButtonText: "写入",
+				cancelButtonText: "取消",
+				type: "warning",
+			},
+		);
+	} catch {
+		return;
+	}
+
 	try {
 		const res = await machineConnectionPointsApi.writeTags(
 			deviceForm.deviceId,
@@ -530,6 +627,13 @@ const batchWrite = async () => {
 
 onMounted(() => {
 	void loadDevices();
+});
+
+watch(() => route.query.deviceId, () => {
+	applyRequestedDevice();
+	isConnected.value = false;
+	connectedDeviceName.value = "";
+	rwResult.value = null;
 });
 </script>
 
