@@ -22,7 +22,10 @@ public sealed partial class CsParallelReportService : ICsParallelReportService
             "html" => new CsReportFile(FileName("html"), "text/html; charset=utf-8",
                 Encoding.UTF8.GetBytes(BuildHtml(request))),
             "pdf" => new CsReportFile(FileName("pdf"), "application/pdf", BuildPdf(request)),
-            _ => throw new ArgumentException("报告格式仅支持 pdf 或 html")
+            // Word 不受 PDF 单页 44 行限制，失败明细全部写入
+            "docx" => new CsReportFile(FileName("docx"), EvaluationDocxBuilder.ContentType,
+                EvaluationDocxBuilder.BuildReport("并行连接验证报告", BuildPdfLines(request).Skip(1), [])),
+            _ => throw new ArgumentException("报告格式仅支持 pdf、html 或 docx")
         };
     }
 

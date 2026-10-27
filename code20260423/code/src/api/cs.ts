@@ -175,7 +175,7 @@ export const csApi = {
     ): Promise<CsParallelTestResult> =>
         (await client.post<CsParallelTestResult>(`${P}/parallel-test`, req, { signal })).data,
     downloadParallelReport: async (
-        format: "pdf" | "html",
+        format: "pdf" | "html" | "docx",
         req: CsParallelReportRequest,
     ): Promise<Blob> =>
         (await client.post(`${P}/parallel-test/report/${format}`, req, {

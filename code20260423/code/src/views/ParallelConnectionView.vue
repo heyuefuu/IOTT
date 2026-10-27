@@ -479,6 +479,10 @@
 						<el-icon><Download /></el-icon>
 						下载PDF报告
 					</el-button>
+					<el-button @click="downloadReport('docx')">
+						<el-icon><Download /></el-icon>
+						下载Word报告
+					</el-button>
 					<el-button type="success" @click="downloadReport('html')">
 						<el-icon><Download /></el-icon>
 						下载HTML报告
@@ -801,7 +805,7 @@ const resetConfig = () => {
 };
 
 // 下载报告
-const downloadReport = async (format: "pdf" | "html") => {
+const downloadReport = async (format: "pdf" | "html" | "docx") => {
 	if (!lastParallelRequest.value || !lastParallelResult.value) {
 		ElMessage.warning("请先完成一次并行连接验证");
 		return;

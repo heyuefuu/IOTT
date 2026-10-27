@@ -95,7 +95,7 @@ export const evaluationApi = {
         form.append('file', file)
         return (await client.post<KnowledgeImportResult>(`${base}/records/import`, form)).data
     },
-    async exportRecord(id: string, format: 'xlsx' | 'pdf'): Promise<Blob> {
+    async exportRecord(id: string, format: 'xlsx' | 'pdf' | 'docx'): Promise<Blob> {
         return (await client.get(`${base}/records/${enc(id)}/export`, { params: { format }, responseType: 'blob' })).data
     },
 }

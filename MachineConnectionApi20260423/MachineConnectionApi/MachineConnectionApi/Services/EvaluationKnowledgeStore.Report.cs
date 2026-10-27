@@ -8,8 +8,13 @@ public sealed partial class EvaluationKnowledgeStore
     private const string KnowledgeScoringBasis = "知识库采用三级权重汇总，不等于验证任务所选项目的简单平均。二级小计 = Σ(项目评分 × 项目权重 / 同级项目权重合计)；分类得分 = Σ(二级小计 × 二级权重 / 100)；分类加权贡献 = 分类得分 × 一级权重 / 100；综合得分为分类加权贡献之和，最后保留一位小数。正权重项目未评分则所属汇总未评分；零权重贡献为 0；0 分是有效评分。评分与达标判据独立，得分不代表自动判定通过。";
 
     public byte[] ExportPdf(KnowledgeRecord record) => EvaluationPdfBuilder.BuildReport(
-        "机床评价报告", ReportIntroduction(record), ReportTables(record),
-        [$"综合评价结论：{record.Conclusion}", $"改进建议：{record.Suggestion}"]);
+        "机床评价报告", ReportIntroduction(record), ReportTables(record), ReportClosing(record));
+
+    public byte[] ExportDocx(KnowledgeRecord record) => EvaluationDocxBuilder.BuildReport(
+        "机床评价报告", ReportIntroduction(record), ReportTables(record), ReportClosing(record));
+
+    private static string[] ReportClosing(KnowledgeRecord record) =>
+        [$"综合评价结论：{record.Conclusion}", $"改进建议：{record.Suggestion}"];
 
     private static IEnumerable<string> ReportIntroduction(KnowledgeRecord record)
     {

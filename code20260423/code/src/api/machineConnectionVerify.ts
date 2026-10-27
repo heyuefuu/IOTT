@@ -173,4 +173,10 @@ export const machineConnectionVerifyApi = {
         });
         return { blob: res.data as Blob, fileName: `验证报告-${id}.pdf` };
     },
+    async exportTaskDocx(id: string): Promise<{ blob: Blob; fileName: string }> {
+        const res = await client.get(`/api/verify/tasks/${enc(id)}/export`, {
+            params: { format: 'docx' }, responseType: 'blob',
+        });
+        return { blob: res.data as Blob, fileName: `验证报告-${id}.docx` };
+    },
 };

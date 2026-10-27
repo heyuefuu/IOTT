@@ -156,7 +156,7 @@ public class CsController : ControllerBase
         }
     }
 
-    /// <summary>导出并发连接压测报告，format 支持 pdf/html。</summary>
+    /// <summary>导出并发连接压测报告，format 支持 pdf/html/docx。</summary>
     [HttpPost("parallel-test/report/{format}")]
     public IActionResult ParallelTestReport(string format, [FromBody] CsParallelReportRequest request)
     {

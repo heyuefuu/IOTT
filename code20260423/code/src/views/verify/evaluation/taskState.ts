@@ -298,10 +298,12 @@ export function useTaskWorkbench() {
     } catch (error) { if (error !== 'cancel' && error !== 'close') reportError(error, '删除任务失败'); }
   }
   function viewResult(task: VerifyTaskDto) { selectedTask.value = task; resultVisible.value = true; }
-  async function exportTask(task: VerifyTaskDto, format: 'xlsx' | 'pdf' = 'xlsx') {
+  async function exportTask(task: VerifyTaskDto, format: 'xlsx' | 'pdf' | 'docx' = 'xlsx') {
     exportingId.value = task.id;
     try {
-      const file = format === 'pdf' ? await machineConnectionVerifyApi.exportTaskPdf(task.id) : await machineConnectionVerifyApi.exportTaskResult(task.id);
+      const file = format === 'pdf' ? await machineConnectionVerifyApi.exportTaskPdf(task.id)
+        : format === 'docx' ? await machineConnectionVerifyApi.exportTaskDocx(task.id)
+        : await machineConnectionVerifyApi.exportTaskResult(task.id);
       downloadBlob(file.blob, file.fileName);
     } catch (error) { reportError(error, '导出验证报告失败'); }
     finally { exportingId.value = ''; }

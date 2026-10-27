@@ -54,7 +54,8 @@ public sealed class EvaluationKnowledgeController(EvaluationKnowledgeStore store
         if (record is null) return NotFound();
         if (format == "xlsx") return File(store.ExportSpreadsheet(record), SpreadsheetType, $"评价报告-{record.Id}.xlsx");
         if (format == "pdf") return File(store.ExportPdf(record), "application/pdf", $"评价报告-{record.Id}.pdf");
-        throw new ArgumentException("报告格式仅支持 xlsx 或 pdf。");
+        if (format == "docx") return File(store.ExportDocx(record), EvaluationDocxBuilder.ContentType, $"评价报告-{record.Id}.docx");
+        throw new ArgumentException("报告格式仅支持 xlsx、pdf 或 docx。");
     });
 
     private const string SpreadsheetType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";

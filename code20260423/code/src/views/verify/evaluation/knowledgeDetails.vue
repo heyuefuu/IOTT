@@ -19,6 +19,7 @@
     <template #footer>
       <el-button @click="$emit('update:visible', false)">关闭</el-button>
       <el-button :loading="exporting" @click="$emit('export', 'xlsx')">导出 Excel</el-button>
+      <el-button :loading="exporting" @click="$emit('export', 'docx')">导出 Word</el-button>
       <el-button type="primary" :loading="exporting" @click="$emit('export', 'pdf')">导出 PDF</el-button>
     </template>
   </el-dialog>
@@ -30,7 +31,7 @@ import type { KnowledgeRecord } from '@/api/evaluation';
 import knowledgeScores from './knowledgeScores.vue';
 import { basicFields, formatScore, gradeLabel, sourceLabels } from './knowledgeModel';
 const props = defineProps<{ visible: boolean; record: KnowledgeRecord | null; exporting: boolean }>();
-defineEmits<{ 'update:visible': [value: boolean]; export: [format: 'xlsx' | 'pdf'] }>();
+defineEmits<{ 'update:visible': [value: boolean]; export: [format: 'xlsx' | 'pdf' | 'docx'] }>();
 const gradeType = computed(() => {
   const score = props.record?.totalScore;
   return score == null ? 'info' : score >= 90 ? 'success' : score >= 80 ? 'primary' : score >= 60 ? 'warning' : 'danger';

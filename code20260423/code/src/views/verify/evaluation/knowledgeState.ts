@@ -109,7 +109,7 @@ export function useKnowledgeRecords() {
     catch (error) { showError(error, '下载模板失败'); }
     finally { exporting.value = false; }
   }
-  async function exportRecord(record: KnowledgeRecord | null, format: 'xlsx' | 'pdf' = 'xlsx') {
+  async function exportRecord(record: KnowledgeRecord | null, format: 'xlsx' | 'pdf' | 'docx' = 'xlsx') {
     if (!record) return;
     exporting.value = true;
     try {

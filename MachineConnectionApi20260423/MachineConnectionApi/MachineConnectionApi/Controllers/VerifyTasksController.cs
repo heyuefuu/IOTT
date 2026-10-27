@@ -193,7 +193,7 @@ public sealed class VerifyTasksController : ControllerBase
     [HttpGet("{id}/export")]
     public IActionResult Export(string id, [FromQuery] string format = "xlsx")
     {
-        if (format is not ("xlsx" or "pdf")) return BadRequest(new { error = "请选择 Excel 或 PDF 格式" });
+        if (format is not ("xlsx" or "pdf" or "docx")) return BadRequest(new { error = "请选择 Excel、PDF 或 Word 格式" });
         var task = _store.ReadAll().FirstOrDefault(x => x.Id == id);
         if (task is null) return NotFound();
         if (string.IsNullOrWhiteSpace(task.LastRunJson))
@@ -261,6 +261,11 @@ public sealed class VerifyTasksController : ControllerBase
         {
             var pdf = EvaluationPdfBuilder.BuildReport("CNC 评价验证报告", intro, tables, [run.Detail]);
             return File(pdf, "application/pdf", $"{task.Name}-验证报告.pdf");
+        }
+        if (format == "docx")
+        {
+            var docx = EvaluationDocxBuilder.BuildReport("CNC 评价验证报告", intro, tables, [run.Detail]);
+            return File(docx, EvaluationDocxBuilder.ContentType, $"{task.Name}-验证报告.docx");
         }
         var rows = new List<IReadOnlyList<object?>> { new object?[] { "CNC 评价验证报告" } };
         rows.AddRange(intro.Select(line => (IReadOnlyList<object?>)new object?[] { line }));
