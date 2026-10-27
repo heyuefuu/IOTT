@@ -62,13 +62,15 @@
 									@click="goTo('/robot/estun')">埃斯顿面板</el-button>
 							</div>
 							<div class="card-footer-row">
-								<el-upload v-if="device.protocol === 'HuazhongRobot'" accept=".csv,.json"
-									title="CSV/JSON：Address、ModbusAddress、DataType、GroupName、IntervalMs；可选 DisplayName、IsWritable"
+								<el-upload v-if="supportsTagImport(device.protocol)" accept=".csv,.json"
+									:title="tagImportHint(device.protocol)"
 									:auto-upload="false" :show-file-list="false" :disabled="!!importingDeviceId"
 									:on-change="(file: UploadFile) => importRobotTags(device, file)">
 									<el-button type="primary" link size="small" :loading="importingDeviceId === device.id">导入采集点位</el-button>
 								</el-upload>
-								<el-button v-if="device.protocol === 'HuazhongRobot'" type="primary" link size="small"
+								<el-button v-if="device.protocol === 'FanucRobot'" type="primary" link size="small"
+									@click="downloadFanucTemplate">下载点位模板</el-button>
+								<el-button v-if="supportsTagImport(device.protocol)" type="primary" link size="small"
 									@click="goTo(`/collection/manage?deviceId=${encodeURIComponent(device.id)}`)">采集任务管理</el-button>
 								<el-button type="primary" link size="small" @click="openEditDeviceDialog(device)">编辑</el-button>
 								<el-button type="danger" link size="small" @click="deleteDevice(device.id)">删除</el-button>
@@ -584,6 +586,47 @@ const saveDevice = async () => {
 };
 
 const importingDeviceId = ref("");
+
+function supportsTagImport(protocol: string) {
+	return protocol === "HuazhongRobot" || protocol === "FanucRobot";
+}
+
+function tagImportHint(protocol: string) {
+	return protocol === "FanucRobot"
+		? "CSV/JSON：Address、DataType、GroupName、IntervalMs；可选 DisplayName、Unit。地址支持 SDO/SDI/RDO/RDI/SO/SI/UO/UI/WO/WI/GO/GI/AO/AI+序号、DATA:属性名、FANUC_DATA、CRX/别名"
+		: "CSV/JSON：Address、ModbusAddress、DataType、GroupName、IntervalMs；可选 DisplayName、IsWritable";
+}
+
+// FANUC 机器人点位模板：地址与 FanucRobotDriver 支持的格式一致
+const FANUC_TEMPLATE = [
+	"Address,DataType,GroupName,IntervalMs,DisplayName,Unit",
+	"UO2,Bool,状态,1000,系统就绪,",
+	"UO3,Bool,状态,1000,程序运行中,",
+	"UO6,Bool,状态,1000,故障,",
+	"CRX/Busy,Bool,状态,1000,忙碌,",
+	"RDO1,Bool,IO,500,机器人输出1,",
+	"RDI1,Bool,IO,500,机器人输入1,",
+	"SDO1,Bool,IO,500,数字输出1,",
+	"SDI1,Bool,IO,500,数字输入1,",
+	"GO1,UInt16,IO,1000,组输出1,",
+	"AI1,UInt16,IO,1000,模拟输入1,",
+	"DATA:CurrentPose,String,位姿,1000,当前位姿,",
+	"DATA:AlarmCurrent,String,报警,1000,当前报警,",
+	"DATA:NumReg1,String,寄存器,1000,数值寄存器R[],",
+	"DATA:PosRegGP1,String,寄存器,2000,位置寄存器PR[],",
+	"FANUC_DATA,String,快照,5000,整机状态快照,",
+].join("\r\n");
+
+function downloadFanucTemplate() {
+	// 带 BOM，Excel 打开中文不乱码
+	const blob = new Blob([String.fromCharCode(0xfeff) + FANUC_TEMPLATE], { type: "text/csv;charset=utf-8" });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement("a");
+	a.href = url;
+	a.download = "FANUC机器人点位模板.csv";
+	a.click();
+	URL.revokeObjectURL(url);
+}
 async function importRobotTags(device: Device, file: UploadFile) {
 	if (!file.raw || importingDeviceId.value) return;
 	if (!/\.(csv|json)$/i.test(file.name)) {

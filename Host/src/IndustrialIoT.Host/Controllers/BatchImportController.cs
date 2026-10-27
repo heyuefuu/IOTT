@@ -8,6 +8,7 @@ using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Domain.Interfaces;
 using IndustrialIoT.Host.Services;
 using IndustrialIoT.Infrastructure.BackgroundServices;
+using IndustrialIoT.Protocols.FANUC;
 using IndustrialIoT.Protocols.HuazhongRobot;
 using Microsoft.AspNetCore.Mvc;
 
@@ -113,6 +114,8 @@ public class BatchImportController : ControllerBase
             }
             if (string.IsNullOrWhiteSpace(row.Address))
                 errors.Add($"Row {lineNum}: Address is required");
+            else if (device.Protocol == ProtocolType.FanucRobot && !FanucRobotDriver.IsSupportedAddress(row.Address))
+                errors.Add($"Row {lineNum}: Unsupported FANUC robot address '{row.Address}'");
             if (string.IsNullOrWhiteSpace(row.GroupName))
                 errors.Add($"Row {lineNum}: GroupName is required");
             if (!Enum.TryParse<DataType>(row.DataType, true, out var parsedType) || !Enum.IsDefined(parsedType))

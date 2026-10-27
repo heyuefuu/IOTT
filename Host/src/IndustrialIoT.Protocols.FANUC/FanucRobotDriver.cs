@@ -17,7 +17,7 @@ using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 /// 地址语法：
 ///   布尔 IO:  SDO1、SDI1、RDO1、RDI1、SO0、SI0、UO1、UI1、WO1(=SDO8000+n)、WI1(=SDI8000+n)
 ///   字 IO:   GO1、GI1、AO1(=GO1000+n)、AI1(=GI1000+n)
-///   状态数据: DATA:&lt;FanucData属性名&gt;，如 DATA:CurrentPosition
+///   状态数据: DATA:&lt;FanucData属性名&gt;，如 DATA:CurrentPose
 ///   整机快照: FANUC_DATA  (返回 JSON 字符串)
 /// </summary>
 [ProtocolDriver(ProtocolType.FanucRobot, "FANUC", "发那科", "Robot", "机器人", "CRX", "M-", "R-", "LR")]
@@ -277,6 +277,22 @@ public sealed class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
 
         Stream s = new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
         return Task.FromResult(s);
+    }
+
+    /// <summary>判断地址是否为本驱动可解析的格式（批量导入时预校验用）。</summary>
+    public static bool IsSupportedAddress(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return false;
+        var normalized = address.Trim();
+        if (CrxAlias.ContainsKey(normalized)) return true;
+        if (normalized.Equals("FANUC_DATA", StringComparison.OrdinalIgnoreCase)) return true;
+        if (normalized.StartsWith("DATA:", StringComparison.OrdinalIgnoreCase))
+        {
+            var prop = normalized[5..];
+            return typeof(FanucData).GetProperties().Any(p => p.Name.Equals(prop, StringComparison.Ordinal));
+        }
+        var m = IoRegex.Match(normalized);
+        return m.Success && ushort.TryParse(m.Groups["idx"].Value, out _);
     }
 
     public async ValueTask DisposeAsync()
