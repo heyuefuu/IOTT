@@ -349,8 +349,15 @@ public class ProgramTransferController : ControllerBase
         if (driver is not IAddressSpaceBrowser browser)
             return BadRequest("Device driver does not support directory browsing");
 
-        var nodes = await browser.BrowseAsync(path, ct);
-        return Ok(nodes);
+        try
+        {
+            var nodes = await browser.BrowseAsync(path, ct);
+            return Ok(nodes);
+        }
+        catch (InvalidOperationException ex) when (resolution.Protocol == ProtocolType.FOCAS)
+        {
+            return StatusCode(502, new { error = $"Program directory browse failed: {ex.Message}" });
+        }
     }
 
     [HttpGet("{deviceId}/files")]
@@ -384,6 +391,10 @@ public class ProgramTransferController : ControllerBase
         catch (ProgramFileBrowseLimitExceededException ex)
         {
             return BadRequest(ex.Message);
+        }
+        catch (InvalidOperationException ex) when (resolution.Protocol == ProtocolType.FOCAS)
+        {
+            return StatusCode(502, new { error = $"Program directory browse failed: {ex.Message}" });
         }
     }
 

@@ -16,11 +16,18 @@ public class FocasTransferProbeApi : DispatchProxy
     public bool AlwaysBusy { get; set; }
     public CancellationTokenSource? CancelWhenBusy { get; set; }
     public int FinalizeCalls { get; private set; }
+    public int ProgramDirectoryReturnCode { get; set; }
+    public IReadOnlyList<FocasProgramDirectoryEntry>? ProgramDirectoryEntries { get; set; }
 
     protected override object? Invoke(MethodInfo? method, object?[]? arguments)
     {
         ArgumentNullException.ThrowIfNull(method);
         ArgumentNullException.ThrowIfNull(arguments);
+        if (method.Name == nameof(IFocasApi.ReadProgramDirectory) && ProgramDirectoryEntries is not null)
+        {
+            arguments[1] = ProgramDirectoryEntries;
+            return ProgramDirectoryReturnCode;
+        }
         if (method.Name.StartsWith("EndProgram", StringComparison.Ordinal)) FinalizeCalls++;
         var sending = method.Name is nameof(IFocasApi.DownloadProgramChunk) or nameof(IFocasApi.DownloadProgramChunkAtPath);
         var receiving = method.Name is nameof(IFocasApi.UploadProgramChunk) or nameof(IFocasApi.UploadProgramChunkFromPath);
@@ -50,7 +57,47 @@ internal static class FocasTransferRegressionTests
             await BufferBusyPreservesContents(path);
         await BufferWaitTerminates(false);
         await BufferWaitTerminates(true);
+        await ProgramDirectoryErrorsRemainVisible();
         Console.WriteLine("  FOCAS transfers: busy buffers, partial writes, timeout and cancellation passed");
+    }
+
+    private static async Task ProgramDirectoryErrorsRemainVisible()
+    {
+        var api = DispatchProxy.Create<IFocasApi, FocasTransferProbeApi>();
+        var probe = (FocasTransferProbeApi)(object)api;
+        await using var driver = new FocasDriver(NullLogger<FocasDriver>.Instance, api);
+        var connected = await driver.ConnectAsync(new DeviceConnectionConfig { Host = "fixture", Port = 8193 });
+        if (!connected.Success) throw new InvalidOperationException(connected.ErrorMessage);
+        Func<CancellationToken, Task<string[]>>[] browseOperations =
+        [
+            async ct => (await driver.BrowseFilesAsync("/Programs", ct)).Select(node => node.Path).ToArray(),
+            async ct => (await driver.BrowseAsync("/Programs", ct)).Select(node => node.Path).ToArray(),
+        ];
+        foreach (var browse in browseOperations)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            probe.ProgramDirectoryEntries = [];
+            if ((await browse(timeout.Token)).Length != 0)
+                throw new InvalidOperationException("A successful empty directory must remain empty");
+            foreach (var (code, name) in new[] { (7, "EW_PROT"), (6, "EW_NOOPT"), (-8, "EW_HANDLE") })
+            {
+                probe.ProgramDirectoryReturnCode = code;
+                probe.ProgramDirectoryEntries = [new() { Number = 9001, Size = 32, Comment = "fixture" }];
+                var rejected = false;
+                try { await browse(timeout.Token); }
+                catch (InvalidOperationException error)
+                {
+                    rejected = error.Message.Contains(nameof(IFocasApi.ReadProgramDirectory))
+                        && error.Message.Contains($"{code} ({name})");
+                }
+                if (!rejected) throw new InvalidOperationException("Directory errors must retain API name and return code");
+                probe.ProgramDirectoryReturnCode = 0;
+                var recovered = await browse(timeout.Token);
+                if (!recovered.SequenceEqual(new[] { "/Programs/O9001" }))
+                    throw new InvalidOperationException("Directory retry lost entries or failed to release the driver lock");
+            }
+        }
+        Console.WriteLine("  FOCAS directories: empty success, errors and retry passed for both browse paths");
     }
 
     private static async Task BufferWaitTerminates(bool cancel)

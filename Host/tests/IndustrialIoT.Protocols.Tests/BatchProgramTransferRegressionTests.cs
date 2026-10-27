@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Text.Json;
+using IndustrialIoT.Host.Controllers;
+using Microsoft.AspNetCore.Mvc;
 using IndustrialIoT.Domain.Entities;
 using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Domain.Interfaces;
@@ -20,6 +23,7 @@ internal static class BatchProgramTransferRegressionTests
     {
         await VerifyNcLinkTransfersAsync();
         await VerifyIndependentChannelsAsync();
+        await VerifyFocasDirectoryErrorsAsync();
     }
 
     private static async Task VerifyNcLinkTransfersAsync()
@@ -129,6 +133,38 @@ internal static class BatchProgramTransferRegressionTests
         }
     }
 
+    private static async Task VerifyFocasDirectoryErrorsAsync()
+    {
+        const string message = "FOCAS API ReadProgramDirectory failed: 7 (EW_PROT)";
+        var device = CreateDevice(new DeviceConnectionConfig { Host = "fixture", Port = 8193 });
+        device.Protocol = ProtocolType.FOCAS;
+        var factory = new DriverFactory { BrowseError = new InvalidOperationException(message) };
+        var controller = new ProgramTransferController(factory, new DeviceRepository(device), null!,
+            new ProgramTransferFileBrowserService(), null!, NullLogger<ProgramTransferController>.Instance);
+        Func<Task<IActionResult?>>[] requests =
+        [
+            async () => (await controller.BrowseDirectory(device.Id, "/Programs")).Result,
+            async () => (await controller.GetFiles(device.Id, "/Programs", false)).Result,
+            async () => (await controller.GetFiles(device.Id, "/Programs", true)).Result,
+        ];
+        foreach (var request in requests)
+        {
+            factory.BrowseError = new InvalidOperationException(message);
+            var result = await request();
+            TestSupport.Require(result is ObjectResult { StatusCode: 502 }, "Directory failure must return HTTP 502");
+            var body = JsonSerializer.SerializeToElement(((ObjectResult)result!).Value);
+            TestSupport.Require(body.GetProperty("error").GetString()?.Contains(message) == true,
+                "Directory response discarded the FOCAS error");
+            factory.BrowseError = null;
+            TestSupport.Require(await request() is OkObjectResult, "A successful empty directory must remain HTTP 200");
+            factory.BrowseError = new OperationCanceledException();
+            var cancelled = false;
+            try { await request(); }
+            catch (OperationCanceledException) { cancelled = true; }
+            TestSupport.Require(cancelled, "Directory cancellation was converted into a failure response");
+        }
+    }
+
     private static BatchProgramTransferTaskService CreateService(IServiceProvider services) =>
         new(services.GetRequiredService<IServiceScopeFactory>(), NullLogger<BatchProgramTransferTaskService>.Instance);
 
@@ -180,6 +216,7 @@ internal static class BatchProgramTransferRegressionTests
 
     private sealed class DriverFactory(bool realNcLink = false) : IProtocolDriverFactory
     {
+        public Exception? BrowseError { get; set; }
         public ConcurrentQueue<ProtocolType> Created { get; } = new();
         public ConcurrentQueue<DeviceConnectionConfig> Connections { get; } = new();
         public ConcurrentQueue<(string FileName, string Path, byte[] Bytes)> Uploads { get; } = new();
@@ -192,7 +229,7 @@ internal static class BatchProgramTransferRegressionTests
         }
     }
 
-    private sealed class RecordingTransferDriver(DriverFactory factory, ProtocolType protocol) : IProtocolDriver, INCProgramTransfer
+    private sealed class RecordingTransferDriver(DriverFactory factory, ProtocolType protocol) : IProtocolDriver, INCProgramTransfer, IAddressSpaceBrowser
     {
         public ProtocolType Protocol => protocol;
         public ConnectionState State => ConnectionState.Connected;
@@ -216,6 +253,12 @@ internal static class BatchProgramTransferRegressionTests
         public Task<TagValue> ReadTagAsync(string address, DataType dataType, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<TagValue>> ReadTagsAsync(IReadOnlyList<TagReadRequest> requests, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<WriteResult> WriteTagAsync(string address, DataType dataType, object value, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
+        {
+            if (factory.BrowseError is not null) throw factory.BrowseError;
+            return Task.FromResult<IReadOnlyList<AddressNode>>([]);
+        }
+        public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default) => throw new NotSupportedException();
         public Task DisconnectAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task<bool> PingAsync(CancellationToken ct = default) => Task.FromResult(true);
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

@@ -570,28 +570,18 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
         var normalized = (parentPath ?? "").Trim().Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
         if (normalized is "/programs" or "programs")
         {
-            EnsureConnected();
-            await _semaphore.WaitAsync(ct);
-            try
+            var entries = await ReadProgramEntriesAsync(ct);
+            return entries.Select(e => new AddressNode
             {
-                int rc = _api.ReadProgramDirectory(_handle, out var entries);
-                if (rc != 0) return [];
-                return entries.Select(e => new AddressNode
-                {
-                    Path = $"/Programs/O{e.Number:D4}",
-                    DisplayName = string.IsNullOrEmpty(e.Comment)
-                        ? $"O{e.Number:D4} ({FormatSize(e.Size)})"
-                        : $"O{e.Number:D4} - {e.Comment} ({FormatSize(e.Size)})",
-                    NodeType = AddressNodeType.Variable,
-                    DataType = DataType.String,
-                    IsReadable = false,
-                    IsWritable = false,
-                }).ToList();
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                Path = $"/Programs/O{e.Number:D4}",
+                DisplayName = string.IsNullOrEmpty(e.Comment)
+                    ? $"O{e.Number:D4} ({FormatSize(e.Size)})"
+                    : $"O{e.Number:D4} - {e.Comment} ({FormatSize(e.Size)})",
+                NodeType = AddressNodeType.Variable,
+                DataType = DataType.String,
+                IsReadable = false,
+                IsWritable = false,
+            }).ToList();
         }
 
         var nodes = _mapper.GetAddressSpace(parentPath);
@@ -695,7 +685,8 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
         try
         {
             int rc = _api.ReadProgramDirectory(_handle, out var entries);
-            return rc == 0 ? entries : [];
+            if (rc != 0) throw new FocasApiException(nameof(IFocasApi.ReadProgramDirectory), rc);
+            return entries;
         }
         finally
         {
