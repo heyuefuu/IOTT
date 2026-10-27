@@ -32,7 +32,9 @@ internal static class FocasError
     /// <summary>Formats "<paramref name="operation"/>: -8 (EW_HANDLE)" for logs and UI error text.</summary>
     public static string Describe(string operation, int code)
     {
-        var name = GetName(code);
+        var name = operation.Contains("Pmc", StringComparison.OrdinalIgnoreCase)
+            ? code switch { 3 => "EW_RANGE", 4 => "EW_ATTRIB", _ => GetName(code) }
+            : GetName(code);
         return name is null ? $"{operation}: {code}" : $"{operation}: {code} ({name})";
     }
 

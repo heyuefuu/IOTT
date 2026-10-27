@@ -16,12 +16,6 @@ internal sealed partial class FocasAddressMapper
     private int _handle;
     private string[] _axisLabels = ["X", "Y", "Z", "A", "B", "C"];
 
-    // PMC address type constants matching FOCAS2 conventions
-    private const int PmcDI = 0; // Digital Input
-    private const int PmcDO = 1; // Digital Output
-    private const int PmcRI = 5; // Robot Input
-    private const int PmcRO = 6; // Robot Output
-
     /// <summary>
     /// Per-batch memo of every FOCAS round trip, so one <see cref="ReadBatch"/> touches the
     /// controller once per underlying API call instead of once per requested tag.
@@ -39,7 +33,7 @@ internal sealed partial class FocasAddressMapper
         public FocasSystemInfo? SystemInfo { get; set; }
         public FocasStatusInfo? StatusInfo { get; set; }
         public FocasProgramInfo? ProgramInfo { get; set; }
-        public Dictionary<int, byte[]> PmcBytes { get; } = [];
+        public Dictionary<(int Area, int Start, int Length, int NativeType), byte[]> PmcBytes { get; } = [];
         public string? ProgramBlock { get; set; }
         public (int StatusCode, string Message)? AlarmStatusInfo { get; set; }
 
@@ -140,6 +134,9 @@ internal sealed partial class FocasAddressMapper
     {
         // Normalize: trim, ensure leading slash, case-insensitive compare
         string path = NormalizePath(address);
+
+        if (TryGetMacroNumber(path, out var macroNumber))
+            return (ConvertMacroScalar(GetMacroVariable(macroNumber, cache), requestedType), requestedType);
 
         if (path.StartsWith("/cnc/fanuc/", StringComparison.OrdinalIgnoreCase))
             return ReadFanucPath(path, cache);
@@ -278,13 +275,8 @@ internal sealed partial class FocasAddressMapper
             return (GetIntScalar("ReadToolId", cache, _api.ReadToolId), DataType.Int32);
         }
 
-        // /CNC/PMC/DI[n], /CNC/PMC/DO[n], /CNC/PMC/RI[n], /CNC/PMC/RO[n]
-        if (PmcRegex().Match(path) is { Success: true } iom)
-        {
-            string ioType = iom.Groups[1].Value.ToUpperInvariant();
-            int index = int.Parse(iom.Groups[2].Value);
-            return ReadIoBit(ioType, index, cache);
-        }
+        if (FocasPmcAddress.TryParse(path, out var pmcAddress))
+            return ReadPmcValue(pmcAddress, requestedType, cache);
 
         throw new ArgumentException($"Unknown FANUC address: '{address}'");
     }
@@ -293,39 +285,20 @@ internal sealed partial class FocasAddressMapper
     {
         string path = NormalizePath(address);
 
-        // Only PMC output areas are writable on FANUC CNC.
-        if (PmcRegex().Match(path) is { Success: true } iom)
+        if (TryGetMacroNumber(path, out var macroNumber))
         {
-            string ioType = iom.Groups[1].Value.ToUpperInvariant();
-            int index = int.Parse(iom.Groups[2].Value);
+            WriteMacro(macroNumber, dataType, value);
+            return;
+        }
 
-            if (ioType is "DI" or "RI")
-                throw new InvalidOperationException($"{ioType} is read-only (input). Use {ioType[0]}O for outputs.");
-
-            int pmcType = ioType == "DO" ? PmcDO : PmcRO;
-            int maxIndex = ioType == "DO" ? 15 : 7;
-            if (index < 0 || index > maxIndex)
-                throw new ArgumentOutOfRangeException(nameof(address), $"{ioType} index must be 0-{maxIndex}");
-
-            bool boolVal = Convert.ToBoolean(value);
-
-            // Read current byte, set/clear the target bit, write back
-            byte[] data = new byte[2]; // Read 2 bytes to cover the range
-            int readResult = _api.ReadPmc(_handle, pmcType, 0, data.Length, data);
-            ThrowIfError(readResult, "ReadPmc");
-
-            if (boolVal)
-                data[index / 8] |= (byte)(1 << (index % 8));
-            else
-                data[index / 8] &= (byte)~(1 << (index % 8));
-
-            int rc = _api.WritePmc(_handle, pmcType, 0, data.Length, data);
-            ThrowIfError(rc, "WritePmc");
+        if (FocasPmcAddress.TryParse(path, out var pmcAddress))
+        {
+            WritePmcValue(pmcAddress, dataType, value);
             return;
         }
 
         throw new InvalidOperationException(
-            $"Address '{address}' is read-only or not writable. Only DO[n] and RO[n] outputs support writes.");
+            $"Address '{address}' is read-only or not writable. Use a PMC address such as R1200.0 or /CNC/Macro/{{number}}.");
     }
 
     // ── I/O helpers ──────────────────────────────────────────────────
@@ -444,19 +417,6 @@ internal sealed partial class FocasAddressMapper
         return program;
     }
 
-    private byte[] GetPmcBytes(int pmcType, BatchReadCache? cache)
-    {
-        if (cache is not null && cache.PmcBytes.TryGetValue(pmcType, out var data))
-            return data;
-
-        data = new byte[2];
-        int rc = _api.ReadPmc(_handle, pmcType, 0, data.Length, data);
-        ThrowIfError(rc, "ReadPmc");
-        if (cache is not null)
-            cache.PmcBytes[pmcType] = data;
-        return data;
-    }
-
     private string GetProgramBlock(BatchReadCache? cache)
     {
         if (cache?.ProgramBlock is { } block)
@@ -516,27 +476,6 @@ internal sealed partial class FocasAddressMapper
             "/cnc/fanuc/alarm/message" => (GetAlarmStatusInfo(cache).Message, DataType.String),
             _ => throw new ArgumentException($"Unknown FANUC address: '{path}'")
         };
-    }
-
-    private (object Value, DataType Type) ReadIoBit(string ioType, int index, BatchReadCache? cache)
-    {
-        int pmcType = ioType switch
-        {
-            "DI" => PmcDI,
-            "DO" => PmcDO,
-            "RI" => PmcRI,
-            "RO" => PmcRO,
-            _ => throw new ArgumentException($"Unknown I/O type: {ioType}")
-        };
-
-        int maxIndex = ioType is "DI" or "DO" ? 15 : 7;
-        if (index < 0 || index > maxIndex)
-            throw new ArgumentOutOfRangeException(nameof(index), $"{ioType} index must be 0-{maxIndex}");
-
-        var data = GetPmcBytes(pmcType, cache);
-
-        bool bitValue = (data[index / 8] & (1 << (index % 8))) != 0;
-        return (bitValue, DataType.Bool);
     }
 
     private (object Value, DataType Type) ReadFanucAxisPath(string path, BatchReadCache? cache)
@@ -618,6 +557,7 @@ internal sealed partial class FocasAddressMapper
                 MakeFolder("/CNC/Feed", "Feed"),
                 MakeFolder("/CNC/Tool", "Tool"),
                 MakeFolder("/CNC/PMC", "PMC"),
+                MakeFolder("/CNC/Macro", "Common Macro Variables"),
             ],
 
             "/cnc/axis" => MakeAxisNodes(),
@@ -662,6 +602,7 @@ internal sealed partial class FocasAddressMapper
                 MakeVar("/CNC/Feed/Commanded", "Commanded Feedrate", DataType.Double, true, false),
             ],
             "/cnc/tool" => [MakeVar("/CNC/Tool/Id", "Tool Id", DataType.Int32, true, false)],
+            "/cnc/macro" => MakeMacroNodes(),
             "/cnc/fanuc/system" => MakeFanucSystemNodes(),
             "/cnc/fanuc/status" => MakeFanucStatusNodes(),
             "/cnc/fanuc/feed" => MakeFanucFeedNodes(),
@@ -671,19 +612,9 @@ internal sealed partial class FocasAddressMapper
             "/cnc/fanuc/time" => MakeFanucTimeNodes(),
             "/cnc/fanuc/axis" => MakeFanucAxisNodes(),
             "/cnc/fanuc/alarm" => MakeFanucAlarmNodes(),
-            "/cnc/pmc" =>
-            [
-                MakeFolder("/CNC/PMC/DI", "Digital Inputs (0-15)"),
-                MakeFolder("/CNC/PMC/DO", "Digital Outputs (0-15)"),
-                MakeFolder("/CNC/PMC/RI", "Robot Inputs (0-7)"),
-                MakeFolder("/CNC/PMC/RO", "Robot Outputs (0-7)"),
-            ],
-            "/cnc/pmc/di" => MakeIoNodes("DI", 16, writable: false),
-            "/cnc/pmc/do" => MakeIoNodes("DO", 16, writable: true),
-            "/cnc/pmc/ri" => MakeIoNodes("RI", 8,  writable: false),
-            "/cnc/pmc/ro" => MakeIoNodes("RO", 8,  writable: true),
+            "/cnc/pmc" => MakePmcAreaNodes(),
 
-            _ => GetSpecialChildren(parent) ?? GetAxisChildren(parent)
+            _ => GetPmcAreaChildren(parent) ?? GetSpecialChildren(parent) ?? GetAxisChildren(parent)
         };
     }
 
@@ -754,14 +685,6 @@ internal sealed partial class FocasAddressMapper
         MakeVar("/CNC/Fanuc/Alarm/Status", "Alarm Status", DataType.Int32, true, false),
         MakeVar("/CNC/Fanuc/Alarm/Message", "Alarm Message", DataType.String, true, false),
     ];
-
-    private static IReadOnlyList<AddressNode> MakeIoNodes(string prefix, int count, bool writable)
-    {
-        var list = new AddressNode[count];
-        for (int i = 0; i < count; i++)
-            list[i] = MakeVar($"/CNC/PMC/{prefix}[{i}]", $"{prefix}[{i}]", DataType.Bool, true, writable);
-        return list;
-    }
 
     private IReadOnlyList<AddressNode> GetAxisChildren(string parent)
     {
@@ -949,9 +872,6 @@ internal sealed partial class FocasAddressMapper
 
     [GeneratedRegex(@"^/robot/tcp/([xyzwpr])$", RegexOptions.IgnoreCase)]
     private static partial Regex TcpRegex();
-
-    [GeneratedRegex(@"^/cnc/pmc/(di|do|ri|ro)\[(\d+)\]$", RegexOptions.IgnoreCase)]
-    private static partial Regex PmcRegex();
 
     [GeneratedRegex(@"\bN(\d+)\b", RegexOptions.IgnoreCase)]
     private static partial Regex ProgramLineRegex();

@@ -37,6 +37,7 @@ public sealed class SimulatedFocasApi : IFocasApi
     private string _alarmMessage = string.Empty;
     private int _alarmStatus;
     private int _partCountCurrent = 27;
+    private readonly Dictionary<int, double> _macroVariables = [];
     private int _partCountTotal = 120;
     private int _cuttingTimeMilliseconds = 45_000;
     private int _cuttingTimeMinutes = 2;
@@ -50,18 +51,12 @@ public sealed class SimulatedFocasApi : IFocasApi
     private int _programUploadOffset;
     private string? _programDownloadTargetDirectory;
 
-    // Digital I/O: 16 inputs + 16 outputs + 8 robot inputs + 8 robot outputs
-    private readonly bool[] _digitalInputs = new bool[16];
-    private readonly bool[] _digitalOutputs = new bool[16];
-    private readonly bool[] _robotInputs = new bool[8];
-    private readonly bool[] _robotOutputs = new bool[8];
+    private readonly Dictionary<(int Area, int Address), byte> _pmcMemory = [];
 
     public SimulatedFocasApi()
     {
-        // Seed some initial I/O states
-        _digitalInputs[0] = true;  // Home sensor
-        _digitalInputs[1] = true;  // Safety gate closed
-        _robotOutputs[0] = true;   // Gripper closed
+        _pmcMemory[(3, 0)] = 3; // X0: two input bits set
+        _pmcMemory[(5, 0)] = 1; // R0: internal relay bit set
         _alarmStatus = 0;
         _programStore[(short)_programNumber] = Encoding.ASCII.GetBytes($"%\n{_programName}\n{_programBlock}\nM30\n%");
         _pathProgramStore["//CNC_MEM/USER/PATH1/O1001.nc"] = new(_programStore[(short)_programNumber], DateTimeOffset.UtcNow, "Sample O1001");
@@ -318,7 +313,23 @@ public sealed class SimulatedFocasApi : IFocasApi
     public int ReadMacroVariable(int handle, int number, out double value)
     {
         if (!IsValidHandle(handle)) { value = 0; return -1; }
-        value = number == 3901 ? _partCountCurrent : 0;
+        if (!FocasMacroValue.IsValidNumber(number)) { value = double.NaN; return 3; }
+        lock (_lock)
+        {
+            value = _macroVariables.GetValueOrDefault(number, number == 3901 ? _partCountCurrent : 0);
+        }
+        return 0;
+    }
+
+    public int WriteMacroVariable(int handle, int number, double value)
+    {
+        if (!IsValidHandle(handle)) return -1;
+        if (!FocasMacroValue.IsValidNumber(number)) return 3;
+        if (!FocasMacroValue.TryEncode(value, out _, out _)) return 5;
+        lock (_lock)
+        {
+            _macroVariables[number] = value;
+        }
         return 0;
     }
 
@@ -512,64 +523,37 @@ public sealed class SimulatedFocasApi : IFocasApi
         return 0;
     }
 
-    public int ReadPmc(int handle, int adrType, int startAddr, int length, byte[] data)
+    public int ReadPmc(int handle, int adrType, int startAddr, int length, byte[] data) =>
+        ReadPmcTyped(handle, adrType, startAddr, length, data, 0);
+
+    public int ReadPmcTyped(int handle, int adrType, int startAddr, int length, byte[] data, int dataType)
     {
+        var validation = FocasPmcBuffer.Validate(adrType, startAddr, length, data, dataType);
+        if (validation != 0) return validation;
         if (!IsValidHandle(handle)) return -1;
-        if (data.Length < length) return -2;
 
         lock (_lock)
         {
-            // PMC address type 0 = DI, 1 = DO, 5 = RI, 6 = RO
-            bool[] source = adrType switch
-            {
-                0 => _digitalInputs,
-                1 => _digitalOutputs,
-                5 => _robotInputs,
-                6 => _robotOutputs,
-                _ => []
-            };
-
-            if (source.Length == 0) return -3;
-
-            // Pack bools into bytes (8 bits each)
-            Array.Clear(data, 0, length);
-            for (int i = 0; i < Math.Min(length * 8, source.Length); i++)
-            {
-                if (startAddr + i < source.Length && source[startAddr + i])
-                    data[i / 8] |= (byte)(1 << (i % 8));
-            }
-
-            // Simulate some random DI flickering
-            if (adrType == 0 && _rng.NextDouble() < 0.05)
-            {
-                int bit = _rng.Next(2, _digitalInputs.Length);
-                _digitalInputs[bit] = !_digitalInputs[bit];
-            }
+            for (int index = 0; index < length; index++)
+                data[index] = _pmcMemory.GetValueOrDefault((adrType, startAddr + index));
         }
         return 0;
     }
 
-    public int WritePmc(int handle, int adrType, int startAddr, int length, byte[] data)
+    public int WritePmc(int handle, int adrType, int startAddr, int length, byte[] data) =>
+        WritePmcTyped(handle, adrType, startAddr, length, data, 0);
+
+    public int WritePmcTyped(int handle, int adrType, int startAddr, int length, byte[] data, int dataType)
     {
+        var validation = FocasPmcBuffer.Validate(adrType, startAddr, length, data, dataType);
+        if (validation != 0) return validation;
         if (!IsValidHandle(handle)) return -1;
+        if (FocasPmcBuffer.IsReadOnly(adrType)) return 7;
 
         lock (_lock)
         {
-            // Only DO and RO are writable
-            bool[] target = adrType switch
-            {
-                1 => _digitalOutputs,
-                6 => _robotOutputs,
-                _ => []
-            };
-
-            if (target.Length == 0) return -3; // Read-only area
-
-            for (int i = 0; i < Math.Min(length * 8, target.Length); i++)
-            {
-                if (startAddr + i < target.Length)
-                    target[startAddr + i] = (data[i / 8] & (1 << (i % 8))) != 0;
-            }
+            for (int index = 0; index < length; index++)
+                _pmcMemory[(adrType, startAddr + index)] = data[index];
         }
         return 0;
     }
@@ -713,11 +697,17 @@ public interface IFocasApi
     /// <summary>Disconnect from CNC.</summary>
     int Disconnect(int handle);
 
-    /// <summary>Read PMC data (I/O, counters, timers). adrType: 0=DI,1=DO,5=RI,6=RO.</summary>
+    /// <summary>Read PMC bytes. Areas: 0=G, 1=F, 2=Y, 3=X, 4=A, 5=R, 6=T, 7=K, 8=C, 9=D, 12=E.</summary>
     int ReadPmc(int handle, int adrType, int startAddr, int length, byte[] data);
 
-    /// <summary>Write PMC data. Only writable areas (DO, RO).</summary>
+    /// <summary>Write PMC bytes. F and X are read-only.</summary>
     int WritePmc(int handle, int adrType, int startAddr, int length, byte[] data);
+
+    /// <summary>Read PMC values: dataType 0=byte, 1=word, 2=long. Length and addresses are bytes; values use native little-endian bytes.</summary>
+    int ReadPmcTyped(int handle, int adrType, int startAddr, int length, byte[] data, int dataType);
+
+    /// <summary>Write PMC values with the same byte-count and native little-endian contract as ReadPmcTyped.</summary>
+    int WritePmcTyped(int handle, int adrType, int startAddr, int length, byte[] data, int dataType);
 
     /// <summary>Read actual axis positions (joint angles in degrees).</summary>
     int ReadActPos(int handle, out double[] positions);
@@ -751,6 +741,8 @@ public interface IFocasApi
     int ReadToolId(int handle, out int toolId);
     int ReadMaxToolGroup(int handle, out int maxGroup);
     int ReadMacroVariable(int handle, int number, out double value);
+    /// <summary>Write a macro using the FOCAS decimal format; controller protection still applies.</summary>
+    int WriteMacroVariable(int handle, int number, double value);
     int ReadParameter(int handle, int number, out int value);
     int StartProgramDownload(int handle);
     int DownloadProgramChunk(int handle, byte[] data, int length);

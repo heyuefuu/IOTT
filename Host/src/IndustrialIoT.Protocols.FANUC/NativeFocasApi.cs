@@ -14,6 +14,7 @@ public sealed class NativeFocasApi : IFocasApi
 {
     private const short EW_OK = 0;
     private const short EW_NUMBER = 3;
+    private const short EW_DATA = 5;
     public bool SupportsProgramBlockRead => false;
     public bool SupportsModalReads => false;
 
@@ -138,6 +139,10 @@ public sealed class NativeFocasApi : IFocasApi
 
     [DllImport("Fwlib64.dll", EntryPoint = "cnc_rdmacro")]
     private static extern short cnc_rdmacro(ushort flibHndl, short number, short length, [Out] ODBM macro);
+
+    // The Windows SDK's long is 32-bit, including in Fwlib64.dll.
+    [DllImport("Fwlib64.dll", EntryPoint = "cnc_wrmacro")]
+    private static extern short cnc_wrmacro(ushort flibHndl, short number, short length, int value, short decimals);
 
     [DllImport("Fwlib64.dll", EntryPoint = "cnc_rdparam")]
     private static extern short cnc_rdparam(ushort flibHndl, short number, short axis, short length, [Out] IODBPSD_1 param);
@@ -344,11 +349,11 @@ public sealed class NativeFocasApi : IFocasApi
     private class IODBPMC
     {
         public short type_a;  // PMC address type
-        public short type_d;  // PMC data type (0=byte)
+        public short type_d;  // PMC data type (0=byte, 1=word, 2=long)
         public ushort datano_s; // start PMC address
         public ushort datano_e; // end PMC address
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)]
-        public byte[] cdata = new byte[256];
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = FocasPmcBuffer.Capacity)]
+        public byte[] cdata = new byte[FocasPmcBuffer.Capacity];
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
@@ -455,38 +460,54 @@ public sealed class NativeFocasApi : IFocasApi
         return cnc_freelibhndl((ushort)handle);
     }
 
-    public int ReadPmc(int handle, int adrType, int startAddr, int length, byte[] data)
+    public int ReadPmc(int handle, int adrType, int startAddr, int length, byte[] data) =>
+        ReadPmcTyped(handle, adrType, startAddr, length, data, 0);
+
+    public int ReadPmcTyped(int handle, int adrType, int startAddr, int length, byte[] data, int dataType)
     {
+        var validation = FocasPmcBuffer.Validate(adrType, startAddr, length, data, dataType);
+        if (validation != EW_OK)
+            return validation;
+
         var pmc = new IODBPMC
         {
             type_a = (short)adrType,
-            type_d = 0, // byte type
+            type_d = (short)dataType,
             datano_s = (ushort)startAddr,
             datano_e = (ushort)(startAddr + length - 1),
         };
 
-        var totalLen = (ushort)(8 + length); // header(8) + data
-        var ret = pmc_rdpmcrng((ushort)handle, (short)adrType, 0,
+        var totalLen = (ushort)(FocasPmcBuffer.HeaderLength + length);
+        var ret = pmc_rdpmcrng((ushort)handle, (short)adrType, (short)dataType,
             (ushort)startAddr, (ushort)(startAddr + length - 1), totalLen, pmc);
 
         if (ret == EW_OK)
-            Array.Copy(pmc.cdata, data, Math.Min(length, pmc.cdata.Length));
+            Array.Copy(pmc.cdata, data, length);
 
         return ret;
     }
 
-    public int WritePmc(int handle, int adrType, int startAddr, int length, byte[] data)
+    public int WritePmc(int handle, int adrType, int startAddr, int length, byte[] data) =>
+        WritePmcTyped(handle, adrType, startAddr, length, data, 0);
+
+    public int WritePmcTyped(int handle, int adrType, int startAddr, int length, byte[] data, int dataType)
     {
+        var validation = FocasPmcBuffer.Validate(adrType, startAddr, length, data, dataType);
+        if (validation != EW_OK)
+            return validation;
+        if (FocasPmcBuffer.IsReadOnly(adrType))
+            return 7; // EW_PROT
+
         var pmc = new IODBPMC
         {
             type_a = (short)adrType,
-            type_d = 0,
+            type_d = (short)dataType,
             datano_s = (ushort)startAddr,
             datano_e = (ushort)(startAddr + length - 1),
         };
-        Array.Copy(data, pmc.cdata, Math.Min(length, pmc.cdata.Length));
+        Array.Copy(data, pmc.cdata, length);
 
-        var totalLen = (ushort)(8 + length);
+        var totalLen = (ushort)(FocasPmcBuffer.HeaderLength + length);
         return pmc_wrpmcrng((ushort)handle, totalLen, pmc);
     }
 
@@ -729,12 +750,26 @@ public sealed class NativeFocasApi : IFocasApi
 
     public int ReadMacroVariable(int handle, int number, out double value)
     {
-        value = 0;
+        value = double.NaN;
+        if (!FocasMacroValue.IsValidNumber(number))
+            return EW_NUMBER;
+
         var macro = new ODBM();
         var ret = cnc_rdmacro((ushort)handle, (short)number, 10, macro);
-        if (ret == EW_OK)
-            value = macro.mcr_val * Math.Pow(10, -macro.dec_val);
+        if (ret == EW_OK && !FocasMacroValue.TryDecode(macro.mcr_val, macro.dec_val, out value))
+            return EW_DATA;
         return ret;
+    }
+
+    public int WriteMacroVariable(int handle, int number, double value)
+    {
+        if (!FocasMacroValue.IsValidNumber(number))
+            return EW_NUMBER;
+        if (!FocasMacroValue.TryEncode(value, out var mantissa, out var decimals))
+            return EW_DATA;
+
+        // Handles retain the SDK's default decimal mode; this wrapper never changes it.
+        return cnc_wrmacro((ushort)handle, (short)number, 10, mantissa, decimals);
     }
 
     public int ReadParameter(int handle, int number, out int value)
