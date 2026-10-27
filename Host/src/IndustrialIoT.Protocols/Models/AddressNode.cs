@@ -10,6 +10,8 @@ public record AddressNode
     public DataType? DataType { get; init; }
     public bool IsReadable { get; init; }
     public bool IsWritable { get; init; }
+    public string? Source { get; init; }
+    public string? Description { get; init; }
     public IReadOnlyList<AddressNode>? Children { get; init; }
 }
 

@@ -57,6 +57,28 @@
 			show-icon
 		/>
 
+		<el-card v-if="supportsAddressRanges" class="address-space-card">
+			<template #header>浏览范围配置</template>
+			<p>已识别型号可使用型号目录；其他型号请按设备手册填写范围。每个区域只填一段，起止索引均为十进制连续序号，不是现场变量清单。</p>
+			<p v-if="probeProfile">{{ probeProfile.note }}</p>
+			<el-table :data="addressRangeRows" border>
+				<el-table-column label="区域" min-width="160"><template #default="{ row }">
+					<el-select v-model="row.area" filterable allow-create default-first-option :disabled="rangeSaving">
+						<el-option v-for="area in probeProfile?.areas ?? []" :key="area.id" :label="area.label" :value="area.id" />
+					</el-select>
+				</template></el-table-column>
+				<el-table-column label="起始索引" min-width="150"><template #default="{ row }"><el-input-number v-model="row.start" :min="0" :precision="0" :disabled="rangeSaving" /></template></el-table-column>
+				<el-table-column label="结束索引" min-width="150"><template #default="{ row }"><el-input-number v-model="row.end" :min="0" :precision="0" :disabled="rangeSaving" /></template></el-table-column>
+				<el-table-column width="80"><template #default="{ $index }"><el-button link type="danger" :disabled="rangeSaving" @click="addressRangeRows.splice($index, 1)">移除</el-button></template></el-table-column>
+			</el-table>
+			<div class="header-actions" style="margin-top: 12px">
+				<el-button :disabled="rangeSaving" @click="addressRangeRows.push({ area: probeProfile?.areas[0]?.id ?? '', start: 0, end: 127 })">添加区域</el-button>
+				<el-button type="primary" :loading="rangeSaving" @click="saveAddressRanges">保存并浏览</el-button>
+			</div>
+			<p>移除全部范围后保存，将恢复型号目录；未识别型号仍需显式配置范围。目录按页展开，读取值时才连接设备。</p>
+			<el-alert v-if="rangeError" :title="rangeError" type="warning" :closable="false" />
+		</el-card>
+
 		<el-card v-if="probeProfile" class="address-space-card">
 			<template #header>{{ selectedProtocol }} 可读地址探测</template>
 			<el-alert title="探测结果是可读取的地址，不代表已识别变量名称、类型或全部点位。" type="info" :closable="false" />
@@ -148,6 +170,7 @@
 							<DataLine />
 						</el-icon>
 						<span class="address-name">{{ data.name }}</span>
+						<el-tag v-if="data.source" size="small" type="info">{{ getAddressSourceLabel(data.source) }}</el-tag>
 						<span
 							class="address-value"
 							v-if="
@@ -182,6 +205,7 @@
 						size="small"
 						@click="readAddressValue"
 						:loading="readingValue"
+						:disabled="selectedAddress.isReadable === false"
 					>
 						<el-icon><View /></el-icon>
 						读取值
@@ -205,7 +229,10 @@
 						: "未读取"
 				}}</el-descriptions-item>
 				<el-descriptions-item label="质量">{{
-					selectedAddress.quality === "good" ? "有效" : "无效"
+					selectedAddress.quality === undefined ? "未读取" : selectedAddress.quality === "good" ? "有效" : "无效"
+				}}</el-descriptions-item>
+				<el-descriptions-item v-if="selectedAddress.source" label="目录来源">{{
+					getAddressSourceLabel(selectedAddress.source)
 				}}</el-descriptions-item>
 				<el-descriptions-item label="描述">{{
 					selectedAddress.description || "无"
@@ -222,6 +249,7 @@
 			<div
 				class="write-section"
 				v-if="
+					selectedAddress.isWritable !== false &&
 					selectedAddress.type !== 'input' &&
 					selectedAddress.type !== 'inputRegister'
 				"
@@ -379,6 +407,9 @@ interface AddressItem {
 	value?: any;
 	quality?: "good" | "bad";
 	description?: string;
+	source?: string;
+	isReadable?: boolean;
+	isWritable?: boolean;
 	dataType?: string;
 	timestamp?: string;
 	children?: AddressItem[];
@@ -412,6 +443,28 @@ const router = useRouter();
 const selectedDevice = computed(() => devices.value.find((device) => device.id === form.deviceId));
 const selectedProtocol = computed(() => selectedDevice.value?.protocol);
 const probeProfile = computed(() => getProbeProfile(selectedProtocol.value ?? "", selectedDevice.value?.extendedProperties));
+const supportsAddressRanges = computed(() => ["FINS", "OmronHostLink", "Mewtocol", "MewtocolSerial",
+	"Inovance", "InovanceSerial", "InovanceSerialOverTcp"].includes(selectedProtocol.value ?? ""));
+const addressRangeRows = ref<Array<{ area: string; start: number; end: number }>>([]);
+const rangeSaving = ref(false);
+const rangeError = ref("");
+let rangeSaveVersion = 0;
+
+function loadAddressRangeConfiguration() {
+	addressRangeRows.value = [];
+	rangeError.value = "";
+	const raw = Object.entries(selectedDevice.value?.extendedProperties ?? {})
+		.find(([key]) => key.toLowerCase() === "addressspaceranges")?.[1];
+	if (!raw) return;
+	try {
+		const rows = JSON.parse(raw);
+		if (!Array.isArray(rows) || !rows.every((row) => row && typeof row.area === "string"
+			&& Number.isInteger(row.start) && Number.isInteger(row.end))) throw new Error();
+		addressRangeRows.value = rows.map(({ area, start, end }) => ({ area, start, end }));
+	} catch {
+		rangeError.value = "已保存的浏览范围格式有误，请按设备手册重新填写后保存。";
+	}
+}
 
 interface ProbeResult {
 	address: string;
@@ -441,7 +494,7 @@ const stopProbe = () => {
 	probeController = null;
 	probe.running = false;
 };
-onUnmounted(() => { stopProbe(); probeSaveVersion += 1; });
+onUnmounted(() => { stopProbe(); probeSaveVersion += 1; rangeSaveVersion += 1; });
 
 function getErr(e: unknown, fallback: string): string {
 	const ax = e as {
@@ -463,9 +516,17 @@ function mapNode(n: AddressNode): AddressItem {
 		name: n.displayName,
 		type: n.nodeType === "Folder" ? "folder" : "point",
 		dataType: n.dataType ?? undefined,
+		source: n.source ?? undefined,
+		description: n.description ?? undefined,
+		isReadable: n.isReadable,
+		isWritable: n.isWritable,
 		children: n.children ? n.children.map(mapNode) : [],
 		isLeaf: n.nodeType !== "Folder",
 	};
+}
+
+function getAddressSourceLabel(source?: string | null): string {
+	return source === "ModelRange" ? "型号地址范围" : source === "ConfiguredRange" ? "配置地址范围" : "设备目录";
 }
 
 const loadDevices = async () => {
@@ -546,6 +607,9 @@ onMounted(async () => {
 // 处理设备变更
 const handleDeviceChange = () => {
 	stopProbe();
+	rangeSaveVersion += 1;
+	rangeSaving.value = false;
+	loadAddressRangeConfiguration();
 	probeSaveVersion += 1;
 	probeSelection.value = [];
 	probeCollection.name = "";
@@ -569,6 +633,45 @@ const handleDeviceChange = () => {
 	selectedAddress.value = null;
 	selectedAddresses.value = [];
 	searchResults.value = [];
+};
+
+const saveAddressRanges = async () => {
+	const deviceId = form.deviceId;
+	if (!deviceId || !supportsAddressRanges.value || rangeSaving.value) return;
+	const rows = addressRangeRows.value.map((row) => ({ ...row, area: row.area.trim().toUpperCase() }));
+	const areas = new Set(rows.map((row) => row.area));
+	if (areas.size !== rows.length || rows.some((row) => !row.area || !Number.isSafeInteger(row.start)
+		|| !Number.isSafeInteger(row.end) || row.start < 0 || row.end < row.start)) {
+		rangeError.value = "每个区域只能配置一次，请填写非负整数且结束索引不小于起始索引。";
+		return;
+	}
+	const version = rangeSaveVersion;
+	const protocol = selectedProtocol.value;
+	rangeSaving.value = true;
+	rangeError.value = "";
+	try {
+		const current = await machineConnectionDevicesApi.getById(deviceId);
+		if (version !== rangeSaveVersion || deviceId !== form.deviceId) return;
+		if (current.protocol !== protocol) throw new Error("设备协议已改变，请刷新设备列表后重新配置范围。");
+		const properties = { ...current.extendedProperties };
+		for (const key of Object.keys(properties)) {
+			if (key.toLowerCase() === "addressspaceranges") delete properties[key];
+		}
+		if (rows.length) properties.AddressSpaceRanges = JSON.stringify(rows);
+		const saved = await machineConnectionDevicesApi.update(deviceId, { extendedProperties: properties });
+		if (version !== rangeSaveVersion || deviceId !== form.deviceId) return;
+		selectedDevice.value!.extendedProperties = saved.extendedProperties;
+		if (saved.upstreamSynced === false) {
+			rangeError.value = `范围已保存，但同步采集服务失败：${saved.upstreamError ?? "上游不可用"}`;
+			return;
+		}
+		ElMessage.success("浏览范围已保存");
+		await loadAddressSpace();
+	} catch (error) {
+		if (version === rangeSaveVersion) rangeError.value = getErr(error, "保存浏览范围失败");
+	} finally {
+		if (version === rangeSaveVersion) rangeSaving.value = false;
+	}
 };
 
 const startProbe = async () => {
@@ -663,7 +766,7 @@ const exportProbeResults = () => {
 	URL.revokeObjectURL(url);
 };
 
-// 加载地址空间 = 真实浏览后端地址空间
+// 加载后端目录；范围目录保留来源，与设备在线发现的变量区分。
 const loadAddressSpace = async () => {
 	const deviceId = form.deviceId;
 	if (!deviceId) return false;
@@ -681,7 +784,10 @@ const loadAddressSpace = async () => {
 			return false;
 		}
 		addressSpace.value = nodes.map(mapNode);
-		if (nodes.length === 0) {
+		const rangeNode = nodes.find((node) => node.source === "ModelRange" || node.source === "ConfiguredRange");
+		if (rangeNode) {
+			browseNotice.value = `${getAddressSourceLabel(rangeNode.source)}：${rangeNode.description ?? "目录按地址规则生成。"} 这些是候选地址，不代表设备已公开或正在使用的变量；点击读取后才取得实际值，当前尚未验证可访问性。`;
+		} else if (nodes.length === 0) {
 			browseNotice.value = "设备未返回可浏览的地址目录，未生成任何预设点位。";
 		}
 		expandedKeys.value = addressSpace.value
@@ -692,7 +798,7 @@ const loadAddressSpace = async () => {
 		if (requestVersion === addressSpaceVersion.value) {
 			const response = (e as { response?: { data?: { code?: string } } })?.response;
 			browseNotice.value = getErr(e, "加载地址空间失败");
-			browseNoticeType.value = response?.data?.code === "ADDRESS_SPACE_BROWSING_NOT_SUPPORTED"
+			browseNoticeType.value = ["ADDRESS_SPACE_BROWSING_NOT_SUPPORTED", "ADDRESS_SPACE_CONFIGURATION_REQUIRED"].includes(response?.data?.code ?? "")
 				? "warning" : "error";
 			if (browseNoticeType.value === "error") ElMessage.error(browseNotice.value);
 		}

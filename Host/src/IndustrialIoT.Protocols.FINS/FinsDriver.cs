@@ -14,13 +14,14 @@ using Microsoft.Extensions.Logging;
 using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 
 [ProtocolDriver(ProtocolType.FINS, "Omron", "欧姆龙", "CJ2M", "CP1W", "CP1H", "CP1E-N")]
-public sealed class FinsDriver : IProtocolDriver
+public sealed class FinsDriver : IProtocolDriver, IAddressRangeBrowser
 {
     private static readonly Regex AddressRegex = new(
         @"^(?<area>DM|CIO|WR|HR|AR)(?<word>\d+)(?:\.(?<bit>\d+))?$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private const ushort DefaultStringLength = 16;
+    private DeviceConnectionConfig? _addressSpaceConfig;
 
     private readonly ILogger<FinsDriver> _logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
@@ -32,9 +33,21 @@ public sealed class FinsDriver : IProtocolDriver
 
     public DriverCapabilities Capabilities =>
         DriverCapabilities.Read | DriverCapabilities.Write |
-        DriverCapabilities.BatchRead;
+        DriverCapabilities.BatchRead | DriverCapabilities.Browse;
 
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
+
+    public IAddressSpaceBrowser CreateAddressSpaceBrowser(DeviceConnectionConfig config, string? model = null)
+        => OmronAddressSpaceProfile.Create(config, model);
+
+    public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
+        => CreateAddressSpaceBrowser(RequireAddressSpaceConfig()).BrowseAsync(parentPath, ct);
+
+    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
+        => CreateAddressSpaceBrowser(RequireAddressSpaceConfig()).ExportAddressSpaceAsync(format, ct);
+
+    private DeviceConnectionConfig RequireAddressSpaceConfig() => _addressSpaceConfig
+        ?? throw new InvalidOperationException("地址浏览需要设备配置及型号，或显式的 AddressSpaceRanges。");
 
     public FinsDriver(ILogger<FinsDriver> logger)
     {
@@ -46,6 +59,7 @@ public sealed class FinsDriver : IProtocolDriver
         if (_state == ConnectionState.Connected)
             return new() { Success = true };
 
+        _addressSpaceConfig = config with { ExtendedProperties = new(config.ExtendedProperties) };
         SetState(ConnectionState.Connecting);
 
         try

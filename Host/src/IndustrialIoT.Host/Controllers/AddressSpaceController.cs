@@ -1,9 +1,11 @@
 namespace IndustrialIoT.Host.Controllers;
 
 using IndustrialIoT.Domain.Enums;
+using IndustrialIoT.Domain.Entities;
 using IndustrialIoT.Domain.Interfaces;
 using IndustrialIoT.Host.Services;
 using IndustrialIoT.Protocols.Abstractions;
+using IndustrialIoT.Protocols.Addressing;
 using IndustrialIoT.Protocols.Models;
 using IndustrialIoT.Protocols.Registration;
 using Microsoft.AspNetCore.Mvc;
@@ -16,17 +18,20 @@ public class AddressSpaceController : ControllerBase
     private readonly IDeviceRepository _deviceRepo;
     private readonly IAddressSpaceBrowseService _browseService;
     private readonly IDriverRegistry _registry;
+    private readonly IProtocolDriverFactory _factory;
 
     public AddressSpaceController(
         IPooledDriverAccessor drivers,
         IDeviceRepository deviceRepo,
         IAddressSpaceBrowseService browseService,
-        IDriverRegistry registry)
+        IDriverRegistry registry,
+        IProtocolDriverFactory factory)
     {
         _drivers = drivers;
         _deviceRepo = deviceRepo;
         _browseService = browseService;
         _registry = registry;
+        _factory = factory;
     }
 
     /// <summary>浏览设备地址空间</summary>
@@ -40,6 +45,8 @@ public class AddressSpaceController : ControllerBase
         if (device is null) return NotFound();
 
         var driverType = _registry.Resolve(device.Protocol, device.Brand, device.Model);
+        if (driverType is not null && typeof(IAddressRangeBrowser).IsAssignableFrom(driverType))
+            return await ExecuteRangeAsync(device, async browser => Ok(await browser.BrowseAsync(parentPath, ct)));
         if (driverType is not null && !typeof(IAddressSpaceBrowser).IsAssignableFrom(driverType))
             return BrowsingNotSupported(device.Protocol);
 
@@ -78,6 +85,11 @@ public class AddressSpaceController : ControllerBase
         if (device is null) return NotFound();
 
         var driverType = _registry.Resolve(device.Protocol, device.Brand, device.Model);
+        if (driverType is not null && typeof(IAddressRangeBrowser).IsAssignableFrom(driverType))
+            return await ExecuteRangeAsync(device, async browser => File(
+                await browser.ExportAddressSpaceAsync(format, ct),
+                format == ExportFormat.JSON ? "application/json" : "text/csv",
+                $"address_space_{deviceId}.{format.ToString().ToLowerInvariant()}"));
         if (driverType is not null && !typeof(IAddressSpaceBrowser).IsAssignableFrom(driverType))
             return BrowsingNotSupported(device.Protocol);
 
@@ -101,6 +113,29 @@ public class AddressSpaceController : ControllerBase
             _ => "application/octet-stream"
         };
         return File(outcome.Value, contentType, $"address_space_{deviceId}.{format.ToString().ToLower()}");
+    }
+
+    private async Task<ActionResult> ExecuteRangeAsync(Device device, Func<IAddressSpaceBrowser, Task<ActionResult>> action)
+    {
+        try
+        {
+            // Declared ranges are metadata. Reading live values still uses the pooled driver.
+            await using var driver = _factory.Create(device.Protocol, device.Brand, device.Model);
+            var browser = ((IAddressRangeBrowser)driver).CreateAddressSpaceBrowser(device.ConnectionConfig, device.Model);
+            return await action(browser);
+        }
+        catch (AddressSpaceConfigurationException ex)
+        {
+            return UnprocessableEntity(new { code = "ADDRESS_SPACE_CONFIGURATION_REQUIRED", error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { code = "ADDRESS_SPACE_PATH_INVALID", error = ex.Message });
+        }
+        catch (NotSupportedException ex)
+        {
+            return BadRequest(new { code = "ADDRESS_SPACE_EXPORT_FORMAT_NOT_SUPPORTED", error = ex.Message });
+        }
     }
 
     private ObjectResult BrowsingNotSupported(ProtocolType protocol) => StatusCode(

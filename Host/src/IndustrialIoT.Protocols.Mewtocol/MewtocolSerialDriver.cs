@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 
 [ProtocolDriver(ProtocolType.MewtocolSerial, "Panasonic", "松下", "FP")]
-public sealed class MewtocolSerialDriver : IProtocolDriver
+public sealed class MewtocolSerialDriver : IProtocolDriver, IAddressRangeBrowser
 {
     private static readonly Regex NumericAddressRegex = new(
         @"^(?<prefix>DT|SR|X|Y|R|T|C)(?<number>\d+)$",
@@ -25,6 +25,7 @@ public sealed class MewtocolSerialDriver : IProtocolDriver
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private const ushort DefaultStringLength = 16;
+    private DeviceConnectionConfig? _addressSpaceConfig;
 
     private readonly ILogger<MewtocolSerialDriver> _logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
@@ -35,12 +36,25 @@ public sealed class MewtocolSerialDriver : IProtocolDriver
     public MewtocolSerialDriver(ILogger<MewtocolSerialDriver> logger) => _logger = logger;
     public ProtocolType Protocol => ProtocolType.MewtocolSerial;
     public ConnectionState State => _state;
-    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.BatchRead;
+    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.BatchRead | DriverCapabilities.Browse;
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
+
+    public IAddressSpaceBrowser CreateAddressSpaceBrowser(DeviceConnectionConfig config, string? model = null)
+        => MewtocolAddressSpaceProfile.Create(config, model);
+
+    public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
+        => CreateAddressSpaceBrowser(RequireAddressSpaceConfig()).BrowseAsync(parentPath, ct);
+
+    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
+        => CreateAddressSpaceBrowser(RequireAddressSpaceConfig()).ExportAddressSpaceAsync(format, ct);
+
+    private DeviceConnectionConfig RequireAddressSpaceConfig() => _addressSpaceConfig
+        ?? throw new InvalidOperationException("地址浏览需要设备配置及型号，或显式的 AddressSpaceRanges。");
 
     public async Task<ConnectionResult> ConnectAsync(DeviceConnectionConfig config, CancellationToken ct = default)
     {
         if (_state == ConnectionState.Connected) return new() { Success = true };
+        _addressSpaceConfig = config with { ExtendedProperties = new(config.ExtendedProperties) };
         SetState(ConnectionState.Connecting);
         _station = byte.TryParse(Get(config, "Station"), out var st) ? st : (byte)238;
 

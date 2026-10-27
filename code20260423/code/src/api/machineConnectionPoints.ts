@@ -11,6 +11,8 @@ export interface AddressNode {
     engineeringUnit?: string | null;
     isReadable?: boolean;
     isWritable?: boolean;
+    source?: string | null;
+    description?: string | null;
     sourceId?: string | null;
     children?: AddressNode[] | null;
 }
@@ -115,7 +117,14 @@ export const machineConnectionPointsApi = {
                 params: { format },
                 responseType: "blob",
             },
-        );
+        ).catch(async (error: unknown) => {
+            const response = (error as { response?: { data?: unknown } }).response;
+            if (response?.data instanceof Blob) {
+                try { response.data = JSON.parse(await response.data.text()); }
+                catch { /* Preserve the original error if the server did not return JSON. */ }
+            }
+            throw error;
+        });
 
         const contentType =
             res.headers?.["content-type"] ?? "application/octet-stream";

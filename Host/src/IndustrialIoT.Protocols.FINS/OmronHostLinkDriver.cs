@@ -15,13 +15,14 @@ using Microsoft.Extensions.Logging;
 using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 
 [ProtocolDriver(ProtocolType.OmronHostLink, "Omron", "欧姆龙", "CJ2M", "CP1W", "CP1H", "CP1E-N")]
-public sealed class OmronHostLinkDriver : IProtocolDriver
+public sealed class OmronHostLinkDriver : IProtocolDriver, IAddressRangeBrowser
 {
     private static readonly Regex AddressRegex = new(
         @"^(?<area>DM|CIO|WR|HR|AR|D|C|W|H|A)(?<word>\d+)(?:\.(?<bit>\d+))?$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private const ushort DefaultStringLength = 16;
+    private DeviceConnectionConfig? _addressSpaceConfig;
 
     private readonly ILogger<OmronHostLinkDriver> _logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
@@ -31,12 +32,25 @@ public sealed class OmronHostLinkDriver : IProtocolDriver
     public OmronHostLinkDriver(ILogger<OmronHostLinkDriver> logger) => _logger = logger;
     public ProtocolType Protocol => ProtocolType.OmronHostLink;
     public ConnectionState State => _state;
-    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.BatchRead;
+    public DriverCapabilities Capabilities => DriverCapabilities.Read | DriverCapabilities.Write | DriverCapabilities.BatchRead | DriverCapabilities.Browse;
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
+
+    public IAddressSpaceBrowser CreateAddressSpaceBrowser(DeviceConnectionConfig config, string? model = null)
+        => OmronAddressSpaceProfile.Create(config, model);
+
+    public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
+        => CreateAddressSpaceBrowser(RequireAddressSpaceConfig()).BrowseAsync(parentPath, ct);
+
+    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
+        => CreateAddressSpaceBrowser(RequireAddressSpaceConfig()).ExportAddressSpaceAsync(format, ct);
+
+    private DeviceConnectionConfig RequireAddressSpaceConfig() => _addressSpaceConfig
+        ?? throw new InvalidOperationException("地址浏览需要设备配置及型号，或显式的 AddressSpaceRanges。");
 
     public async Task<ConnectionResult> ConnectAsync(DeviceConnectionConfig config, CancellationToken ct = default)
     {
         if (_state == ConnectionState.Connected) return new() { Success = true };
+        _addressSpaceConfig = config with { ExtendedProperties = new(config.ExtendedProperties) };
         SetState(ConnectionState.Connecting);
         try
         {
