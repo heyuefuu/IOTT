@@ -164,6 +164,9 @@ internal sealed class CountingFocasApi : IFocasApi
     public int ReadPmc(int handle, int adrType, int startAddr, int length, byte[] data) =>
         Count(nameof(ReadPmc), () => _inner.ReadPmc(handle, adrType, startAddr, length, data));
 
+    public int ReadPmcTyped(int handle, int adrType, int startAddr, int length, byte[] data, int dataType) =>
+        Count(nameof(ReadPmcTyped), () => _inner.ReadPmcTyped(handle, adrType, startAddr, length, data, dataType));
+
     public int ReadProgramBlock(int handle, out string block)
     {
         var result = string.Empty;
@@ -186,8 +189,14 @@ internal sealed class CountingFocasApi : IFocasApi
 
     // ── Not exercised by batch reads — straight passthrough ──────────
 
+    public int WriteMacroVariable(int handle, int number, double value) =>
+        _inner.WriteMacroVariable(handle, number, value);
+
     public int WritePmc(int handle, int adrType, int startAddr, int length, byte[] data) =>
         _inner.WritePmc(handle, adrType, startAddr, length, data);
+
+    public int WritePmcTyped(int handle, int adrType, int startAddr, int length, byte[] data, int dataType) =>
+        _inner.WritePmcTyped(handle, adrType, startAddr, length, data, dataType);
 
     public int ReadAlarm(int handle, out int alarmNo, out string message) =>
         _inner.ReadAlarm(handle, out alarmNo, out message);

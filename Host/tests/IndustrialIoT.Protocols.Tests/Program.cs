@@ -27,7 +27,7 @@ var checks = new (string Name, Func<Task> Run)[]
     ("PLC collection serializes shared device connection lifetimes", PlcCollectionRegressionTests.SharedDeviceLifecycleAsync),
     ("Collection config rejects missing and deleted devices", CollectionConfigRegressionTests.RejectMissingDevicesAsync),
     ("Collection config preserves registered device profiles", CollectionConfigRegressionTests.CreateForRegisteredDeviceAsync),
-    ("PLC address browsing rejects synthetic directories", PlcAddressSpaceRegressionTests.RunAsync),
+    ("PLC address browsing: model ranges, export and unsupported protocols", PlcAddressSpaceRegressionTests.RunAsync),
     ("Siemens S7 scalar widths and byte order", SiemensS7RegressionTests.ScalarWidthsAsync),
     ("Siemens S7 TIA addresses and exact integer transport", SiemensS7RegressionTests.AddressAndTransportAsync),
     ("Siemens S7 model, CPU, Rack/Slot and legacy connection configuration", SiemensS7ConfigurationRegressionTests.RunAsync),

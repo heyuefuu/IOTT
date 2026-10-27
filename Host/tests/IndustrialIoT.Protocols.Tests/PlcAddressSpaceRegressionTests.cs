@@ -9,6 +9,7 @@ using IndustrialIoT.Protocols.Abstractions;
 using IndustrialIoT.Protocols.Registration;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 internal static class PlcAddressSpaceRegressionTests
 {
@@ -19,19 +20,14 @@ internal static class PlcAddressSpaceRegressionTests
         services.AddLogging();
         ProtocolDriverRegistration.RegisterRealDrivers(services, registry);
         await using var provider = services.BuildServiceProvider();
+        var factory = new ProtocolDriverFactory(registry, provider, NullLogger<ProtocolDriverFactory>.Instance);
+        await PlcAddressRangeRegressionTests.RunAsync(registry, factory);
         var protocols = new (ProtocolType Protocol, string Brand)[]
         {
             (ProtocolType.SiemensS7, "Siemens"),
             (ProtocolType.ModbusTCP, "PLC"),
             (ProtocolType.ModbusRTU, "PLC"),
             (ProtocolType.Profibus, "Profibus"),
-            (ProtocolType.Inovance, "Inovance"),
-            (ProtocolType.InovanceSerial, "Inovance"),
-            (ProtocolType.InovanceSerialOverTcp, "Inovance"),
-            (ProtocolType.FINS, "Omron"),
-            (ProtocolType.OmronHostLink, "Omron"),
-            (ProtocolType.Mewtocol, "Panasonic"),
-            (ProtocolType.MewtocolSerial, "Panasonic"),
         };
         foreach (var (protocol, brand) in protocols)
         {
@@ -43,7 +39,7 @@ internal static class PlcAddressSpaceRegressionTests
             TestSupport.Require((driver.Capabilities & readWrite) == readWrite, $"{protocol} lost real read/write capabilities");
             var device = CreateDevice(protocol, brand);
             var accessor = new OfflineAccessor();
-            var controller = new AddressSpaceController(accessor, new DeviceRepository(device), new AddressSpaceBrowseService(), registry);
+            var controller = new AddressSpaceController(accessor, new DeviceRepository(device), new AddressSpaceBrowseService(), registry, factory);
             foreach (var parentPath in new string?[] { null, "I", "DB1" })
                 RequireUnsupported((await controller.Browse(device.Id, parentPath)).Result, protocol);
             foreach (var format in new[] { ExportFormat.CSV, ExportFormat.JSON, ExportFormat.Excel })
@@ -56,7 +52,7 @@ internal static class PlcAddressSpaceRegressionTests
         var onlineType = registry.Resolve(onlineDevice.Protocol, onlineDevice.Brand)!;
         TestSupport.Require(typeof(IAddressSpaceBrowser).IsAssignableFrom(onlineType), "OPC UA lost its real browser");
         var onlineAccessor = new OfflineAccessor();
-        var onlineController = new AddressSpaceController(onlineAccessor, new DeviceRepository(onlineDevice), new AddressSpaceBrowseService(), registry);
+        var onlineController = new AddressSpaceController(onlineAccessor, new DeviceRepository(onlineDevice), new AddressSpaceBrowseService(), registry, factory);
         TestSupport.Require((await onlineController.Browse(onlineDevice.Id)).Result is ObjectResult { StatusCode: 502 },
             "Online-capable driver must attempt the real connection and report its actual failure");
         TestSupport.Require(await onlineController.Export(onlineDevice.Id) is ObjectResult { StatusCode: 502 },
