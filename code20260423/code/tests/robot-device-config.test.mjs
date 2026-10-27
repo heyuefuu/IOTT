@@ -17,7 +17,7 @@ assert.deepEqual(template.errors, []);
 const parsed = ts.createSourceFile(filename, descriptor.scriptSetup.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 const executable = ts.transpileModule(parsed.statements.filter(statement => !ts.isImportDeclaration(statement))
     .map(statement => statement.getText(parsed)).join("\n")
-    + "\nglobalThis.handlers = { mapToRobot, currentDevice, openEditDeviceDialog, saveDevice, importRobotTags, importingDeviceId };",
+    + "\nglobalThis.handlers = { mapToRobot, currentDevice, openEditDeviceDialog, saveDevice, importRobotTags, importingDeviceId, FANUC_TEMPLATE };",
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
 
 function setup(context, importResponse = { successCount: 1, errorCount: 0, errors: [] }) {
@@ -121,4 +121,22 @@ test("ModbusTCP loads UnitId first and saves both station aliases", async contex
     assert.equal(properties.UnitId, "7");
     assert.equal(properties.Station, "7");
     assert.equal(properties.vendorSetting, "keep");
+});
+
+test("FANUC template preserves every point interval when imported by group", context => {
+    const { handlers } = setup(context);
+    const rows = handlers.FANUC_TEMPLATE.split(/\r?\n/).slice(1).map(line => line.split(","));
+    assert.equal(rows.length, 15);
+    const groups = new Map();
+    for (const [address, , groupName, intervalText] of rows) {
+        const intervalMs = Number(intervalText);
+        assert.ok(Number.isInteger(intervalMs) && intervalMs > 0, address);
+        if (!groups.has(groupName)) groups.set(groupName, intervalMs);
+        assert.equal(groups.get(groupName), intervalMs, address + ": group " + groupName + " changes its interval");
+    }
+    for (const [address, expected] of [["GO1", 1000], ["AI1", 1000], ["DATA:PosRegGP1", 2000]]) {
+        const row = rows.find(point => point[0] === address);
+        assert.ok(row, address);
+        assert.equal(groups.get(row[2]), expected, address);
+    }
 });

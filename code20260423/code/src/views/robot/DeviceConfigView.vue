@@ -608,12 +608,12 @@ const FANUC_TEMPLATE = [
 	"RDI1,Bool,IO,500,机器人输入1,",
 	"SDO1,Bool,IO,500,数字输出1,",
 	"SDI1,Bool,IO,500,数字输入1,",
-	"GO1,UInt16,IO,1000,组输出1,",
-	"AI1,UInt16,IO,1000,模拟输入1,",
+	"GO1,UInt16,IO_1000ms,1000,组输出1,",
+	"AI1,UInt16,IO_1000ms,1000,模拟输入1,",
 	"DATA:CurrentPose,String,位姿,1000,当前位姿,",
 	"DATA:AlarmCurrent,String,报警,1000,当前报警,",
 	"DATA:NumReg1,String,寄存器,1000,数值寄存器R[],",
-	"DATA:PosRegGP1,String,寄存器,2000,位置寄存器PR[],",
+	"DATA:PosRegGP1,String,位置寄存器,2000,位置寄存器PR[],",
 	"FANUC_DATA,String,快照,5000,整机状态快照,",
 ].join("\r\n");
 
