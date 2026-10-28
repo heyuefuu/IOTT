@@ -2,6 +2,7 @@ namespace IndustrialIoT.Host;
 
 using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Protocols.FANUC;
+using IndustrialIoT.Protocols.CAN;
 using IndustrialIoT.Protocols.FINS;
 using IndustrialIoT.Protocols.FileTransfer;
 using IndustrialIoT.Protocols.EstunRobot;
@@ -25,6 +26,8 @@ public static class ProtocolDriverRegistration
 {
     public static void RegisterRealDrivers(IServiceCollection services, IDriverRegistry registry)
     {
+        services.AddTransient<CanDriver>();
+        registry.Register(typeof(CanDriver), ProtocolType.CAN, ["*"]);
         services.AddTransient<ModbusTcpDriver>();
         registry.Register(typeof(ModbusTcpDriver), ProtocolType.ModbusTCP, ["Inovance", "汇川", "广数", "广州数控", "GSK", "MICRO-T400", "*"]);
         // PROFIBUS-DP 经 PROFIBUS↔以太网网关桥接为 Modbus-TCP 接入（详见 ProfibusDriver 文档）

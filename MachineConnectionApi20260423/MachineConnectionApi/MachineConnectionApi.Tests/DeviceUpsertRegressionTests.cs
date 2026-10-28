@@ -39,6 +39,7 @@ internal static partial class DeviceUpsertRegressionTests
         await ConnectionPreservesRestoredConfiguration();
         await SdkPortsValidateAgainstSelectedProtocol();
         await SerialConfigurationSurvivesEdits();
+        await CanConfigurationSurvivesEdits();
     }
 
     private static async Task SdkPortsValidateAgainstSelectedProtocol()

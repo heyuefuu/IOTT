@@ -74,7 +74,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         if (string.IsNullOrWhiteSpace(input.Type)) return BadRequest(new { error = "Type 不能为空（CNC / PLC / Robot）" });
         if (string.IsNullOrWhiteSpace(input.Protocol)) return BadRequest(new { error = "Protocol 不能为空" });
         if (string.IsNullOrWhiteSpace(input.Host)) return BadRequest(new { error = "Host 不能为空" });
-        if (!IsValidPort(input.Port, input.Protocol)) return BadRequest(new { error = "Port 必须是 1~65535；串口和广数 SDK 可使用 0" });
+        if (!IsValidPort(input.Port, input.Protocol)) return BadRequest(new { error = "CAN 的 Port 必须为 0；网络端口必须为 1~65535；串口和广数 SDK 可使用 0" });
         var serialError = ValidateSerialConfiguration(input.Protocol, input.ExtendedProperties, input.ClearTransfer ? null : input.Transfer);
         if (serialError is not null) return BadRequest(new { error = serialError });
 
@@ -114,7 +114,7 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         var current = _store.ReadAll().FirstOrDefault(x => x.Id == id);
         if (current is null) return NotFound();
         if (!IsValidPort(input.Port ?? current.Port, input.Protocol ?? current.Protocol))
-            return BadRequest(new { error = "Port 必须是 1~65535；串口和广数 SDK 可使用 0" });
+            return BadRequest(new { error = "CAN 的 Port 必须为 0；网络端口必须为 1~65535；串口和广数 SDK 可使用 0" });
 
         var transfer = input.ClearTransfer ? null : input.Transfer ?? current.Transfer;
         var serialError = ValidateSerialConfiguration(input.Protocol ?? current.Protocol,
@@ -266,12 +266,16 @@ public class DevicesController : IndustrialIoTProxyControllerBase
         string.Equals(protocol, "GskrmFileTransfer", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsValidPort(int? port, string? protocol) =>
-        port is > 0 and <= 65535 || port == 0 && (UsesSdkPort(protocol) || UsesSerialPort(protocol));
+        IsCanProtocol(protocol) ? port == 0 : port is > 0 and <= 65535 || port == 0 && (UsesSdkPort(protocol) || UsesSerialPort(protocol));
 
-    private static bool UsesSerialPort(string? protocol) => string.Equals(protocol, "Serial", StringComparison.OrdinalIgnoreCase);
+    private static bool IsCanProtocol(string? protocol) => string.Equals(protocol, "CAN", StringComparison.OrdinalIgnoreCase);
+
+    private static bool UsesSerialPort(string? protocol) => IsCanProtocol(protocol) || string.Equals(protocol, "Serial", StringComparison.OrdinalIgnoreCase);
 
     private static string? ValidateSerialConfiguration(string? protocol, Dictionary<string, string>? properties, TransferDeviceDto? transfer)
     {
+        if (IsCanProtocol(protocol) && !IsValidCanProperties(properties))
+            return "CAN 需要 SLCAN、非空 PortName、有效的 BaudRate/CanBitRate，且串口为 8N1、Handshake.None";
         if (UsesSerialPort(protocol) && !IsValidSerialProperties(properties))
             return "串口需要非空 PortName 和有效的 BaudRate/DataBits/Parity/StopBits";
         if (transfer is not null && UsesSerialPort(transfer.Protocol) &&
@@ -280,6 +284,17 @@ public class DevicesController : IndustrialIoTProxyControllerBase
             return "串口传输通道需要 Host、有效 Port、非空 PortName 和有效的 BaudRate/DataBits/Parity/StopBits";
         return null;
     }
+
+    private static bool IsValidCanProperties(Dictionary<string, string>? properties) =>
+        IsValidSerialProperties(properties) && properties is not null
+        && (!properties.TryGetValue("CanTransport", out var transport) || string.Equals(transport, "SLCAN", StringComparison.OrdinalIgnoreCase))
+        && (!properties.TryGetValue("CanBitRate", out var bitrate) || int.TryParse(bitrate, out var rate)
+            && new[] { 10000, 20000, 50000, 100000, 125000, 250000, 500000, 800000, 1000000 }.Contains(rate))
+        && (!properties.TryGetValue("CanFrameMaxAgeMs", out var age) || int.TryParse(age, out var milliseconds) && milliseconds > 0)
+        && (!properties.TryGetValue("DataBits", out var bits) || bits == "8")
+        && (!properties.TryGetValue("Parity", out var parity) || string.Equals(parity, "None", StringComparison.OrdinalIgnoreCase))
+        && (!properties.TryGetValue("StopBits", out var stop) || string.Equals(stop, "One", StringComparison.OrdinalIgnoreCase))
+        && (!properties.TryGetValue("Handshake", out var handshake) || string.Equals(handshake, "None", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsValidSerialProperties(Dictionary<string, string>? properties) =>
         properties is not null && properties.TryGetValue("PortName", out var name) && !string.IsNullOrWhiteSpace(name)

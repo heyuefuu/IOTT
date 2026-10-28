@@ -225,6 +225,7 @@
 
                 <el-form-item label="协议" prop="protocol" required>
                     <el-select v-model="deviceForm.protocol" placeholder="请选择协议类型" style="width: 100%" @change="onDeviceProtocolChange">
+                        <el-option label="CAN（SLCAN 串口）" value="CAN" />
                         <el-option label="Profibus" value="Profibus" />
                         <el-option label="Modbus TCP" value="ModbusTCP" />
                         <el-option label="NC-link" value="NCLink" />
@@ -240,10 +241,10 @@
                         <el-option label="OPC UA" value="OpcUa" />
                     </el-select>
                 </el-form-item>
-                <el-form-item label="主机" prop="ip" required>
-                    <el-input v-model="deviceForm.ip" placeholder="如 127.0.0.1" />
+                <el-form-item :label="deviceForm.protocol === 'CAN' ? '串口名称' : '主机'" prop="ip" required>
+                    <el-input v-model="deviceForm.ip" :placeholder="deviceForm.protocol === 'CAN' ? '如 COM3 或 /dev/ttyUSB0' : '如 127.0.0.1'" />
                 </el-form-item>
-                <el-form-item v-if="deviceForm.protocol !== 'Gskrm'" label="端口" prop="port">
+                <el-form-item v-if="!['Gskrm', 'CAN'].includes(deviceForm.protocol)" label="端口" prop="port">
                     <el-input v-model.number="deviceForm.port" placeholder="按现场配置填写端口" />
                 </el-form-item>
                 <el-form-item label="连接超时 ms" prop="connectTimeoutMs">
@@ -291,7 +292,18 @@
 
                 <el-divider content-position="center">扩展属性</el-divider>
 
-                <template v-if="deviceForm.protocol === 'FOCAS'">
+                <template v-if="deviceForm.protocol === 'CAN'">
+                    <el-alert type="info" :closable="false" title="使用 SLCAN 串口适配器，8N1、无流控；串口速率与 CAN 总线速率分别配置。" />
+                    <el-form-item label="串口速率 baud">
+                        <el-input-number v-model="deviceForm.baudRate" :min="1" :max="4000000" :step="9600" />
+                    </el-form-item>
+                    <el-form-item label="CAN 速率 bit/s">
+                        <el-select v-model="deviceForm.canBitRate" style="width: 100%">
+                            <el-option v-for="rate in canBitRates" :key="rate" :label="String(rate)" :value="rate" />
+                        </el-select>
+                    </el-form-item>
+                </template>
+                <template v-else-if="deviceForm.protocol === 'FOCAS'">
                     <el-form-item label="轴标签" prop="axisLabels">
                         <el-input v-model="deviceForm.axisLabels" placeholder="如 X,Y,Z,A,B,C（发那科 FOCAS）" />
                     </el-form-item>
@@ -993,6 +1005,7 @@ interface DeviceUi {
     lastCommTime: string;
     station: number;
     baudRate: number;
+    canBitRate: number;
     connectTimeoutMs: number;
     readTimeoutMs: number;
     axisLabels: string;
@@ -1115,13 +1128,14 @@ function mapDtoToUi(d: DeviceDto): DeviceUi {
         code: ext.DeviceCode ?? ext.Code ?? ext.code ?? "",
         model: d.model,
         line: ext.Line ?? ext.line ?? "",
-        ip: d.host,
+        ip: d.protocol === "CAN" ? ext.PortName ?? d.host : d.host,
         port: d.port,
         protocol: d.protocol,
         status: mapStatus(d.status),
         lastCommTime: formatSeenAt(d.lastSeenAt),
         station: ext.Station ? Number(ext.Station) : 1,
-        baudRate: ext.BaudRate ? Number(ext.BaudRate) : 9600,
+        baudRate: ext.BaudRate ? Number(ext.BaudRate) : d.protocol === "CAN" ? 115200 : 9600,
+        canBitRate: ext.CanBitRate ? Number(ext.CanBitRate) : 500000,
         connectTimeoutMs: d.connectTimeoutMs ?? 10000,
         readTimeoutMs: d.readTimeoutMs ?? 5000,
         axisLabels: ext.AxisLabels ?? "",
@@ -1170,6 +1184,7 @@ function buildExtendedProps(form: Record<string, unknown>): Record<string, strin
         if (typeof value === "string" && (sameProtocol || commonKeys.includes(key))) ext[key] = value;
     }
     const editableKeys: Record<string, string[]> = {
+        CAN: ["CanTransport", "PortName", "BaudRate", "CanBitRate", "DataBits", "Parity", "StopBits", "Handshake"],
         FOCAS: ["AxisLabels"],
         OpcUa: ["EndpointUrl", "UseSecurity", "AutoAcceptUntrustedCerts", "RejectSHA1SignedCertificates", "SuppressNonceValidationErrors"],
         NCLink: ["DeviceGuid", "Brand", "MqttBrokerHost", "MqttBrokerPort", "MqttUsername", "MqttPassword"],
@@ -1187,6 +1202,13 @@ function buildExtendedProps(form: Record<string, unknown>): Record<string, strin
     if (line) ext.Line = line;
     const brand = String(form.brand ?? "").trim();
     if (brand) ext.uiBrandKey = inferBrandKey(brand);
+
+    if (protocol === "CAN") {
+        Object.assign(ext, { CanTransport: "SLCAN", PortName: String(form.ip ?? "").trim(),
+            BaudRate: String(form.baudRate ?? 115200), CanBitRate: String(form.canBitRate ?? 500000),
+            DataBits: "8", Parity: "None", StopBits: "One", Handshake: "None" });
+        return ext;
+    }
 
     if (protocol === "FOCAS") {
         const axisLabels = String(form.axisLabels ?? "").trim();
@@ -1266,6 +1288,7 @@ function buildExtendedProps(form: Record<string, unknown>): Record<string, strin
     return ext;
 }
 
+const canBitRates = [10000, 20000, 50000, 100000, 125000, 250000, 500000, 800000, 1000000];
 const devices = ref<DeviceUi[]>([]);
 const devicesLoading = ref(false);
 const devicesError = ref<string | null>(null);
@@ -3871,6 +3894,7 @@ const deviceForm = ref({
     protocol: "FOCAS",
     station: 1,
     baudRate: 9600,
+    canBitRate: 500000,
     connectTimeoutMs: 10000,
     readTimeoutMs: 5000,
     axisLabels: "X,Y,Z,A,B,C",
@@ -3918,6 +3942,13 @@ const deviceForm = ref({
 });
 
 function onDeviceProtocolChange(protocol: string) {
+    const serialHost = /^(?:COM\d+|\/dev\/)/i.test(deviceForm.value.ip.trim());
+    if (protocol === "CAN") {
+        if (!serialHost) deviceForm.value.ip = "COM3";
+        deviceForm.value.baudRate = 115200;
+    } else if (serialHost) {
+        deviceForm.value.ip = "127.0.0.1";
+    }
     const ports: Record<string, number> = {
         FOCAS: 8193, OpcUa: 4840, NCLink: 1883, NCLinkApi: 19001, ModbusTCP: 502,
         MTConnect: 5000, HaasMdc: 9999, JingDiao: 89,
@@ -3967,6 +3998,7 @@ const openAddDeviceDialog = () => {
         protocol: "FOCAS",
         station: 1,
         baudRate: 9600,
+        canBitRate: 500000,
         connectTimeoutMs: 10000,
         readTimeoutMs: 5000,
         axisLabels: "X,Y,Z,A,B,C",
@@ -4032,6 +4064,7 @@ const editDevice = (device: DeviceUi) => {
         protocol: device.protocol,
         station: device.station,
         baudRate: device.baudRate,
+        canBitRate: device.canBitRate,
         connectTimeoutMs: device.connectTimeoutMs,
         readTimeoutMs: device.readTimeoutMs,
         axisLabels: device.axisLabels,
@@ -4104,11 +4137,15 @@ const saveDevice = async () => {
         return;
     }
     if (!f.ip?.trim()) {
-        ElMessage.warning("请输入主机地址 host");
+        ElMessage.warning(f.protocol === "CAN" ? "请输入 SLCAN 串口名称 PortName" : "请输入主机地址 host");
         return;
     }
-    if (f.protocol !== "Gskrm" && (!Number.isInteger(f.port) || f.port <= 0 || f.port > 65535)) {
+    if (!["Gskrm", "CAN"].includes(f.protocol) && (!Number.isInteger(f.port) || f.port <= 0 || f.port > 65535)) {
         ElMessage.warning("请输入有效端口 port");
+        return;
+    }
+    if (f.protocol === "CAN" && (!Number.isInteger(f.baudRate) || f.baudRate <= 0 || !canBitRates.includes(f.canBitRate))) {
+        ElMessage.warning("请填写有效串口速率并选择支持的 CAN 总线速率");
         return;
     }
     if (f.transferProtocol === "Serial" && !String(f.transferExtendedProperties?.PortName ?? "").trim()) {
@@ -4175,7 +4212,7 @@ const saveDevice = async () => {
                 model: f.model.trim(),
                 protocol: f.protocol,
                 host: f.ip.trim(),
-                port: f.protocol === "Gskrm" ? 0 : f.port,
+                port: ["Gskrm", "CAN"].includes(f.protocol) ? 0 : f.port,
                 username,
                 password,
                 connectTimeoutMs,
@@ -4195,7 +4232,7 @@ const saveDevice = async () => {
                 model: f.model.trim(),
                 protocol: f.protocol,
                 host: f.ip.trim(),
-                port: f.protocol === "Gskrm" ? 0 : f.port,
+                port: ["Gskrm", "CAN"].includes(f.protocol) ? 0 : f.port,
                 username,
                 password,
                 connectTimeoutMs,

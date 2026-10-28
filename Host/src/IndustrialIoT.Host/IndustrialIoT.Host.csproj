@@ -19,6 +19,7 @@
     <ProjectReference Include="..\IndustrialIoT.Protocols\IndustrialIoT.Protocols.csproj" />
     <ProjectReference Include="..\IndustrialIoT.Simulator\IndustrialIoT.Simulator.csproj" />
     <ProjectReference Include="..\IndustrialIoT.Protocols.Modbus\IndustrialIoT.Protocols.Modbus.csproj" />
+    <ProjectReference Include="..\IndustrialIoT.Protocols.CAN\IndustrialIoT.Protocols.CAN.csproj" />
     <ProjectReference Include="..\IndustrialIoT.Protocols.FINS\IndustrialIoT.Protocols.FINS.csproj" />
     <ProjectReference Include="..\IndustrialIoT.Protocols.Mewtocol\IndustrialIoT.Protocols.Mewtocol.csproj" />
     <ProjectReference Include="..\IndustrialIoT.Protocols.NCLink\IndustrialIoT.Protocols.NCLink.csproj" />
