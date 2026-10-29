@@ -129,12 +129,12 @@
 					/>
 				</el-form-item>
 				<el-form-item label="模板内容" prop="content">
-					<el-input
-						v-model="currentTemplate.content"
-						type="textarea"
-						:rows="5"
-						placeholder="请输入模板内容"
-					/>
+					<div class="template-content-editor">
+						<el-button text type="primary" @click="currentTemplate.content = templateExample">使用示例替换内容</el-button>
+						<el-input v-model="currentTemplate.content" type="textarea" :rows="12" placeholder="请输入模板内容" />
+						<p v-pre>依次保留 {{Introduction}}、{{Tables}}、{{Closing}}，各占一行且只出现一次，以保留报告数据、证据与结论。</p>
+						<p>支持 Markdown 标题、段落和列表。可用变量：<code>{{ templateVariables.join('、') }}</code>；变量区分大小写。</p>
+					</div>
 				</el-form-item>
 			</el-form>
 			<template #footer>
@@ -152,7 +152,7 @@
 		<!-- 预览对话框 -->
 		<el-dialog
 			v-model="previewDialogVisible"
-			title="模板预览"
+			title="模板预览（示例数据，非实际测试结果）"
 			width="800px"
 		>
 			<div class="preview-content" v-html="previewContent"></div>
@@ -171,12 +171,19 @@
 import { ref, reactive, computed, onMounted } from "vue";
 import { Plus, Refresh } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { isAxiosError } from "axios";
 import {
 	businessValidationApi,
 	type ReportTemplateDto,
 } from "@/api/businessValidation";
 
 type Template = ReportTemplateDto;
+const templateVariables = ["Title", "TaskName", "MachineName", "TotalScore", "Conclusion", "RunId", "MachineNo", "MachineModel", "ControlSystem", "TestDate", "Tester", "Result", "GeneratedAt"];
+const templateExample = "# {{Title}}\n项目报告：{{MachineName}}\n{{Introduction}}\n## 实测与评分\n{{Tables}}\n## 结论\n{{Closing}}\n审核人：________";
+const templateError = (error: unknown, fallback: string) => {
+	const data = isAxiosError(error) ? error.response?.data : undefined;
+	return typeof data?.error === "string" ? data.error : error instanceof Error ? error.message : fallback;
+};
 
 const templates = ref<Template[]>([]);
 
@@ -205,7 +212,7 @@ const createEmptyTemplate = (): Template => ({
 	name: "",
 	type: "performance",
 	description: "",
-	content: "",
+	content: templateExample,
 	createdAt: new Date().toISOString(),
 });
 
@@ -279,7 +286,7 @@ const saveTemplate = async () => {
 		ElMessage.success("模板已保存");
 	} catch (error) {
 		console.error(error);
-		ElMessage.error("模板保存失败，请检查业务后端服务");
+		ElMessage.error(templateError(error, "模板保存失败，请检查业务后端服务"));
 	}
 };
 
@@ -308,7 +315,7 @@ const previewTemplate = async (id: string) => {
 		previewDialogVisible.value = true;
 	} catch (error) {
 		console.error(error);
-		ElMessage.error("模板预览失败，请检查业务后端服务");
+		ElMessage.error(templateError(error, "模板预览失败，请检查业务后端服务"));
 	}
 };
 
@@ -420,5 +427,6 @@ onMounted(() => {
 			margin: 5px 0;
 		}
 	}
+	.template-content-editor { width: 100%; }
 }
 </style>

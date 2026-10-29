@@ -58,12 +58,15 @@ public static class PasswordHasher
 
 public sealed record AuthSession(string Token, string UserId, string Username, string Name, string Role, IReadOnlyList<string> Permissions, DateTimeOffset ExpiresAt)
 {
+    public IndustrialIoT.Security.DeviceDataScope DataScope { get; init; } = IndustrialIoT.Security.DeviceDataScope.None;
     public bool HasPermission(string key) =>
         Role == "admin" || Permissions.Contains("all") || Permissions.Contains(key);
 }
 
 public interface IAuthService
 {
+    AuthDelegation AuthorizeScheduledTask(string? userId, VerifyTaskDto task) =>
+        throw new UnauthorizedAccessException("当前认证服务未启用定时任务委托授权。");
     /// <summary>校验用户名口令；成功返回会话，失败返回 null 并给出原因。</summary>
     (AuthSession? Session, string? Error) Login(string username, string password);
     void Logout(string token);
@@ -74,7 +77,7 @@ public interface IAuthService
     void EnsureSeeded();
 }
 
-public sealed class AuthService : IAuthService
+public sealed partial class AuthService : IAuthService
 {
     public const string DefaultAdminUsername = "admin";
     public const string DefaultAdminPassword = "admin@123";
@@ -82,13 +85,15 @@ public sealed class AuthService : IAuthService
 
     private readonly ConcurrentDictionary<string, AuthSession> _sessions = new();
     private readonly IUserStore _users;
+    private readonly IDeviceStore? _devices;
     private readonly ISystemActivityLog _activityLog;
     private readonly ILogger<AuthService> _logger;
     private readonly object _seedGate = new();
 
-    public AuthService(IUserStore users, ISystemActivityLog activityLog, ILogger<AuthService> logger)
+    public AuthService(IUserStore users, ISystemActivityLog activityLog, ILogger<AuthService> logger, IDeviceStore? devices = null)
     {
         _users = users;
+        _devices = devices;
         _activityLog = activityLog;
         _logger = logger;
     }
@@ -171,7 +176,11 @@ public sealed class AuthService : IAuthService
             Name: string.IsNullOrWhiteSpace(user.Name) ? user.Username : user.Name,
             Role: user.Role,
             Permissions: user.Permissions,
-            ExpiresAt: DateTimeOffset.Now.Add(SessionLifetime));
+            ExpiresAt: DateTimeOffset.Now.Add(SessionLifetime))
+        {
+            DataScope = user.Role == "admin" ? IndustrialIoT.Security.DeviceDataScope.All
+                : user.DataScope ?? RoleDataScopeStore.Read(user.Role),
+        };
         _sessions[session.Token] = session;
         _activityLog.Write("operation", "用户登录", $"{user.Name}（{user.Username}）", user.Username);
         return (session, null);
@@ -193,7 +202,15 @@ public sealed class AuthService : IAuthService
             _sessions.TryRemove(token, out _);
             return null;
         }
-        return session;
+        var current = _users.ReadAll().FirstOrDefault(user => user.Id == session.UserId);
+        if (current is null || current.Status != "启用")
+        { _sessions.TryRemove(token, out _); return null; }
+        return session with
+        {
+            Role = current.Role, Permissions = current.Permissions,
+            DataScope = current.Role == "admin" ? IndustrialIoT.Security.DeviceDataScope.All
+                : current.DataScope ?? RoleDataScopeStore.Read(current.Role),
+        };
     }
 
     public void RevokeUserSessions(string userId)

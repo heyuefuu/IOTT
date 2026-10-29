@@ -18,14 +18,14 @@ public static class EvaluationDocxBuilder
     private const int PageWidth = 11906, PageHeight = 16838, Margin = 1134, TextWidth = PageWidth - Margin * 2;
 
     public static byte[] BuildReport(string title, IEnumerable<string> introduction,
-        IEnumerable<EvaluationPdfTable> tables, IEnumerable<string>? closing = null)
+        IEnumerable<EvaluationPdfTable> tables, IEnumerable<string>? closing = null, bool markdown = false)
     {
         var body = new StringBuilder();
         Paragraph(body, title, style: "Title");
-        foreach (var line in introduction) Paragraph(body, line);
+        foreach (var line in introduction) ReportParagraph(body, line, markdown);
         foreach (var table in tables) Table(body, table);
         if (closing is not null)
-            foreach (var line in closing) Paragraph(body, line);
+            foreach (var line in closing) ReportParagraph(body, line, markdown);
         body.Append(FormattableString.Invariant(
             $"""<w:sectPr><w:pgSz w:w="{PageWidth}" w:h="{PageHeight}"/><w:pgMar w:top="1134" w:right="{Margin}" w:bottom="1134" w:left="{Margin}" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr>"""));
 
@@ -62,6 +62,14 @@ public static class EvaluationDocxBuilder
                 + body + "</w:body></w:document>");
         }
         return buffer.ToArray();
+    }
+
+    private static void ReportParagraph(StringBuilder body, string? text, bool markdown)
+    {
+        var line = text?.Trim() ?? "";
+        var prefix = markdown && line.StartsWith("### ", StringComparison.Ordinal) ? 4
+            : markdown && line.StartsWith("## ", StringComparison.Ordinal) ? 3 : 0;
+        Paragraph(body, prefix > 0 ? line[prefix..] : text, prefix > 0 ? "Heading2" : null);
     }
 
     private static void Table(StringBuilder body, EvaluationPdfTable table)

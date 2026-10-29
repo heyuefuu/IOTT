@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
 [Route("api/verify/tasks")]
-public sealed class VerifyTasksController : ControllerBase
+public sealed partial class VerifyTasksController : ControllerBase
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -44,6 +44,7 @@ public sealed class VerifyTasksController : ControllerBase
             Detail = "",
             LastRunJson = "",
             LastAutoRunAt = null,
+            ScheduleOwnerUserId = ScheduleOwner(input),
         };
         _store.Update(rows => { rows.Add(item); return 0; });
         return Ok(item);
@@ -59,7 +60,7 @@ public sealed class VerifyTasksController : ControllerBase
         {
             var index = rows.FindIndex(x => x.Id == id);
             if (index < 0) return null;
-            if (rows[index].Status == "running")
+            if (VerifyTaskRunner.IsActive(rows[index].Status))
             {
                 running = true;
                 return null;
@@ -78,6 +79,7 @@ public sealed class VerifyTasksController : ControllerBase
                 Result = changed ? "" : previous.Result, Detail = changed ? "" : previous.Detail,
                 LastRunJson = previous.LastRunJson, LastAutoRunAt = previous.LastAutoRunAt,
                 CurrentRunJson = previous.CurrentRunJson, ActiveRunId = previous.ActiveRunId,
+                ScheduleOwnerUserId = ScheduleOwner(input),
             };
             return rows[index];
         });
@@ -85,13 +87,17 @@ public sealed class VerifyTasksController : ControllerBase
         return item is null ? NotFound() : Ok(item);
     }
 
+    private string? ScheduleOwner(VerifyTaskDto task) =>
+        string.Equals(task.ScheduleType, "daily", StringComparison.OrdinalIgnoreCase)
+            ? (HttpContext?.Items[typeof(AuthSession)] as AuthSession)?.UserId : null;
+
     [HttpDelete("{id}")]
     public IActionResult Delete(string id)
     {
         var running = false;
         var removed = _store.Update(rows =>
         {
-            if (rows.Any(task => task.Id == id && task.Status == "running"))
+            if (rows.Any(task => task.Id == id && VerifyTaskRunner.IsActive(task.Status)))
             {
                 running = true;
                 return false;
@@ -119,6 +125,7 @@ public sealed class VerifyTasksController : ControllerBase
             return Conflict(new { error = ex.Message });
         }
         catch (VerifyTaskPersistenceException ex) { return PersistenceUnavailable(ex); }
+        catch (UnauthorizedAccessException ex) { return StatusCode(403, new { error = ex.Message }); }
     }
 
     private ObjectResult PersistenceUnavailable(VerifyTaskPersistenceException error) =>
@@ -143,6 +150,7 @@ public sealed class VerifyTasksController : ControllerBase
         catch (VerifyTaskAlreadyRunningException ex) { return Conflict(new { error = ex.Message }); }
         catch (VerifyTaskCapacityException ex) { return Conflict(new { error = ex.Message }); }
         catch (VerifyTaskPersistenceException ex) { return PersistenceUnavailable(ex); }
+        catch (UnauthorizedAccessException ex) { return StatusCode(403, new { error = ex.Message }); }
     }
 
     [HttpPost("start-batch")]
@@ -191,9 +199,11 @@ public sealed class VerifyTasksController : ControllerBase
 
     /// <summary>导出已结束运行的实测、评分、规则快照和证据；不使用当前编辑后的配置补写历史。</summary>
     [HttpGet("{id}/export")]
-    public IActionResult Export(string id, [FromQuery] string format = "xlsx")
+    public IActionResult Export(string id, [FromQuery] string format = "xlsx", [FromQuery] string? templateId = null)
     {
         if (format is not ("xlsx" or "pdf" or "docx")) return BadRequest(new { error = "请选择 Excel、PDF 或 Word 格式" });
+        if (format == "xlsx" && !string.IsNullOrWhiteSpace(templateId))
+            return BadRequest(new { error = "自定义报告模板仅支持 PDF 或 Word 导出。" });
         var task = _store.ReadAll().FirstOrDefault(x => x.Id == id);
         if (task is null) return NotFound();
         if (string.IsNullOrWhiteSpace(task.LastRunJson))
@@ -210,7 +220,7 @@ public sealed class VerifyTasksController : ControllerBase
         }
         if (run is null || run.Metrics is null)
             return BadRequest(new { error = "运行结果留痕数据损坏，请重新运行任务" });
-        if (run.Status is "running" or "pending")
+        if (VerifyTaskRunner.IsActive(run.Status) || run.Status == "pending")
             return BadRequest(new { error = "该运行尚未结束，不能作为最终报告导出" });
 
         string Number(double? value) => value.HasValue && double.IsFinite(value.Value)
@@ -257,14 +267,29 @@ public sealed class VerifyTasksController : ControllerBase
             new EvaluationPdfTable("本轮配置判据（达标线与评分档位独立）", ["指标", "配置快照"], rules, [24, 76]),
             new EvaluationPdfTable("原始证据与说明", ["指标", "证据"], evidence, [24, 76]),
         };
+        ReportTemplateDocument report;
+        try
+        {
+            report = ReportTemplateRenderer.Apply(templateId, new("CNC 评价验证报告", intro, tables, [run.Detail]),
+                new Dictionary<string, string>
+                {
+                    ["TaskName"] = run.TaskName, ["MachineName"] = run.MachineSnapshot?.Name ?? "",
+                    ["TotalScore"] = Number(run.TotalScore), ["Conclusion"] = run.Detail, ["RunId"] = run.RunId,
+                    ["Result"] = run.Result, ["MachineNo"] = run.MachineSnapshot?.DeviceCode ?? "",
+                    ["MachineModel"] = run.MachineSnapshot?.Model ?? "",
+                    ["ControlSystem"] = run.MachineSnapshot?.ControlSystem ?? "", ["TestDate"] = run.CompletedAt
+                });
+        }
+        catch (KeyNotFoundException error) { return NotFound(new { error = error.Message }); }
+        catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
         if (format == "pdf")
         {
-            var pdf = EvaluationPdfBuilder.BuildReport("CNC 评价验证报告", intro, tables, [run.Detail]);
+            var pdf = ReportTemplateRenderer.Pdf(report);
             return File(pdf, "application/pdf", $"{task.Name}-验证报告.pdf");
         }
         if (format == "docx")
         {
-            var docx = EvaluationDocxBuilder.BuildReport("CNC 评价验证报告", intro, tables, [run.Detail]);
+            var docx = ReportTemplateRenderer.Docx(report);
             return File(docx, EvaluationDocxBuilder.ContentType, $"{task.Name}-验证报告.docx");
         }
         var rows = new List<IReadOnlyList<object?>> { new object?[] { "CNC 评价验证报告" } };

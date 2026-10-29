@@ -26,6 +26,7 @@ public sealed record KnowledgeRecord
     public string Suggestion { get; init; } = "";
     public string? SyncTaskId { get; init; }
     public string? SyncRunId { get; init; }
+    public IReadOnlyList<string> DataDeviceIds { get; init; } = [];
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
     public double? TotalScore { get; init; }

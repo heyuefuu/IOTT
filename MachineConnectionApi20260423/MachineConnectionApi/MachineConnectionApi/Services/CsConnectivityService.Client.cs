@@ -45,15 +45,18 @@ public sealed partial class CsConnectivityService
     /// <summary>数据源启用后的后台探测循环：按周期探测关联网关并回写最近结果。</summary>
     private async Task ProbeLoopAsync(CsDataSource ds, CancellationToken ct)
     {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(Math.Clamp(ds.UpdateInterval, 1, 3600)));
         while (!ct.IsCancellationRequested)
         {
             try
             {
                 if (_gateways.TryGetValue(ds.GatewayId, out var gw))
                 {
-                    var r = await ProbeGatewayByTypeAsync(gw, ftpFullRoundTrip: false, timeoutMs: 3000, ct);
+                    var r = IsFtp(gw.Type) || gw.Type.Equals("TCP", StringComparison.OrdinalIgnoreCase)
+                        ? await ProbeGatewayByTypeAsync(gw, ftpFullRoundTrip: false, timeoutMs: 3000, ct)
+                        : await ProbeApplicationAsync(gw, string.IsNullOrWhiteSpace(ds.Config) ? gw.ProbeConfig : ds.Config, 3000, ct);
                     ds.LastUpdate = r.Timestamp;
-                    ds.LastResult = r.Success ? $"OK {r.RttMs}ms" : r.Message;
+                    ds.LastResult = r.Success ? $"OK {r.RttMs}ms · {r.Message}" : r.Message;
                     gw.Status = r.Success ? "运行中" : "停止";
                     if (r.Success) gw.LastHeartbeat = r.Timestamp;
                 }
@@ -69,7 +72,7 @@ public sealed partial class CsConnectivityService
                 _logger.LogWarning(ex, "数据源 {Id} 探测异常", ds.Id);
             }
 
-            try { await Task.Delay(Math.Max(1, ds.UpdateInterval) * 1000, ct); }
+            try { if (!await timer.WaitForNextTickAsync(ct)) break; }
             catch (OperationCanceledException) { break; }
         }
     }

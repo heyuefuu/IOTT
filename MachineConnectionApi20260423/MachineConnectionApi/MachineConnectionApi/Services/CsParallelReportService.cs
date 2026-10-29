@@ -17,6 +17,25 @@ public sealed partial class CsParallelReportService : ICsParallelReportService
             throw new ArgumentException("报告数据不能为空");
 
         var normalized = (format ?? "").Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(request.TemplateId))
+        {
+            if (normalized is not ("pdf" or "docx"))
+                throw new ArgumentException("自定义报告模板仅支持 PDF 或 Word 导出。");
+            var document = ReportTemplateRenderer.Apply(request.TemplateId,
+                new("并行连接验证报告", BuildPdfLines(request).Skip(1).TakeWhile(line => line != "失败明细:").ToArray(),
+                    [new("失败明细", ["时间", "设备/IP", "错误信息"],
+                        request.Result.Failures.Count == 0 ? [new[] { "—", "—", "无失败记录" }]
+                            : request.Result.Failures.Select(failure => (IReadOnlyList<string>)new[]
+                                { Text(failure.Time), Text(failure.DeviceIp), Text(failure.Error) }).ToArray(), [20, 25, 55])], []),
+                new Dictionary<string, string>
+                {
+                    ["TaskName"] = "并行连接验证", ["MachineName"] = request.Request.StartIp,
+                    ["Result"] = $"{request.Result.SuccessRate}%", ["TestDate"] = request.Result.FinishedAt,
+                    ["Conclusion"] = $"成功 {request.Result.Success} / {request.Result.Total}，失败 {request.Result.Failure}"
+                });
+            return new(FileName(normalized), normalized == "pdf" ? "application/pdf" : EvaluationDocxBuilder.ContentType,
+                normalized == "pdf" ? ReportTemplateRenderer.Pdf(document) : ReportTemplateRenderer.Docx(document));
+        }
         return normalized switch
         {
             "html" => new CsReportFile(FileName("html"), "text/html; charset=utf-8",

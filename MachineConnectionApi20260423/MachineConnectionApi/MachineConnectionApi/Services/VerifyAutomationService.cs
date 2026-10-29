@@ -94,7 +94,7 @@ public sealed partial class VerifyAutomationService : IVerifyAutomationService
         IReadOnlyList<VerifyMeasurementTarget> devices;
         try
         {
-            devices = await LoadDevicesAsync(ct);
+            devices = await ControlledAsync(request, LoadDevicesAsync, ct);
             if (!string.IsNullOrWhiteSpace(response.DeviceId))
             {
                 var selected = devices.Where(x => x.Id == response.DeviceId).ToList();
@@ -102,7 +102,7 @@ public sealed partial class VerifyAutomationService : IVerifyAutomationService
                 response.MachineSnapshot = SnapshotMachine(selected[0]);
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested || request.ExecutionControl?.StopRequested == true) { throw; }
         catch (Exception ex)
         {
             foreach (var metric in response.Metrics) MarkError(metric, "读取本轮设备失败：" + ex.Message);
@@ -112,28 +112,42 @@ public sealed partial class VerifyAutomationService : IVerifyAutomationService
         }
         var selectedDevices = devices.Where(x => x.Id == response.DeviceId).ToList();
 
-        foreach (var metric in response.Metrics)
+        for (var metricIndex = 0; metricIndex < response.Metrics.Count; metricIndex++)
         {
             ct.ThrowIfCancellationRequested();
+            var metric = response.Metrics[metricIndex];
+            var baseline = Clone(metric);
+            double progressFloor = 0;
             response.CurrentMetricId = metric.MetricId;
             metric.ExecutionStatus = "running";
             Publish();
             try
             {
-                var item = items?.GetValueOrDefault(metric.MetricId);
-                var rule = item?.Automation;
-                if (item is null || rule is null)
-                    MarkUnrated(metric, "未配置评价自动测试规则；旧指标库阈值不会用于本次评价。");
-                else
+                async Task<VerifyMetricResult> Measure(CancellationToken operationToken)
                 {
-                    EvaluationAutomationRules.Validate(item);
-                    metric.Unit = rule.Unit;
-                    await MeasureAsync(metric, item, rule, selectedDevices, devices, options,
-                        progress => { metric.ProgressPercent = Math.Clamp(progress, 0, 99.9); Publish(); }, ct);
-                    ApplyRule(metric, rule);
+                    progressFloor = Math.Max(progressFloor, metric.ProgressPercent);
+                    metric = Clone(baseline);
+                    metric.ExecutionStatus = "running";
+                    metric.ProgressPercent = progressFloor;
+                    response.Metrics[metricIndex] = metric;
+                    Publish();
+                    var item = items?.GetValueOrDefault(metric.MetricId);
+                    var rule = item?.Automation;
+                    if (item is null || rule is null)
+                        MarkUnrated(metric, "未配置评价自动测试规则；旧指标库阈值不会用于本次评价。");
+                    else
+                    {
+                        EvaluationAutomationRules.Validate(item);
+                        metric.Unit = rule.Unit;
+                        await MeasureAsync(metric, item, rule, selectedDevices, devices, options,
+                            progress => { metric.ProgressPercent = Math.Max(progressFloor, Math.Clamp(progress, 0, 99.9)); Publish(); }, operationToken);
+                        ApplyRule(metric, rule);
+                    }
+                    return metric;
                 }
+                await ControlledAsync(request, Measure, ct);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested || request.ExecutionControl?.StopRequested == true) { throw; }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "评价指标 {MetricId} 执行异常", metric.MetricId);
@@ -147,6 +161,9 @@ public sealed partial class VerifyAutomationService : IVerifyAutomationService
         Publish();
         return response;
     }
+
+    private static Task<T> ControlledAsync<T>(VerifyRunRequest request, Func<CancellationToken, Task<T>> operation, CancellationToken ct) =>
+        request.ExecutionControl?.ExecuteAsync(operation, ct) ?? operation(ct);
 
     private Task MeasureAsync(VerifyMetricResult metric, EvaluationItem item, EvaluationAutomationRule rule,
         IReadOnlyList<VerifyMeasurementTarget> selected, IReadOnlyList<VerifyMeasurementTarget> all,

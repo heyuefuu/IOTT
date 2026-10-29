@@ -22,6 +22,7 @@ public sealed record AppUserDto
     public required string Role { get; init; }
     public required string Status { get; init; }
     public IReadOnlyList<string> Permissions { get; init; } = [];
+    public IndustrialIoT.Security.DeviceDataScope? DataScope { get; init; }
     public string LastLogin { get; init; } = "";
 
     /// <summary>PBKDF2 凭据（iterations.saltBase64.hashBase64）；仅存储用，对外接口一律置 null</summary>
@@ -98,6 +99,8 @@ public sealed record VerifyTaskDto
     /// <summary>定时执行：none = 手动，daily = 每天 ScheduleTime（HH:mm）自动执行</summary>
     public string ScheduleType { get; init; } = "none";
     public string ScheduleTime { get; init; } = "";
+    /// <summary>服务端保存的定时授权用户；客户端提交值不会被采纳。</summary>
+    public string? ScheduleOwnerUserId { get; init; }
     public DateTimeOffset? LastAutoRunAt { get; init; }
 
     /// <summary>最近一次运行的完整结果（VerifyRunResponse JSON），Excel 导出与结果回看的数据源</summary>

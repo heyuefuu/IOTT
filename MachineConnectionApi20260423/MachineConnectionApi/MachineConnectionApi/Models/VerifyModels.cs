@@ -14,6 +14,8 @@ public sealed class VerifyRunRequest
     public VerifyRunOptions? Options { get; set; }
     [JsonIgnore]
     public Action<VerifyRunResponse>? ReportProgress { get; set; }
+    [JsonIgnore]
+    public MachineConnectionApi.Services.VerifyTaskExecutionControl? ExecutionControl { get; set; }
 }
 
 public sealed class VerifyRunOptions

@@ -5,10 +5,18 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
 
-public sealed class BusinessApiAuthorizationFilter(IAuthService auth) : IAuthorizationFilter
+public sealed class BusinessApiAuthorizationFilter(IAuthService auth, IConfiguration? configuration = null) : IAuthorizationFilter
 {
     public void OnAuthorization(AuthorizationFilterContext context)
     {
+        if (context.ActionDescriptor is ControllerActionDescriptor { ControllerName: "SystemAuth", ActionName: "HostAccess" })
+        {
+            if (!IndustrialIoT.Security.ServiceTrustKey.Matches(
+                    IndustrialIoT.Security.ServiceTrustKey.Load(configuration?["IndustrialIoT:ServiceKey"]),
+                    context.HttpContext.Request.Headers[IndustrialIoT.Security.ServiceTrustKey.Header].FirstOrDefault()))
+                context.Result = new UnauthorizedObjectResult(new { error = "Trusted Host authentication required" });
+            return;
+        }
         if (context.ActionDescriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any())
             return;
 
@@ -18,6 +26,7 @@ public sealed class BusinessApiAuthorizationFilter(IAuthService auth) : IAuthori
             context.Result = new UnauthorizedObjectResult(new { error = "Login required or session expired" });
             return;
         }
+        context.HttpContext.Items[typeof(AuthSession)] = session;
 
         var permissions = context.ActionDescriptor is ControllerActionDescriptor action
             ? RequiredPermissions(action.ControllerName, action.ActionName)
@@ -34,7 +43,7 @@ public sealed class BusinessApiAuthorizationFilter(IAuthService auth) : IAuthori
         ("SystemAuth", "Me" or "Logout") or ("SystemStatus", "Get") => [],
         ("SystemUsers", "ListPermissions") => [],
         ("SystemUsers", _) => ["permission_manage"],
-        ("SystemLogs", _) => ["log_manage"],
+        ("SystemLogs" or "HostRuntimeLogs", _) => ["log_manage"],
         ("Verify" or "VerifyTasks" or "Metrics" or "ReportTemplates" or "ConnectionVerification", _) => ["report_manage"],
         ("EvaluationIndicators" or "EvaluationKnowledge", _) => ["report_manage"],
         ("Cs", "ParallelTest" or "ParallelTestReport") => ["config_manage", "report_manage"],

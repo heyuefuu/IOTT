@@ -4,10 +4,11 @@ import type { VerifyRunResponse, VerifyTaskDto } from '@/api/machineConnectionVe
 
 export interface TaskMetricOption { id: string; name: string; code: string; reference: string; description: string; automation?: EvaluationItem['automation'] }
 export const automaticMetricIds = ['industrial-protocol', 'communication-stability', 'max-connections', 'transfer-protocol', 'file-integrity', 'transfer-speed', 'file-size'];
-export const taskStatusLabels: Record<string, string> = { pending: '待执行', running: '执行中', completed: '执行完成', passed: '达标', failed: '执行失败', unrated: '未判定', error: '执行错误', skipped: '已跳过' };
+export const taskStatusLabels: Record<string, string> = { pending: '待执行', running: '执行中', pausing: '暂停中', paused: '已暂停', stopping: '停止中', stopped: '已停止', completed: '执行完成', passed: '达标', failed: '执行失败', unrated: '未判定', error: '执行错误', skipped: '已跳过' };
+export const isActiveTaskStatus = (status: string) => ['running', 'pausing', 'paused', 'stopping'].includes(status);
 export const metricExecutionLabels: Record<string, string> = { pending: '等待中', running: '执行中', completed: '已完成', error: '执行错误', skipped: '已跳过' };
 export function taskStatusType(status: string) {
-  return status === 'running' ? 'warning' : ['completed', 'passed'].includes(status) ? 'success' : ['failed', 'error'].includes(status) ? 'danger' : 'info';
+  return isActiveTaskStatus(status) ? 'warning' : ['completed', 'passed'].includes(status) ? 'success' : ['failed', 'error'].includes(status) ? 'danger' : 'info';
 }
 export function taskTime(value?: string | null) {
   if (!value) return '—';
@@ -31,7 +32,7 @@ export function newTask(metricIds: string[]): VerifyTaskDto {
     options: { allowFileWrites: false, concurrentDeviceIds: [] } };
 }
 export function taskRun(task: VerifyTaskDto, source: 'display' | 'history' = 'display'): VerifyRunResponse | null {
-  const current = source === 'display' && task.status === 'running';
+  const current = source === 'display' && isActiveTaskStatus(task.status);
   const json = current ? task.currentRunJson : task.lastRunJson;
   if (!json) return null;
   try {

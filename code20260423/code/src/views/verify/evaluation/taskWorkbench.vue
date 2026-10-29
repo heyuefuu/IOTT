@@ -4,7 +4,7 @@
     <el-card shadow="never">
       <template #header><div class="card-header"><span>任务列表</span><div><el-button :icon="Refresh" :loading="loading" @click="loadPage">刷新</el-button><el-button type="success" :disabled="!selectedTaskIds.length" @click="executeSelectedTasks">并行执行{{ selectedTaskIds.length ? `（${selectedTaskIds.length}）` : '' }}</el-button><el-button type="primary" :icon="Plus" @click="addTask">创建任务</el-button></div></div></template>
       <el-form :inline="true" :model="filters" class="task-filters" @submit.prevent="search">
-        <el-form-item label="任务状态"><el-select v-model="filters.status" placeholder="全部" clearable><el-option label="全部" value="" /><el-option v-for="status in ['pending', 'running', 'completed', 'failed']" :key="status" :value="status" :label="taskStatusLabels[status]" /></el-select></el-form-item>
+        <el-form-item label="任务状态"><el-select v-model="filters.status" placeholder="全部" clearable><el-option label="全部" value="" /><el-option v-for="status in ['pending', 'running', 'pausing', 'paused', 'stopping', 'stopped', 'completed', 'failed']" :key="status" :value="status" :label="taskStatusLabels[status]" /></el-select></el-form-item>
         <el-form-item label="关键词"><el-input v-model="filters.keyword" clearable placeholder="任务名称、编号或机床" @keyup.enter="search" /></el-form-item>
         <el-form-item><el-button type="primary" :icon="Search" @click="search">搜索</el-button><el-button @click="resetSearch">重置</el-button></el-form-item>
       </el-form>
@@ -16,18 +16,21 @@
         <el-table-column prop="id" label="任务ID" width="135" show-overflow-tooltip />
         <el-table-column prop="name" label="任务名称" min-width="180" show-overflow-tooltip />
         <el-table-column label="测试内容" min-width="260" show-overflow-tooltip><template #default="scope">{{ taskMetricSummary(scope.row, metricsFor(scope.row)) }}</template></el-table-column>
-        <el-table-column label="状态 / 实测进度" width="150"><template #default="scope"><el-tag :type="taskStatusType(scope.row.status)">{{ taskStatusLabels[scope.row.status] || scope.row.status }}</el-tag><div v-if="scope.row.status === 'running'" class="progress-text">{{ taskProgress(scope.row) }}%</div></template></el-table-column>
+        <el-table-column label="状态 / 实测进度" width="150"><template #default="scope"><el-tag :type="taskStatusType(scope.row.status)">{{ taskStatusLabels[scope.row.status] || scope.row.status }}</el-tag><div v-if="isTaskRunning(scope.row)" class="progress-text">{{ taskProgress(scope.row) }}%</div></template></el-table-column>
         <el-table-column label="创建时间" width="175"><template #default="scope">{{ taskTime(scope.row.createdAt) }}</template></el-table-column>
         <el-table-column label="完成时间" width="175"><template #default="scope">{{ taskTime(scope.row.completedAt) }}</template></el-table-column>
         <el-table-column label="操作" fixed="right" width="405">
           <template #default="scope">
             <div class="row-actions">
-              <el-button type="primary" link :disabled="scope.row.status === 'running'" @click="editTask(scope.row)">编辑</el-button>
-              <el-button type="success" link :loading="executingIds.has(scope.row.id)" :disabled="executingIds.has(scope.row.id) || scope.row.status === 'running'" @click="executeTask(scope.row)">{{ scope.row.lastRunJson ? '重新执行' : '执行' }}</el-button>
-              <el-button type="primary" link :disabled="!scope.row.lastRunJson && scope.row.status !== 'running'" @click="viewResult(scope.row)">{{ scope.row.status === 'running' ? '查看进度' : '查看结果' }}</el-button>
-              <el-button type="warning" link :loading="exportingId === scope.row.id" :disabled="!scope.row.lastRunJson || scope.row.status === 'running'" @click="exportTask(scope.row)">导出Excel</el-button>
-              <el-tooltip :disabled="canImport(scope.row)" content="需先执行任务，旧版结果需重新执行以保存机床和指标快照"><span><el-button type="primary" link :disabled="!canImport(scope.row) || scope.row.status === 'running'" @click="importKnowledge(scope.row)">导入知识库</el-button></span></el-tooltip>
-              <el-button type="danger" link :disabled="scope.row.status === 'running'" @click="deleteTask(scope.row)">删除</el-button>
+              <el-button type="primary" link :disabled="isTaskRunning(scope.row)" @click="editTask(scope.row)">编辑</el-button>
+              <el-button type="success" link :loading="executingIds.has(scope.row.id)" :disabled="isTaskRunning(scope.row)" @click="executeTask(scope.row)">{{ scope.row.lastRunJson ? '重新执行' : '执行' }}</el-button>
+              <el-button v-if="scope.row.status === 'running'" type="warning" link :disabled="!scope.row.activeRunId" :loading="controllingIds.has(scope.row.id)" @click="controlTask(scope.row, 'pause')">暂停</el-button>
+              <el-button v-if="scope.row.status === 'paused'" type="success" link :disabled="!scope.row.activeRunId" :loading="controllingIds.has(scope.row.id)" @click="controlTask(scope.row, 'resume')">继续</el-button>
+              <el-button v-if="isTaskRunning(scope.row)" type="danger" link :disabled="!scope.row.activeRunId || scope.row.status === 'stopping'" :loading="controllingIds.has(scope.row.id)" @click="controlTask(scope.row, 'stop')">停止</el-button>
+              <el-button type="primary" link :disabled="!scope.row.lastRunJson && !isTaskRunning(scope.row)" @click="viewResult(scope.row)">{{ isTaskRunning(scope.row) ? '查看进度' : '查看结果' }}</el-button>
+              <el-button type="warning" link :loading="exportingId === scope.row.id" :disabled="!scope.row.lastRunJson || isTaskRunning(scope.row)" @click="exportTask(scope.row)">导出Excel</el-button>
+              <el-tooltip :disabled="canImport(scope.row)" content="需先执行任务，旧版结果需重新执行以保存机床和指标快照"><span><el-button type="primary" link :disabled="!canImport(scope.row) || isTaskRunning(scope.row)" @click="importKnowledge(scope.row)">导入知识库</el-button></span></el-tooltip>
+              <el-button type="danger" link :disabled="isTaskRunning(scope.row)" @click="deleteTask(scope.row)">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -36,7 +39,16 @@
     <task-editor v-model:visible="editorVisible" :task="draft" :machines="machines" :metrics="metrics" :saving="saving" @save="saveTask" @category-change="selectCategory" />
     <el-dialog v-model="resultVisible" title="机床条例验证明细" width="min(1220px, 96vw)" top="5vh">
       <div v-if="selectedTask" class="result-dialog"><task-results :task="selectedTask" :machine="machineFor(selectedTask)" /></div>
-      <template #footer><el-button @click="resultVisible = false">关闭</el-button><template v-if="selectedTask"><el-button :disabled="!canImport(selectedTask)" @click="importKnowledge(selectedTask)">导入评价知识库</el-button><el-button :disabled="!selectedTask.lastRunJson || selectedTask.status === 'running'" :loading="exportingId === selectedTask.id" @click="exportTask(selectedTask)">导出 Excel</el-button><el-button :disabled="!selectedTask.lastRunJson || selectedTask.status === 'running'" :loading="exportingId === selectedTask.id" @click="exportTask(selectedTask, 'docx')">导出 Word</el-button><el-button type="primary" :disabled="!selectedTask.lastRunJson || selectedTask.status === 'running'" :loading="exportingId === selectedTask.id" @click="exportTask(selectedTask, 'pdf')">导出 PDF</el-button></template></template>
+      <template #footer>
+        <report-template-select v-model="reportTemplateId" :disabled="Boolean(exportingId)" />
+        <el-button @click="resultVisible = false">关闭</el-button>
+        <template v-if="selectedTask">
+          <el-button :disabled="!canImport(selectedTask)" @click="importKnowledge(selectedTask)">导入评价知识库</el-button>
+          <el-button :disabled="!selectedTask.lastRunJson || isTaskRunning(selectedTask)" :loading="exportingId === selectedTask.id" @click="exportTask(selectedTask)">导出 Excel</el-button>
+          <el-button :disabled="!selectedTask.lastRunJson || isTaskRunning(selectedTask)" :loading="exportingId === selectedTask.id" @click="exportTask(selectedTask, 'docx', reportTemplateId)">导出 Word</el-button>
+          <el-button type="primary" :disabled="!selectedTask.lastRunJson || isTaskRunning(selectedTask)" :loading="exportingId === selectedTask.id" @click="exportTask(selectedTask, 'pdf', reportTemplateId)">导出 PDF</el-button>
+        </template>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -47,12 +59,14 @@ import { Plus, Refresh, Search } from '@element-plus/icons-vue';
 import type { VerifyTaskDto } from '@/api/machineConnectionVerify';
 import taskEditor from './taskEditor.vue';
 import taskResults from './taskResults.vue';
+import reportTemplateSelect from './reportTemplateSelect.vue';
 import { taskMetricSummary, taskProgress, taskStatusLabels, taskStatusType, taskTime } from './taskModel';
 import { useTaskWorkbench } from './taskState';
 const { tasks, machines, metrics, loading, saving, executingIds, selectedTaskIds, runningTaskCount, maxParallelTasks,
-  isTaskRunning, onSelectionChange, executeSelectedTasks, exportingId, editorVisible, resultVisible,
+  isTaskRunning, controllingIds, controlTask, onSelectionChange, executeSelectedTasks, exportingId, editorVisible, resultVisible,
   progressError, lastPolledAt, startPolling, stopPolling, refreshTasks,
   draft, selectedTask, expandedRows, machineFor, metricsFor, selectCategory, loadPage, addTask, editTask, saveTask, executeTask, deleteTask, viewResult, exportTask, canImport, importKnowledge } = useTaskWorkbench();
+const reportTemplateId = ref('');
 const filters = reactive({ status: '', keyword: '' });
 const applied = ref({ status: '', keyword: '' });
 const filteredTasks = computed(() => tasks.value.filter(task => {

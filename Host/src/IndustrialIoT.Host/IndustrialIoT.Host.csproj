@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IndustrialIoT.Application\IndustrialIoT.Application.csproj" />
+    <ProjectReference Include="../../../Shared/IndustrialIoT.Security/IndustrialIoT.Security.csproj" />
     <ProjectReference Include="..\IndustrialIoT.Infrastructure\IndustrialIoT.Infrastructure.csproj" />
     <ProjectReference Include="..\IndustrialIoT.Protocols\IndustrialIoT.Protocols.csproj" />
     <ProjectReference Include="..\IndustrialIoT.Simulator\IndustrialIoT.Simulator.csproj" />

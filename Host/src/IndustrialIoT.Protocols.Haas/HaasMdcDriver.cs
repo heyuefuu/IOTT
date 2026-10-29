@@ -6,6 +6,7 @@ using System.Text.Json;
 using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Domain.ValueObjects;
 using IndustrialIoT.Protocols.Abstractions;
+using IndustrialIoT.Protocols.Addressing;
 using IndustrialIoT.Protocols.Models;
 using IndustrialIoT.Protocols.Registration;
 using Microsoft.Extensions.Logging;
@@ -32,6 +33,7 @@ public sealed class HaasMdcDriver : IProtocolDriver, IAddressSpaceBrowser
     private int _responseOffset;
     private int _responseCount;
     private ConnectionState _state = ConnectionState.Disconnected;
+    private DeviceConnectionConfig? _addressSpaceConfig;
 
     public ProtocolType Protocol => ProtocolType.HaasMdc;
     public ConnectionState State => _state;
@@ -46,6 +48,7 @@ public sealed class HaasMdcDriver : IProtocolDriver, IAddressSpaceBrowser
     public async Task<ConnectionResult> ConnectAsync(DeviceConnectionConfig config, CancellationToken ct = default)
     {
         if (_state == ConnectionState.Connected) return new() { Success = true };
+        _addressSpaceConfig = config with { ExtendedProperties = new(config.ExtendedProperties) };
         SetState(ConnectionState.Connecting);
 
         try
@@ -146,6 +149,12 @@ public sealed class HaasMdcDriver : IProtocolDriver, IAddressSpaceBrowser
     }
 
     public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
+        => MacroCatalog().BrowseAsync(parentPath, ct);
+
+    private CncMacroRangeBrowser MacroCatalog() => new(_addressSpaceConfig ?? new() { Host = "", Port = 0 },
+        "Macro", 99999, number => $"Macro:{number}", _ => true, BrowseControllerAsync);
+
+    private Task<IReadOnlyList<AddressNode>> BrowseControllerAsync(string? parentPath, CancellationToken ct)
     {
         IReadOnlyList<AddressNode> nodes = parentPath switch
         {
@@ -159,23 +168,8 @@ public sealed class HaasMdcDriver : IProtocolDriver, IAddressSpaceBrowser
         return Task.FromResult(nodes);
     }
 
-    public async Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
-    {
-        var nodes = BuildRootNodes()
-            .Concat(BuildSystemMacroNodes("Position:"))
-            .Concat(BuildSystemMacroNodes("WorkPosition:"))
-            .Concat(BuildSpindleNodes())
-            .Concat(BuildMacroNodes())
-            .Where(n => n.NodeType == AddressNodeType.Variable)
-            .ToList();
-        var stream = new MemoryStream();
-        if (format == ExportFormat.JSON)
-            await JsonSerializer.SerializeAsync(stream, nodes, cancellationToken: ct);
-        else
-            await WriteCsvAsync(stream, nodes, ct);
-        stream.Position = 0;
-        return stream;
-    }
+    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
+        => MacroCatalog().ExportAddressSpaceAsync(format, ct);
 
     /// <summary>底层 Q/E 命令通道：发送 ASCII 命令，读取响应。</summary>
     private async Task<string> SendCommandAsync(string command, CancellationToken ct)

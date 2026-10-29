@@ -1,12 +1,13 @@
 <template>
 	<div class="system-log-manage-view">
 		<h2 class="page-title">日志管理</h2>
+		<HostRuntimeLogs />
 
 		<el-card class="log-manage-card">
 			<template #header>
 				<div class="card-header">
 					<span>日志管理</span>
-					<el-button type="primary" @click="exportLogs">
+					<el-button type="primary" :loading="exporting" :disabled="logsLoading || !!logsError" @click="exportLogs">
 						<el-icon><Download /></el-icon>
 						导出日志
 					</el-button>
@@ -53,6 +54,9 @@
 								style="width: 300px"
 							/>
 						</el-form-item>
+						<el-form-item label="历史日志">
+							<el-switch v-model="filterForm.includeArchived" active-text="包含归档" @change="searchLogs" />
+						</el-form-item>
 						<el-form-item>
 							<el-button type="primary" @click="searchLogs">
 								<el-icon><Search /></el-icon>
@@ -66,8 +70,10 @@
 				</div>
 
 				<!-- 日志列表 -->
+				<p v-if="retention">活跃日志最多 {{ retention.activeLimit }} 条；归档按 UTC 日期{{ retention.archiveRetentionDays ? `保留 ${retention.archiveRetentionDays} 天` : '长期保留' }}。</p>
+				<el-alert v-if="logsError" :title="logsError" type="error" :closable="false" />
 				<div class="log-list">
-					<el-table :data="filteredLogs" style="width: 100%" border>
+					<el-table v-loading="logsLoading" :data="filteredLogs" style="width: 100%" border>
 						<el-table-column prop="id" label="日志ID" width="100" />
 						<el-table-column
 							prop="type"
@@ -112,7 +118,7 @@
 							v-model:page-size="pageSize"
 							:page-sizes="[10, 20, 50, 100]"
 							layout="total, sizes, prev, pager, next, jumper"
-							:total="logs.length"
+							:total="totalLogs"
 							@size-change="handleSizeChange"
 							@current-change="handleCurrentChange"
 						/>
@@ -160,18 +166,28 @@
 </template>
 
 <script setup lang="ts">
+import HostRuntimeLogs from "./HostRuntimeLogs.vue";
 import { ref, reactive, computed, onMounted } from "vue";
 import { Download, Search } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import {
 	businessSystemApi,
 	type SystemLogDto,
+	type SystemLogQuery,
+	type SystemLogRetention,
 } from "@/api/businessSystem";
 import { downloadBlob } from "@/api/browserDownload";
 
 type Log = SystemLogDto;
 
 const logs = ref<Log[]>([]);
+const totalLogs = ref(0);
+const logsLoading = ref(false);
+const logsError = ref("");
+const exporting = ref(false);
+const retention = ref<SystemLogRetention | null>(null);
+const appliedQuery = ref<SystemLogQuery>({ includeArchived: true });
+let queryVersion = 0;
 
 // 分页
 const currentPage = ref(1);
@@ -182,25 +198,58 @@ const filterForm = reactive({
 	logType: "",
 	user: "",
 	keyword: "",
-	dateRange: [] as any[],
+	dateRange: [] as Date[],
+	includeArchived: true,
 });
 
 // 日志详情
 const detailDialogVisible = ref(false);
 const selectedLog = ref<Log | null>(null);
 
-const buildQuery = () => ({
-	type: filterForm.logType || undefined,
-	user: filterForm.user || undefined,
-	keyword: filterForm.keyword || undefined,
-});
+const logErrorMessage = (error: unknown, fallback: string): string => {
+	const detail = error as { response?: { data?: { error?: string; detail?: string } }; message?: string } | null;
+	return detail?.response?.data?.error || detail?.response?.data?.detail || detail?.message || fallback;
+};
+
+const buildQuery = (): SystemLogQuery => {
+	const [first, last] = filterForm.dateRange ?? [];
+	const from = first ? new Date(first) : undefined;
+	const to = last ? new Date(last) : undefined;
+	from?.setHours(0, 0, 0, 0);
+	to?.setHours(23, 59, 59, 999);
+	return {
+		type: filterForm.logType || undefined,
+		user: filterForm.user || undefined,
+		keyword: filterForm.keyword || undefined,
+		includeArchived: filterForm.includeArchived,
+		from: from?.toISOString(), to: to?.toISOString(),
+	};
+};
 
 const loadLogs = async () => {
+	const version = ++queryVersion;
+	const query = buildQuery();
+	logsLoading.value = true;
+	logsError.value = "";
 	try {
-		logs.value = await businessSystemApi.listLogs(buildQuery());
+		const result = await businessSystemApi.queryLogs({ ...query, page: currentPage.value, pageSize: pageSize.value });
+		if (version !== queryVersion) return;
+		const lastPage = Math.max(1, Math.ceil(result.total / pageSize.value));
+		if (currentPage.value > lastPage) {
+			currentPage.value = lastPage;
+			void loadLogs();
+			return;
+		}
+		logs.value = result.items;
+		totalLogs.value = result.total;
+		appliedQuery.value = query;
 	} catch (error) {
-		console.error(error);
-		ElMessage.error("日志查询失败，请检查业务后端服务");
+		if (version !== queryVersion) return;
+		logs.value = [];
+		totalLogs.value = 0;
+		logsError.value = logErrorMessage(error, "日志查询失败，请检查查询条件、服务及归档文件");
+	} finally {
+		if (version === queryVersion) logsLoading.value = false;
 	}
 };
 
@@ -237,46 +286,7 @@ const getLogTypeName = (type: string) => {
 };
 
 // 过滤后的日志
-const filteredLogs = computed(() => {
-	let result = [...logs.value];
-
-	// 日志类型过滤
-	if (filterForm.logType) {
-		result = result.filter((log) => log.type === filterForm.logType);
-	}
-
-	// 用户过滤
-	if (filterForm.user) {
-		result = result.filter((log) => log.user.includes(filterForm.user));
-	}
-
-	// 关键词过滤
-	if (filterForm.keyword) {
-		const keyword = filterForm.keyword.toLowerCase();
-		result = result.filter(
-			(log) =>
-				log.action.toLowerCase().includes(keyword) ||
-				log.detail.toLowerCase().includes(keyword),
-		);
-	}
-
-	// 时间范围过滤
-	if (filterForm.dateRange && filterForm.dateRange.length === 2) {
-		const startDate = new Date(filterForm.dateRange[0]);
-		const endDate = new Date(filterForm.dateRange[1]);
-		endDate.setHours(23, 59, 59, 999);
-
-		result = result.filter((log) => {
-			const logDate = new Date(log.timestamp);
-			return logDate >= startDate && logDate <= endDate;
-		});
-	}
-
-	// 分页
-	const startIndex = (currentPage.value - 1) * pageSize.value;
-	const endIndex = startIndex + pageSize.value;
-	return result.slice(startIndex, endIndex);
-});
+const filteredLogs = computed(() => logs.value);
 
 // 搜索日志
 const searchLogs = async () => {
@@ -291,6 +301,7 @@ const resetFilter = () => {
 		user: "",
 		keyword: "",
 		dateRange: [],
+		includeArchived: true,
 	});
 	currentPage.value = 1;
 	void loadLogs();
@@ -298,12 +309,16 @@ const resetFilter = () => {
 
 // 导出日志
 const exportLogs = async () => {
+	if (exporting.value || logsLoading.value || logsError.value) return;
+	exporting.value = true;
+	const query = { ...appliedQuery.value };
 	try {
-		const blob = await businessSystemApi.exportLogs(buildQuery());
+		const blob = await businessSystemApi.exportLogs(query);
 		downloadBlob(blob, `system-logs-${Date.now()}.csv`);
 	} catch (error) {
-		console.error(error);
-		ElMessage.error("日志导出失败，请检查业务后端服务");
+		ElMessage.error(logErrorMessage(error, "日志导出失败，请检查业务后端服务"));
+	} finally {
+		exporting.value = false;
 	}
 };
 
@@ -317,14 +332,17 @@ const viewLogDetail = (log: Log) => {
 const handleSizeChange = (size: number) => {
 	pageSize.value = size;
 	currentPage.value = 1;
+	void loadLogs();
 };
 
 const handleCurrentChange = (current: number) => {
 	currentPage.value = current;
+	void loadLogs();
 };
 
 onMounted(() => {
 	void loadLogs();
+	void businessSystemApi.logRetention().then(value => { retention.value = value; }).catch(() => { retention.value = null; });
 });
 </script>
 

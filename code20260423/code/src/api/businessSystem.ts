@@ -1,4 +1,5 @@
 import { createMachineConnectionClient } from "./machineConnectionClient";
+import { reportExportError } from "./reportExportError";
 export { AUTH_TOKEN_KEY } from "./machineConnectionClient";
 
 const baseURL =
@@ -24,6 +25,22 @@ export interface SystemLogQuery {
 	type?: string;
 	user?: string;
 	keyword?: string;
+	from?: string;
+	to?: string;
+	includeArchived?: boolean;
+}
+
+export interface SystemLogPage {
+	items: SystemLogDto[];
+	total: number;
+	page: number;
+	pageSize: number;
+}
+
+export interface SystemLogRetention {
+	activeLimit: number;
+	archiveRetentionDays: number;
+	timeZone: string;
 }
 
 export interface AppUserDto {
@@ -34,12 +51,18 @@ export interface AppUserDto {
 	role: string;
 	status: string;
 	permissions: string[];
+	dataScope?: DeviceDataScope | null;
 	lastLogin: string;
 }
 
 export interface PermissionDto {
 	key: string;
 	name: string;
+}
+
+export interface DeviceDataScope {
+	mode: "all" | "selected";
+	deviceIds: string[];
 }
 
 export interface SystemStatusDto {
@@ -64,6 +87,15 @@ export interface LoginResponse {
 const enc = encodeURIComponent;
 
 export const businessSystemApi = {
+	async scopeDevices(): Promise<{ id: string; name: string; type: string }[]> {
+		return (await client.get("/api/system/users/scope-devices")).data;
+	},
+	async roleScopes(): Promise<{ role: string; scope: DeviceDataScope }[]> {
+		return (await client.get("/api/system/users/role-scopes")).data;
+	},
+	async saveRoleScope(role: string, scope: DeviceDataScope): Promise<void> {
+		await client.put(`/api/system/users/role-scopes/${enc(role)}`, scope);
+	},
 	async login(username: string, password: string): Promise<LoginResponse> {
 		const res = await client.post<LoginResponse>("/api/system/auth/login", {
 			username,
@@ -97,8 +129,16 @@ export const businessSystemApi = {
 		const res = await client.get("/api/system/logs/export", {
 			params,
 			responseType: "blob",
-		});
+		}).catch(reportExportError);
 		return res.data;
+	},
+
+	async queryLogs(params: SystemLogQuery & { page?: number; pageSize?: number } = {}): Promise<SystemLogPage> {
+		return (await client.get<SystemLogPage>("/api/system/logs/query", { params })).data;
+	},
+
+	async logRetention(): Promise<SystemLogRetention> {
+		return (await client.get<SystemLogRetention>("/api/system/logs/retention")).data;
 	},
 
 	async listUsers(): Promise<AppUserDto[]> {

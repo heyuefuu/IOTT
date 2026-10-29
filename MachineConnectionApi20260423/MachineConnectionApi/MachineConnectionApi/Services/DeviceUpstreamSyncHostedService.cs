@@ -24,6 +24,7 @@ public sealed class DeviceUpstreamSyncHostedService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        using var identity = AuthDelegationContext.Push(new AuthDelegation(null, InternalService: true));
         if (_configuration.GetValue<bool?>("IndustrialIoT:AutoSyncDevices") == false)
             return;
 

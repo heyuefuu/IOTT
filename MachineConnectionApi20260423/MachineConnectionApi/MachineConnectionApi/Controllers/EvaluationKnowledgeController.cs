@@ -48,13 +48,15 @@ public sealed class EvaluationKnowledgeController(EvaluationKnowledgeStore store
     });
 
     [HttpGet("records/{id}/export")]
-    public IActionResult Export(string id, [FromQuery] string format = "xlsx") => Execute(() =>
+    public IActionResult Export(string id, [FromQuery] string format = "xlsx", [FromQuery] string? templateId = null) => Execute(() =>
     {
         var record = store.Find(id);
         if (record is null) return NotFound();
+        if (format == "xlsx" && !string.IsNullOrWhiteSpace(templateId))
+            throw new ArgumentException("自定义报告模板仅支持 PDF 或 Word 导出。");
         if (format == "xlsx") return File(store.ExportSpreadsheet(record), SpreadsheetType, $"评价报告-{record.Id}.xlsx");
-        if (format == "pdf") return File(store.ExportPdf(record), "application/pdf", $"评价报告-{record.Id}.pdf");
-        if (format == "docx") return File(store.ExportDocx(record), EvaluationDocxBuilder.ContentType, $"评价报告-{record.Id}.docx");
+        if (format == "pdf") return File(store.ExportPdf(record, templateId), "application/pdf", $"评价报告-{record.Id}.pdf");
+        if (format == "docx") return File(store.ExportDocx(record, templateId), EvaluationDocxBuilder.ContentType, $"评价报告-{record.Id}.docx");
         throw new ArgumentException("报告格式仅支持 xlsx、pdf 或 docx。");
     });
 

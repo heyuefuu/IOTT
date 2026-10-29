@@ -1,4 +1,5 @@
 import { onBeforeUnmount, readonly, ref } from "vue";
+import { AUTH_TOKEN_KEY } from "@/api/machineConnectionClient";
 import {
 	HubConnectionBuilder,
 	HubConnectionState,
@@ -48,7 +49,9 @@ export function useDeviceDataHub(
 	const connect = async (): Promise<void> => {
 		if (connection) return;
 		const conn = new HubConnectionBuilder()
-			.withUrl(`${hubBase}/hubs/device-data`)
+			.withUrl(`${hubBase}/hubs/device-data`, {
+				accessTokenFactory: () => localStorage.getItem(AUTH_TOKEN_KEY) ?? "",
+			})
 			.withAutomaticReconnect()
 			.configureLogging(LogLevel.Warning)
 			.build();

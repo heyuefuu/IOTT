@@ -119,14 +119,15 @@
 						v-model="currentService.type"
 						placeholder="请选择服务类型"
 					>
-						<el-option label="Modbus服务器（TCP 回显验证）" value="ModbusServer" />
-						<el-option label="OPC UA服务器（TCP 回显验证）" value="OPCUAServer" />
-						<el-option label="MQTT代理（TCP 回显验证）" value="MQTTBroker" />
-						<el-option label="REST服务器（TCP 回显验证）" value="RESTServer" />
+						<el-option label="Modbus TCP服务器（寄存器/线圈读写）" value="ModbusServer" />
+						<el-option label="OPC UA服务器（标准节点/数值读写）" value="OPCUAServer" />
+						<el-option label="MQTT代理（发布/订阅）" value="MQTTBroker" />
+						<el-option label="REST服务器（JSON读写）" value="RESTServer" />
+						<el-option label="TCP回显（仅连通性）" value="TCPServer" />
 						<el-option label="FTP 服务器（真实 FTP 协议）" value="FtpServer" />
 					</el-select>
 					<div v-if="currentService.type !== 'FtpServer'" class="type-hint">
-						非 FTP 类型仅验证 TCP 连通性（接受连接并回显数据），不实现对应协议语义，请勿用真实协议客户端做业务测试。
+						Modbus支持FC01/02/03/04/05/06/15/16；REST支持GET /data和PUT /data?address=0&amp;value=1；MQTT支持实际发布/订阅。
 					</div>
 				</el-form-item>
 				<el-form-item label="端口" prop="port" required>
@@ -138,14 +139,14 @@
 						style="width: 200px"
 					/>
 				</el-form-item>
-				<template v-if="currentService.type === 'FtpServer'">
-					<el-form-item label="FTP 用户名" prop="username" required>
+				<template v-if="['FtpServer', 'MQTTBroker'].includes(currentService.type)">
+					<el-form-item label="用户名" prop="username" :required="currentService.type === 'FtpServer'">
 						<el-input
 							v-model="currentService.username"
 							placeholder="必填，匿名登录已禁用"
 						/>
 					</el-form-item>
-					<el-form-item label="FTP 密码" prop="password" :required="!isEditing">
+					<el-form-item label="密码" prop="password" :required="!isEditing && currentService.type === 'FtpServer'">
 						<el-input
 							v-model="currentService.password"
 							type="password"
@@ -153,7 +154,7 @@
 							:placeholder="isEditing ? '留空保持原密码' : '必填'"
 						/>
 					</el-form-item>
-					<el-form-item label="本地存储目录" prop="rootDirectory">
+					<el-form-item v-if="currentService.type === 'FtpServer'" label="本地存储目录" prop="rootDirectory">
 						<el-input v-model="currentService.rootDirectory" clearable placeholder="留空使用临时存储">
 							<template #append>
 								<el-button @click="openDirectoryDialog">选择目录</el-button>

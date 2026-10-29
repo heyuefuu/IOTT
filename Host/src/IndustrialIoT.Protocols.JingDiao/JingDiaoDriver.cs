@@ -22,6 +22,7 @@ public sealed partial class JingDiaoDriver :
     private int disposed;
     private string sessionId = "";
     private ConnectionState state = ConnectionState.Disconnected;
+    private DeviceConnectionConfig? addressSpaceConfig;
 
     public JingDiaoDriver(ILogger<JingDiaoDriver> logger, IJingDiaoClient? client = null)
     {
@@ -44,6 +45,7 @@ public sealed partial class JingDiaoDriver :
         {
             ObjectDisposedException.ThrowIf(disposed != 0, this);
             if (state == ConnectionState.Connected) return new() { Success = true };
+            addressSpaceConfig = config with { ExtendedProperties = new(config.ExtendedProperties) };
             await ReleaseConnectionAsync(CancellationToken.None);
             options = JingDiaoOptions.From(config);
             SetState(ConnectionState.Connecting);

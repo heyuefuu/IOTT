@@ -21,7 +21,7 @@ using ProtocolType = IndustrialIoT.Domain.Enums.ProtocolType;
 ///   整机快照: FANUC_DATA  (返回 JSON 字符串)
 /// </summary>
 [ProtocolDriver(ProtocolType.FanucRobot, "FANUC", "发那科", "Robot", "机器人", "CRX", "M-", "R-", "LR")]
-public sealed class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
+public sealed partial class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
 {
     private static readonly Regex IoRegex = new(
         @"^(?<area>SDO|SDI|RDO|RDI|SO|SI|UO|UI|WO|WI|GO|GI|AO|AI)(?<idx>\d+)$",
@@ -66,6 +66,7 @@ public sealed class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
 
         try
         {
+            _registers = FanucRegisterMap.From(config);
             var client = new FanucInterfaceNet(config.Host, config.Port == 0 ? 60008 : config.Port)
             {
                 ConnectTimeOut = (int)config.ConnectTimeout.TotalMilliseconds,
@@ -158,6 +159,8 @@ public sealed class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
         try
         {
             var resolved = CrxAlias.TryGetValue(address.Trim(), out var alias) ? alias : address.Trim();
+            if (_registers.TryGetValue(resolved, out var register))
+                return await WriteRegisterAsync(dataType, value, register, ct);
             var m = IoRegex.Match(resolved);
             if (!m.Success)
                 return new() { Success = false, ErrorMessage = $"FANUC 机器人不支持写入地址 '{address}'" };
@@ -205,10 +208,13 @@ public sealed class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
             {
                 Folder("IO", "数字/组 IO"),
                 Folder("DATA", "状态数据 (FanucData 属性)"),
+                Folder("REG", "已配置 SNPX 寄存器映射"),
                 Folder("CRX", "CRX 协作机器人 UOP 信号别名"),
                 Variable("FANUC_DATA", "整机状态快照 (JSON)", DataType.String, writable: false),
             };
         }
+        else if (parentPath.Equals("REG", StringComparison.OrdinalIgnoreCase))
+            nodes = _registers.Values.Select(RegisterNode).ToArray();
         else if (parentPath.Equals("CRX", StringComparison.OrdinalIgnoreCase))
         {
             nodes = CrxAlias
@@ -258,6 +264,9 @@ public sealed class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
 
     public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+        if (format == ExportFormat.JSON) return ExportRegisterCatalogJsonAsync(ct);
+        if (format != ExportFormat.CSV) throw new NotSupportedException("FANUC robot catalogs support CSV and JSON.");
         var sb = new StringBuilder();
         sb.AppendLine("Path,DisplayName,DataType,Readable,Writable");
         string[] boolAreas = { "SDO", "SDI", "RDO", "RDI", "SO", "SI", "UO", "UI", "WO", "WI" };
@@ -274,6 +283,8 @@ public sealed class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
         foreach (var p in typeof(FanucData).GetProperties())
             sb.AppendLine($"DATA:{p.Name},{p.Name},String,True,False");
         sb.AppendLine("FANUC_DATA,整机快照,String,True,False");
+        foreach (var register in _registers.Values)
+            sb.AppendLine($"{register.Address},{register.NativeAddress},{register.DataType},True,{register.Writable}");
 
         Stream s = new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
         return Task.FromResult(s);
@@ -285,6 +296,7 @@ public sealed class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
         if (string.IsNullOrWhiteSpace(address)) return false;
         var normalized = address.Trim();
         if (CrxAlias.ContainsKey(normalized)) return true;
+        if (Regex.IsMatch(normalized, @"^REG:[A-Za-z0-9_.-]{1,100}$")) return true;
         if (normalized.Equals("FANUC_DATA", StringComparison.OrdinalIgnoreCase)) return true;
         if (normalized.StartsWith("DATA:", StringComparison.OrdinalIgnoreCase))
         {
@@ -307,6 +319,8 @@ public sealed class FanucRobotDriver : IProtocolDriver, IAddressSpaceBrowser
         var client = _client!;
         var normalized = address.Trim();
         if (CrxAlias.TryGetValue(normalized, out var aliased)) normalized = aliased;
+        if (_registers.TryGetValue(normalized, out var register))
+            return await ReadRegisterAsync(address, dataType, register);
 
         if (normalized.Equals("FANUC_DATA", StringComparison.OrdinalIgnoreCase))
         {

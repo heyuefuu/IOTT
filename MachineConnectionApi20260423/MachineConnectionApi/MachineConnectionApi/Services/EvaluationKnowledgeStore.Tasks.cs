@@ -20,7 +20,7 @@ public sealed partial class EvaluationKnowledgeStore
     private static bool CanImport(VerifyRunResponse? run) =>
         run is { Metrics.Count: > 0, MachineSnapshot: not null, EvaluationSnapshot: not null }
         && !string.IsNullOrWhiteSpace(run.RunId)
-        && run.Status is "completed" or "failed" or "error" or "cancelled" or "canceled"
+        && run.Status is "completed" or "failed" or "stopped" or "error" or "cancelled" or "canceled"
         && DateTimeOffset.TryParse(run.CompletedAt, out _)
         && run.Metrics.All(metric => metric is not null)
         && HasValidSnapshot(run.EvaluationSnapshot);
@@ -125,6 +125,9 @@ public sealed partial class EvaluationKnowledgeStore
             MachineName = machine.Name, MachineNo = machine.DeviceCode, MachineModel = machine.Model,
             ControlSystem = machine.ControlSystem, TestDate = RunDate(run), Category = category, Snapshot = snapshot,
             DataSource = "sync", SyncTaskId = task.Id, SyncRunId = run.RunId,
+            DataDeviceIds = IndustrialIoT.Security.DeviceReferenceReader.Read(JsonSerializer.SerializeToElement(run.OptionsSnapshot))
+                .Concat(new[] { run.DeviceId ?? "", machine.Id }).Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal).ToArray(),
             CategoryWeights = snapshot.Indicators.ToDictionary(section => section.Id, section => section.Weight),
             SubCategoryWeights = snapshot.Indicators.SelectMany(section => section.Children).ToDictionary(child => child.Id, child => child.Weight),
             Weights = items.ToDictionary(item => item.Id, item => item.Weight),

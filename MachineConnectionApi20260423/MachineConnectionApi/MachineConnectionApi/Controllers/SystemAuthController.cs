@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
 [Route("api/system/auth")]
-public sealed class SystemAuthController : ControllerBase
+public sealed partial class SystemAuthController : ControllerBase
 {
     private readonly IAuthService _auth;
 

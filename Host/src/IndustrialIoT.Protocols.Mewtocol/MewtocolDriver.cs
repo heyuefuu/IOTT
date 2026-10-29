@@ -8,6 +8,7 @@ using HslCommunication.Profinet.Panasonic;
 using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Domain.ValueObjects;
 using IndustrialIoT.Protocols.Abstractions;
+using IndustrialIoT.Protocols.Addressing;
 using IndustrialIoT.Protocols.Models;
 using IndustrialIoT.Protocols.Registration;
 using Microsoft.Extensions.Logging;
@@ -135,7 +136,10 @@ public class MewtocolDriver : IProtocolDriver, IAddressRangeBrowser
 
     public async Task<TagValue> ReadTagAsync(string address, DataType dataType, CancellationToken ct = default)
     {
-        if (dataType is DataType.Int8 or DataType.UInt8 || !Enum.IsDefined(dataType))
+        if (dataType is DataType.Int8 or DataType.UInt8)
+            return await HslWordByteAccess.ReadAsync(word => GetReadWriteNet().ReadUInt16Async(word), _semaphore, address, dataType,
+                word => MapAddress(word, DataType.UInt16), ct);
+        if (!Enum.IsDefined(dataType))
             return BadTag(address, dataType, $"Mewtocol does not support {dataType}; use an explicit word or bit type.");
         EnsureConnected();
         string mappedAddress = MapAddress(address, dataType);
@@ -209,7 +213,11 @@ public class MewtocolDriver : IProtocolDriver, IAddressRangeBrowser
     public async Task<WriteResult> WriteTagAsync(
         string address, DataType dataType, object value, CancellationToken ct = default)
     {
-        if (dataType is DataType.Int8 or DataType.UInt8 || !Enum.IsDefined(dataType))
+        if (dataType is DataType.Int8 or DataType.UInt8)
+            return await HslWordByteAccess.WriteAsync(word => GetReadWriteNet().ReadUInt16Async(word),
+                (word, merged) => GetReadWriteNet().WriteAsync(word, merged), _semaphore, address, dataType, value,
+                word => MapAddress(word, DataType.UInt16), ct);
+        if (!Enum.IsDefined(dataType))
             return new() { Success = false, ErrorMessage = $"Mewtocol does not support {dataType}; use an explicit word or bit type." };
         EnsureConnected();
         string mappedAddress = MapAddress(address, dataType);

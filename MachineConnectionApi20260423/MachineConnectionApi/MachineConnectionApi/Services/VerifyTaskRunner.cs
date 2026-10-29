@@ -12,6 +12,8 @@ public interface IVerifyTaskRunner
     Task<VerifyTaskDto?> StartTaskAsync(string taskId, string trigger, CancellationToken ct);
     /// <summary>Replay completed results whose final task-store write failed; never repeat measurements.</summary>
     Task RetryPendingResultsAsync(CancellationToken ct);
+    Task<VerifyTaskControlResult?> ControlAsync(string taskId, string runId, string action, CancellationToken ct) =>
+        Task.FromException<VerifyTaskControlResult?>(new InvalidOperationException("任务执行器不支持运行控制"));
 }
 
 /// <summary>同一任务已在执行中（进程内互斥），重复提交被拒绝。</summary>
@@ -23,7 +25,7 @@ public sealed class VerifyTaskAlreadyRunningException : InvalidOperationExceptio
 public sealed class VerifyTaskCapacityException(string message) : InvalidOperationException(message);
 
 /// <summary>手动运行（控制器）与定时调度共用的任务执行入口。</summary>
-public sealed class VerifyTaskRunner : IVerifyTaskRunner
+public sealed partial class VerifyTaskRunner : IVerifyTaskRunner
 {
     public const int MaxConcurrentTasks = 7;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -34,8 +36,11 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
     private readonly IDeviceStore? _devices;
     private readonly CancellationToken _shutdown;
     private readonly ConcurrentDictionary<string, byte> _runningTasks = new();
+    private readonly ConcurrentDictionary<string, Execution> _executions = new();
     private readonly VerifyExecutionLeaseService _leases;
     private readonly VerifyTaskCompletionJournal? _journal;
+    private readonly IHttpContextAccessor? _requestContext;
+    private readonly IAuthService? _authorization;
     private readonly ConcurrentDictionary<string, VerifyTaskPendingCompletion> _pending = new();
     private readonly SemaphoreSlim _completionGate = new(1, 1);
 
@@ -52,6 +57,7 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
         public VerifyTaskDto Accepted { get; set; } = task;
         public Exception? SelectionError { get; set; }
         public IDisposable? Lease { get; set; }
+        public VerifyTaskExecutionControl Control { get; } = new();
     }
 
     public VerifyTaskRunner(
@@ -62,7 +68,9 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
         IDeviceStore? devices = null,
         IHostApplicationLifetime? lifetime = null,
         VerifyExecutionLeaseService? leases = null,
-        VerifyTaskCompletionJournal? completionJournal = null)
+        VerifyTaskCompletionJournal? completionJournal = null,
+        IHttpContextAccessor? requestContext = null,
+        IAuthService? authorization = null)
     {
         _store = store;
         _verifyService = verifyService;
@@ -71,16 +79,21 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
         _shutdown = lifetime?.ApplicationStopping ?? CancellationToken.None;
         _leases = leases ?? new VerifyExecutionLeaseService(configuration, devices);
         _journal = completionJournal;
+        _requestContext = requestContext;
+        _authorization = authorization;
     }
 
     public async Task<VerifyTaskDto?> RunTaskAsync(string taskId, string trigger, CancellationToken ct)
     {
+        using var delegated = AuthDelegationContext.Push(ExecutionIdentity(taskId, trigger));
         var execution = await BeginAsync(taskId, trigger, ct);
         return execution is null ? null : await ExecuteAndReleaseAsync(execution, trigger, ct);
     }
 
     public async Task<VerifyTaskDto?> StartTaskAsync(string taskId, string trigger, CancellationToken ct)
     {
+        var identity = ExecutionIdentity(taskId, trigger);
+        using var delegated = AuthDelegationContext.Push(identity);
         var execution = await BeginAsync(taskId, trigger, ct);
         if (execution is null) return null;
         var accepted = execution.Accepted;
@@ -88,6 +101,7 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
         // browser must not abort a 30-minute stability test. Shutdown is recovered on next startup.
         _ = Task.Run(async () =>
         {
+            using var backgroundIdentity = AuthDelegationContext.Push(identity);
             try { await ExecuteAndReleaseAsync(execution, trigger, _shutdown); }
             catch (Exception ex) { WriteActivity("error", trigger, execution.Task.Name + "：" + ex.Message); }
         });
@@ -106,7 +120,7 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
             await RetryPendingResultsAsync(ct);
             var original = _store.ReadAll().SingleOrDefault(row => row.Id == taskId);
             if (original is null) { _runningTasks.TryRemove(taskId, out _); return null; }
-            if (original.Status == "running") throw new VerifyTaskAlreadyRunningException();
+            if (IsActive(original.Status)) throw new VerifyTaskAlreadyRunningException();
             var now = DateTimeOffset.Now;
             if (trigger == "定时" && original.LastAutoRunAt is { } previousAutoRun && previousAutoRun.ToOffset(now.Offset).Date >= now.Date)
             {
@@ -140,7 +154,7 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
             {
                 var index = rows.FindIndex(x => x.Id == taskId);
                 if (index < 0) return null;
-                if (rows[index].Status == "running") throw new VerifyTaskAlreadyRunningException();
+                if (IsActive(rows[index].Status)) throw new VerifyTaskAlreadyRunningException();
                 // Resolving the upstream registry is async: an edit during that await must invalidate
                 // this reservation, not run the new configuration with the old target keys.
                 if (JsonSerializer.Serialize(rows[index], JsonOptions) != originalJson)
@@ -160,6 +174,8 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
                 return null;
             }
             value.Accepted = accepted;
+            value.Control.StateChanged = state => PersistControl(value, state);
+            _executions[taskId] = value;
             return value;
         }
         catch
@@ -185,6 +201,7 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
                     Options = execution.Task.Options is null ? new VerifyRunOptions()
                         : JsonSerializer.Deserialize<VerifyRunOptions>(JsonSerializer.Serialize(execution.Task.Options, JsonOptions), JsonOptions),
                     ReportProgress = snapshot => PersistProgress(execution, snapshot),
+                    ExecutionControl = execution.Control,
                 }, ct);
             }
             catch (Exception ex)
@@ -192,7 +209,8 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
                 lock (execution.Gate)
                 {
                     response = JsonSerializer.Deserialize<VerifyRunResponse>(execution.Snapshot, JsonOptions) ?? new();
-                    Interrupt(response, ex is OperationCanceledException ? "执行中断" : "执行失败", ex.Message);
+                    Interrupt(response, execution.Control.StopRequested ? "已停止" : ex is OperationCanceledException ? "执行中断" : "执行失败", ex.Message);
+                    if (execution.Control.StopRequested) response.Status = "stopped";
                 }
             }
             return await CompleteAsync(execution, response, trigger);
@@ -200,8 +218,10 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
         finally
         {
             lock (execution.Gate) execution.Finished = true;
+            _executions.TryRemove(execution.Task.Id, out _);
             execution.Lease?.Dispose();
             _runningTasks.TryRemove(execution.Task.Id, out _);
+            execution.Control.Finish(execution.Control.StopRequested ? "stopped" : "finished");
         }
     }
 
@@ -220,12 +240,13 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
                 owned.TaskName = execution.Task.Name;
                 owned.OptionsSnapshot = execution.Task.Options ?? new VerifyRunOptions();
                 owned.ProgressPercent = Math.Clamp(owned.ProgressPercent, 0, 100);
+                if (IsActive(execution.Control.State)) owned.Status = execution.Control.State;
                 var json = JsonSerializer.Serialize(owned, JsonOptions);
                 execution.Snapshot = json;
                 execution.Progress = owned.ProgressPercent;
                 _store.Update(rows =>
                 {
-                    var index = rows.FindIndex(x => x.Id == execution.Task.Id && x.ActiveRunId == execution.Id && x.Status == "running");
+                    var index = rows.FindIndex(x => x.Id == execution.Task.Id && x.ActiveRunId == execution.Id && IsActive(x.Status));
                     if (index >= 0) rows[index] = rows[index] with { CurrentRunJson = json };
                     return 0;
                 });
@@ -250,7 +271,12 @@ public sealed class VerifyTaskRunner : IVerifyTaskRunner
             response.RunId = execution.Id;
             response.TaskName = execution.Task.Name;
             response.OptionsSnapshot = execution.Task.Options ?? new VerifyRunOptions();
-            if (response.Status is not ("completed" or "failed"))
+            if (execution.Control.StopRequested)
+            {
+                Interrupt(response, "已停止", "用户停止本轮运行；已完成指标证据保留，未完成指标不计分。");
+                response.Status = "stopped";
+            }
+            if (response.Status is not ("completed" or "failed" or "stopped"))
                 Interrupt(response, "执行失败", "验证服务未返回已结束的运行结果");
             if (string.IsNullOrWhiteSpace(response.StartedAt)) response.StartedAt = execution.Started.ToString("O");
             if (string.IsNullOrWhiteSpace(response.CompletedAt)) response.CompletedAt = completed.ToString("O");
@@ -467,22 +493,25 @@ public static class VerifyTaskOptionsValidation
 /// 验证任务定时调度：ScheduleType=daily 的任务在每天 ScheduleTime（HH:mm）自动执行一次。
 /// 每 30 秒扫描一次任务库；同一天内不重复触发（以 LastAutoRunAt 判定）。
 /// </summary>
-public sealed class VerifyTaskSchedulerHostedService : BackgroundService
+public sealed partial class VerifyTaskSchedulerHostedService : BackgroundService
 {
     private static readonly TimeSpan ScanInterval = TimeSpan.FromSeconds(30);
 
     private readonly IVerifyTaskStore _store;
     private readonly IVerifyTaskRunner _runner;
     private readonly ILogger<VerifyTaskSchedulerHostedService> _logger;
+    private readonly ISystemActivityLog? _activityLog;
 
     public VerifyTaskSchedulerHostedService(
         IVerifyTaskStore store,
         IVerifyTaskRunner runner,
-        ILogger<VerifyTaskSchedulerHostedService> logger)
+        ILogger<VerifyTaskSchedulerHostedService> logger,
+        ISystemActivityLog? activityLog = null)
     {
         _store = store;
         _runner = runner;
         _logger = logger;
+        _activityLog = activityLog;
     }
 
     public override async Task StartAsync(CancellationToken cancellationToken)
@@ -490,6 +519,7 @@ public sealed class VerifyTaskSchedulerHostedService : BackgroundService
         // Replay full completed results BEFORE interrupting abandoned runs. If replay cannot be
         // persisted, fail startup instead of destroying recoverable evidence or accepting a new run.
         await _runner.RetryPendingResultsAsync(cancellationToken);
+        DisableUnownedSchedules();
         RecoverStaleRunningTasks();
         await base.StartAsync(cancellationToken);
     }
@@ -527,7 +557,7 @@ public sealed class VerifyTaskSchedulerHostedService : BackgroundService
                 var names = new List<string>();
                 for (var index = 0; index < rows.Count; index++)
                 {
-                    if (rows[index].Status != "running") continue;
+                    if (!VerifyTaskRunner.IsActive(rows[index].Status)) continue;
                     const string detail = "服务重启时任务仍处于运行状态，已自动结束为中断；请重新执行";
                     var previous = rows[index];
                     var lastRun = previous.LastRunJson;
@@ -597,7 +627,8 @@ public sealed class VerifyTaskSchedulerHostedService : BackgroundService
     {
         if (!string.Equals(task.ScheduleType, "daily", StringComparison.OrdinalIgnoreCase))
             return false;
-        if (task.Status == "running")
+        if (string.IsNullOrWhiteSpace(task.ScheduleOwnerUserId)) return false;
+        if (VerifyTaskRunner.IsActive(task.Status))
             return false;
         var parts = task.ScheduleTime.Split(':');
         if (parts.Length != 2 || !int.TryParse(parts[0], out var hour) || !int.TryParse(parts[1], out var minute))

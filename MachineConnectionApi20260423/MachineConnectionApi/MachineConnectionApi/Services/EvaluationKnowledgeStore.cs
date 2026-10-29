@@ -37,6 +37,7 @@ public sealed partial class EvaluationKnowledgeStore
             var draft = TaskDraft(input.SyncTaskId ?? "", input.Category);
             if (input.SyncRunId != draft.SyncRunId) throw new KnowledgeConflictException("任务结果已更新，请重新同步。");
             snapshot = draft.Snapshot;
+            input = input with { DataDeviceIds = draft.DataDeviceIds };
         }
         var now = DateTimeOffset.UtcNow;
         var item = Prepare(input with { Id = Guid.NewGuid().ToString("N"), Snapshot = snapshot,
@@ -58,7 +59,8 @@ public sealed partial class EvaluationKnowledgeStore
         if (old.Version != input.Version) throw new KnowledgeConflictException("该评价记录已更新，请刷新后重试。");
         var item = Prepare(input with { Id = id, Snapshot = old.Snapshot, Category = old.Category,
             Version = checked(old.Version + 1), CreatedAt = old.CreatedAt, UpdatedAt = DateTimeOffset.UtcNow,
-            DataSource = old.DataSource, SyncTaskId = old.SyncTaskId, SyncRunId = old.SyncRunId });
+            DataSource = old.DataSource, SyncTaskId = old.SyncTaskId, SyncRunId = old.SyncRunId,
+            DataDeviceIds = old.DataDeviceIds });
         rows[index] = item;
         return item;
     });
@@ -67,6 +69,8 @@ public sealed partial class EvaluationKnowledgeStore
 
     public static KnowledgeRecord Prepare(KnowledgeRecord input)
     {
+        if (input?.DataDeviceIds is null || input.DataDeviceIds.Count > 10000
+            || input.DataDeviceIds.Any(string.IsNullOrWhiteSpace)) throw new ArgumentException("评价记录设备范围无效。");
         if (input is null || input.Snapshot is null) throw new ArgumentException("评价指标快照不能为空。");
         EvaluationIndicatorStore.Validate(input.Snapshot);
         if (input.Category != input.Snapshot.Category) throw new ArgumentException("评价类别与指标快照不一致。");

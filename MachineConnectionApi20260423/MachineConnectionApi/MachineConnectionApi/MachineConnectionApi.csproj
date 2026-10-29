@@ -16,10 +16,14 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="FluentFTP" Version="54.0.2" />
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.134" />
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Server" Version="1.5.378.134" />
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Configuration" Version="1.5.378.134" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- 随源码分发的初始设备：网关与上游均无设备时自动加载（格式同「导出设备」文件） -->
+    <ProjectReference Include="../../../Shared/IndustrialIoT.Security/IndustrialIoT.Security.csproj" />
     <Content Update="SeedData\**" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../../Shared/Messaging/*.cs" Link="Messaging/%(Filename)%(Extension)" />
   </ItemGroup>

@@ -1,4 +1,5 @@
 import { createMachineConnectionClient } from "./machineConnectionClient";
+import { reportExportError } from "./reportExportError";
 import type { EvaluationCategory, EvaluationConfig } from "./evaluation";
 
 const baseURL =
@@ -52,7 +53,7 @@ export interface VerifyRunResponse {
     runId: string;
     taskId?: string;
     taskName: string;
-    status: "completed" | "failed" | "pending" | "running";
+    status: "completed" | "failed" | "pending" | "running" | "pausing" | "paused" | "stopping" | "stopped";
     result: string;
     detail: string;
     startedAt: string;
@@ -154,6 +155,13 @@ export const machineConnectionVerifyApi = {
         return (await client.post<VerifyTaskRunResult[]>("/api/verify/tasks/start-batch", taskIds, { timeout: 30_000 })).data;
     },
 
+    async controlTask(id: string, runId: string, action: 'pause' | 'resume' | 'stop'):
+        Promise<{ task: VerifyTaskDto; applied: boolean; status: string; responseMs: number }> {
+        return (await client.post(`/api/verify/tasks/${enc(id)}/${action}`, undefined, {
+            params: { runId }, timeout: 10_000,
+        })).data;
+    },
+
     /** 导出最近一次已结束运行的实测、评分、配置快照及证据。 */
     async exportTaskResult(id: string): Promise<{ blob: Blob; fileName: string }> {
         const res = await client.get(`/api/verify/tasks/${enc(id)}/export`, {
@@ -167,16 +175,16 @@ export const machineConnectionVerifyApi = {
             : (plain?.[2]?.trim() ?? `验证报告-${id}.xlsx`);
         return { blob: res.data as Blob, fileName };
     },
-    async exportTaskPdf(id: string): Promise<{ blob: Blob; fileName: string }> {
+    async exportTaskPdf(id: string, templateId?: string): Promise<{ blob: Blob; fileName: string }> {
         const res = await client.get(`/api/verify/tasks/${enc(id)}/export`, {
-            params: { format: 'pdf' }, responseType: 'blob',
-        });
+            params: { format: 'pdf', templateId: templateId || undefined }, responseType: 'blob',
+        }).catch(reportExportError);
         return { blob: res.data as Blob, fileName: `验证报告-${id}.pdf` };
     },
-    async exportTaskDocx(id: string): Promise<{ blob: Blob; fileName: string }> {
+    async exportTaskDocx(id: string, templateId?: string): Promise<{ blob: Blob; fileName: string }> {
         const res = await client.get(`/api/verify/tasks/${enc(id)}/export`, {
-            params: { format: 'docx' }, responseType: 'blob',
-        });
+            params: { format: 'docx', templateId: templateId || undefined }, responseType: 'blob',
+        }).catch(reportExportError);
         return { blob: res.data as Blob, fileName: `验证报告-${id}.docx` };
     },
 };

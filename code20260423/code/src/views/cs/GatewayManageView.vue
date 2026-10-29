@@ -119,33 +119,37 @@
 						placeholder="请选择网关类型"
 					>
 						<el-option label="Modbus网关" value="Modbus" />
-						<el-option label="OPC UA网关" value="OPCUA" />
+						<el-option label="OPC UA网关（节点读取）" value="OPCUA" />
+						<el-option label="TCP连通性（不作协议验收）" value="TCP" />
 						<el-option label="MQTT网关" value="MQTT" />
 						<el-option label="REST网关" value="REST" />
 						<el-option label="FTP" value="FTP" />
 					</el-select>
 				</el-form-item>
-				<template v-if="currentGateway.type === 'FTP'">
-					<el-form-item label="FTP 用户名" prop="username">
+				<template v-if="['FTP', 'MQTT', 'OPCUA'].includes(currentGateway.type)">
+					<el-form-item label="用户名" prop="username">
 						<el-input
 							v-model="currentGateway.username"
 							placeholder="留空为匿名登录"
 						/>
 					</el-form-item>
-					<el-form-item label="FTP 密码" prop="password">
+					<el-form-item label="密码" prop="password">
 						<el-input
 							v-model="currentGateway.password"
 							type="password"
 							show-password
 						/>
 					</el-form-item>
-					<el-form-item label="远程目录" prop="remotePath">
+					<el-form-item v-if="currentGateway.type === 'FTP'" label="远程目录" prop="remotePath">
 						<el-input
 							v-model="currentGateway.remotePath"
 							placeholder="默认根目录 /"
 						/>
 					</el-form-item>
 				</template>
+				<el-form-item label="协议请求配置">
+					<el-input v-model="currentGateway.probeConfig" type="textarea" placeholder='Modbus: {"unit":1,"address":0,"count":1}；REST: {"path":"/data"}' />
+				</el-form-item>
 				<el-form-item label="描述" prop="description">
 					<el-input
 						v-model="currentGateway.description"
@@ -216,6 +220,7 @@ const currentGateway = reactive<CsGateway>({
 	username: "",
 	password: "",
 	remotePath: "",
+	probeConfig: "",
 	description: "",
 	status: "停止",
 	lastHeartbeat: "",
@@ -249,6 +254,7 @@ const openAddGatewayDialog = () => {
 		username: "",
 		password: "",
 		remotePath: "",
+		probeConfig: "",
 		description: "",
 		status: "停止",
 		lastHeartbeat: "",
@@ -259,7 +265,7 @@ const openAddGatewayDialog = () => {
 // 打开编辑网关对话框
 const openEditGatewayDialog = (gateway: CsGateway) => {
 	isEditing.value = true;
-	Object.assign(currentGateway, { ...gateway });
+	Object.assign(currentGateway, { probeConfig: "", ...gateway });
 	gatewayDialogVisible.value = true;
 };
 
@@ -293,7 +299,7 @@ const saveGateway = async () => {
 // 连通探测：对网关地址真实 TCP connect 并测 RTT（客户端模式没有可“启动”的常驻进程）
 const startGateway = (gateway: CsGateway) => {
 	ElMessageBox.confirm(
-		`对网关 ${gateway.name}（${gateway.ip}:${gateway.port}）发起 TCP 连通探测？`,
+		`对网关 ${gateway.name}（${gateway.ip}:${gateway.port}）发起 ${gateway.type} 实际请求验证？`,
 		"连通探测",
 		{ confirmButtonText: "探测", cancelButtonText: "取消", type: "info" },
 	)
@@ -301,7 +307,7 @@ const startGateway = (gateway: CsGateway) => {
 			try {
 				const r = await csApi.probeGateway(gateway.id);
 				if (r.success) {
-					ElMessage.success(`网关 ${gateway.name} 连通，RTT ${r.rttMs}ms`);
+					ElMessage.success(`验证通过，RTT ${r.rttMs}ms：${r.message}`);
 				} else {
 					ElMessage.warning(`网关 ${gateway.name} 不可达：${r.message}`);
 				}

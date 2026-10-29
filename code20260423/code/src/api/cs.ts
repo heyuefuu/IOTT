@@ -1,4 +1,5 @@
 import { createMachineConnectionClient } from "./machineConnectionClient";
+import { reportExportError } from "./reportExportError";
 
 /** 与 machineConnection* 系列一致：经 /machine-connection 反代到 MachineConnectionApi。 */
 const baseURL =
@@ -17,6 +18,7 @@ export interface CsGateway {
     ip: string;
     port: number;
     type: string;
+    probeConfig?: string;
     username?: string;
     password?: string;
     remotePath?: string;
@@ -108,6 +110,7 @@ export interface CsParallelReportRequest {
     connectionMode?: string;
     durationSeconds?: number;
     generatedAt?: string;
+    templateId?: string;
 }
 
 const P = "/api/cs";
@@ -180,5 +183,5 @@ export const csApi = {
     ): Promise<Blob> =>
         (await client.post(`${P}/parallel-test/report/${format}`, req, {
             responseType: "blob",
-        })).data,
+        }).catch(reportExportError)).data,
 };

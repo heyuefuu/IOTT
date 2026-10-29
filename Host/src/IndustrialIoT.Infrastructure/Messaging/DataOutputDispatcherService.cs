@@ -7,7 +7,7 @@ using IndustrialIoT.Protocols.Pipeline;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-public class DataOutputDispatcherService : BackgroundService
+public partial class DataOutputDispatcherService : BackgroundService
 {
     private readonly ICollectionPipeline _pipeline;
     private readonly IEnumerable<IDataOutput> _outputs;
@@ -21,7 +21,7 @@ public class DataOutputDispatcherService : BackgroundService
         ILogger<DataOutputDispatcherService> logger)
     {
         _pipeline = pipeline;
-        _outputs = outputs;
+        _outputs = outputs.ToArray();
         _logger = logger;
     }
 
@@ -37,6 +37,12 @@ public class DataOutputDispatcherService : BackgroundService
         // Initialize all outputs
         foreach (var output in _outputs)
         {
+            if (output is LocalHistoryDataOutput)
+            {
+                await RetryHistoryAsync(output, null, stoppingToken);
+                _errorCounts.TryAdd(output.Name, 0);
+                continue;
+            }
             try
             {
                 await output.InitializeAsync(stoppingToken);
@@ -52,9 +58,15 @@ public class DataOutputDispatcherService : BackgroundService
         var reader = _pipeline.GetOutputReader();
         _logger.LogInformation("DataOutputDispatcher reading from pipeline channel");
 
-        await foreach (var batch in reader.ReadAllAsync(stoppingToken))
+        var durableOutputs = _outputs.OfType<LocalHistoryDataOutput>().Where(output => output.Policy.Enabled).ToArray();
+        while (await reader.WaitToReadAsync(stoppingToken))
         {
-            await DispatchBatchAsync(batch, stoppingToken);
+            if (!reader.TryRead(out var first)) continue;
+            var batches = durableOutputs.Length == 0 ? new[] { first }
+                : await ReadMicroBatchAsync(reader, first, stoppingToken);
+            foreach (var history in durableOutputs)
+                await RetryHistoryGroupAsync(history, batches, stoppingToken);
+            foreach (var batch in batches) await DispatchBatchAsync(batch, stoppingToken);
         }
 
         // Graceful shutdown: flush all outputs
@@ -78,7 +90,8 @@ public class DataOutputDispatcherService : BackgroundService
     private async Task DispatchBatchAsync(CollectedDataBatch batch, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var tasks = _outputs.Select(output => DispatchToOutputAsync(output, batch, ct));
+        var tasks = _outputs.Where(output => output is not LocalHistoryDataOutput)
+            .Select(output => DispatchToOutputAsync(output, batch, ct));
         await Task.WhenAll(tasks);
         sw.Stop();
 
@@ -106,6 +119,27 @@ public class DataOutputDispatcherService : BackgroundService
             _errorCounts.AddOrUpdate(output.Name, 1, (_, count) => count + 1);
             _logger.LogError(ex, "Output {Name} failed for device {DeviceId} group {Group}",
                 output.Name, batch.DeviceId, batch.GroupName);
+        }
+    }
+
+    private async Task RetryHistoryAsync(IDataOutput output, CollectedDataBatch? batch, CancellationToken ct)
+    {
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                if (batch is null) await output.InitializeAsync(ct);
+                else await output.WriteAsync(batch, ct);
+                return;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception error)
+            {
+                _errorCounts.AddOrUpdate(output.Name, 1, (_, count) => count + 1);
+                _logger.LogError(error, "Durable local history failed; dispatch paused and will retry without dropping the current batch");
+                await Task.Delay(TimeSpan.FromSeconds(1), ct);
+            }
         }
     }
 }

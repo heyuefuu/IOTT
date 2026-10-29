@@ -71,14 +71,12 @@ public sealed partial class CsConnectivityService : ICsConnectivityService, IDis
     internal static bool IsFtp(string? type) => string.Equals(type, "FTP", StringComparison.OrdinalIgnoreCase);
     internal static bool IsMqttGateway(string? type) => string.Equals(type, "MQTT", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>按网关类型分派探测：FTP 真实登录、MQTT 真实 CONNECT/CONNACK，其余为 TCP 建连验证。</summary>
+    /// <summary>按协议验证实际响应；TCP 仅显式选择时作为连通性检查。</summary>
     private Task<CsProbeResult> ProbeGatewayByTypeAsync(CsGateway gw, bool ftpFullRoundTrip, int timeoutMs, CancellationToken ct)
     {
         if (IsFtp(gw.Type)) return ProbeFtpClientAsync(gw, ftpFullRoundTrip, ct);
-        if (IsMqttGateway(gw.Type))
-            return ProbeMqttCoreAsync(gw.Ip, gw.Port, timeoutMs, useTls: false,
-                gw.Username, gw.Password, clientId: null, ct);
-        return ProbeTcpAsync(gw.Ip, gw.Port, timeoutMs, ct);
+        if (gw.Type.Equals("TCP", StringComparison.OrdinalIgnoreCase)) return ProbeTcpAsync(gw.Ip, gw.Port, timeoutMs, ct);
+        return ProbeApplicationAsync(gw, gw.ProbeConfig, timeoutMs, ct);
     }
 
     // ---- 网关（客户端连接目标）----

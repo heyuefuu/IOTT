@@ -42,6 +42,10 @@ public static class InfrastructureServiceExtensions
             configuration.GetSection(HttpWebhookOutputOptions.SectionName).Bind(options));
 
         // Data output — implementations
+        services.Configure<LocalHistoryOptions>(options =>
+            configuration.GetSection(LocalHistoryOptions.SectionName).Bind(options));
+        services.AddSingleton<LocalHistoryDataOutput>();
+        services.AddSingleton<IDataOutput>(sp => sp.GetRequiredService<LocalHistoryDataOutput>());
         services.AddSingleton<MqttDataOutput>();
         services.AddSingleton<IDataOutput>(sp => sp.GetRequiredService<MqttDataOutput>());
         services.AddHostedService(sp => sp.GetRequiredService<MqttDataOutput>());

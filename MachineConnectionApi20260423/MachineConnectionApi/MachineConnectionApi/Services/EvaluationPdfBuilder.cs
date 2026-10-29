@@ -26,13 +26,13 @@ public static class EvaluationPdfBuilder
 
     /// <summary>Column widths are positive relative weights, fitted to the printable A4 width.</summary>
     public static byte[] BuildReport(string title, IEnumerable<string> introduction,
-        IEnumerable<EvaluationPdfTable> tables, IEnumerable<string>? closing = null)
+        IEnumerable<EvaluationPdfTable> tables, IEnumerable<string>? closing = null, bool markdown = false)
     {
         var font = PdfFont.Load();
         var layout = new ReportLayout(title, font);
-        layout.AddParagraphs(introduction);
+        layout.AddParagraphs(introduction, markdown);
         foreach (var table in tables) layout.AddTable(table);
-        if (closing is not null) layout.AddParagraphs(closing);
+        if (closing is not null) layout.AddParagraphs(closing, markdown);
         return BuildDocument(layout.Pages, layout.Text, font);
     }
 
@@ -68,15 +68,22 @@ public static class EvaluationPdfBuilder
             _y -= 19;
         }
 
-        public void AddParagraphs(IEnumerable<string> paragraphs)
+        public void AddParagraphs(IEnumerable<string> paragraphs, bool markdown = false)
         {
             foreach (var paragraph in paragraphs)
             {
-                foreach (var line in Wrap(paragraph, Width / 10, _font))
+                var text = paragraph?.Trim() ?? "";
+                var prefix = markdown && text.StartsWith("### ", StringComparison.Ordinal) ? 4
+                    : markdown && text.StartsWith("## ", StringComparison.Ordinal) ? 3 : 0;
+                var size = prefix > 0 ? 11 : 10;
+                var height = prefix > 0 ? 17 : 15;
+                if (prefix > 0 && _y - Wrap(text[prefix..], Width / size, _font).Count() * height - 5 - 15 < Bottom)
+                    NewPage();
+                foreach (var line in Wrap(prefix > 0 ? text[prefix..] : paragraph, Width / size, _font))
                 {
-                    if (_y - 15 < Bottom) NewPage();
-                    TextAt(line, Left, _y - 10, 10);
-                    _y -= 15;
+                    if (_y - height < Bottom) NewPage();
+                    TextAt(line, Left, _y - size, size);
+                    _y -= height;
                 }
                 _y -= 5;
             }

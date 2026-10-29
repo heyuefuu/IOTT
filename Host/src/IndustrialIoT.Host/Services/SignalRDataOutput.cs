@@ -13,13 +13,15 @@ public class SignalRDataOutput : IDataOutput
 {
     private readonly IHubContext<DeviceDataHub> _hubContext;
     private readonly ILogger<SignalRDataOutput> _logger;
+    private readonly DeviceDataSubscriptions _subscriptions;
 
     public SignalRDataOutput(
         IHubContext<DeviceDataHub> hubContext,
-        ILogger<SignalRDataOutput> logger)
+        ILogger<SignalRDataOutput> logger, DeviceDataSubscriptions subscriptions)
     {
         _hubContext = hubContext;
         _logger = logger;
+        _subscriptions = subscriptions;
     }
 
     public string Name => "SignalR";
@@ -32,8 +34,9 @@ public class SignalRDataOutput : IDataOutput
 
     public async Task WriteAsync(CollectedDataBatch batch, CancellationToken ct)
     {
-        var groupName = $"device:{batch.DeviceId}";
-        await _hubContext.Clients.Group(groupName)
+        var recipients = await _subscriptions.RecipientsAsync(batch.DeviceId, ct);
+        if (recipients.Count == 0) return;
+        await _hubContext.Clients.Clients(recipients)
             .SendAsync("DeviceDataReceived", batch, ct);
     }
 

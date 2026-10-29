@@ -32,6 +32,13 @@ public sealed partial class CsConnectivityService
         public ConcurrentDictionary<string, CsServerConnection> Connections { get; } = new();
         /// <summary>FtpServer 模式的内存文件区（文件名→内容）。</summary>
         public ConcurrentDictionary<string, byte[]> FtpFiles { get; } = new();
+        public ushort[] Registers { get; } = new ushort[65536];
+        public bool[] Coils { get; } = new bool[65536];
+        public ushort[] InputRegisters { get; } = new ushort[65536];
+        public bool[] DiscreteInputs { get; } = new bool[65536];
+        public MQTTnet.Server.MqttServer? Broker { get; init; }
+        public Opc.Ua.Server.StandardServer? OpcUa { get; set; }
+        public ConcurrentDictionary<string, byte> BrokerReservations { get; } = new();
     }
 
     public IReadOnlyList<CsServerService> ListServers() => _servers.Values.OrderBy(s => s.Name).ToList();
@@ -82,12 +89,16 @@ public sealed partial class CsConnectivityService
         lock (_configurationGate)
         {
             if (!_servers.TryGetValue(id, out var svc)) return false;
+            if (!new[] { "FtpServer", "ModbusServer", "RESTServer", "TCPServer", "MQTTBroker", "OPCUAServer" }.Contains(svc.Type, StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"服务类型 {svc.Type} 尚未配置真实协议服务，禁止以 TCP 回显代替协议验证");
             if (IsFtpServer(svc.Type) &&
                 (string.IsNullOrWhiteSpace(svc.Username) || string.IsNullOrEmpty(svc.Password)))
                 throw new InvalidOperationException(
                     "FTP 服务端必须配置非空用户名和密码，匿名登录默认禁用");
             svc.MaxClients = NormalizeMaxClients(svc.MaxClients);
             if (_serverRuntimes.ContainsKey(id)) return true; // 已在运行
+            if (svc.Type.Equals("MQTTBroker", StringComparison.OrdinalIgnoreCase)) return StartBroker(svc);
+            if (svc.Type.Equals("OPCUAServer", StringComparison.OrdinalIgnoreCase)) return StartOpcUaServer(svc);
 
             string? rootDirectory = null;
             if (IsFtpServer(svc.Type) && !string.IsNullOrWhiteSpace(svc.RootDirectory))
@@ -143,6 +154,16 @@ public sealed partial class CsConnectivityService
         if (_serverRuntimes.TryRemove(id, out var rt))
         {
             rt.Cts.Cancel();
+            if (rt.OpcUa is not null)
+            {
+                try { rt.OpcUa.StopAsync(default).GetAwaiter().GetResult(); }
+                finally { rt.OpcUa.Dispose(); }
+            }
+            if (rt.Broker is not null)
+            {
+                try { rt.Broker.StopAsync(new MQTTnet.Server.MqttServerStopOptions()).GetAwaiter().GetResult(); }
+                finally { rt.Broker.Dispose(); }
+            }
             lock (_ftpStorageGate)
             {
                 var released = rt.FtpFiles.Values.Sum(x => x.LongLength);
@@ -204,6 +225,16 @@ public sealed partial class CsConnectivityService
             using (client)
             await using (var stream = client.GetStream())
             {
+                if (svc.Type.Equals("ModbusServer", StringComparison.OrdinalIgnoreCase))
+                {
+                    await ServeModbusAsync(stream, runtime, ct);
+                    return;
+                }
+                if (svc.Type.Equals("RESTServer", StringComparison.OrdinalIgnoreCase))
+                {
+                    await ServeRestAsync(stream, runtime, ct);
+                    return;
+                }
                 int n;
                 while ((n = await stream.ReadAsync(buffer, ct)) > 0)
                 {

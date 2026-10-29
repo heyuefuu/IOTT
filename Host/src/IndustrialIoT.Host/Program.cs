@@ -70,7 +70,15 @@ builder.Services.AddSingleton<IProtocolDriverFactory, ProtocolDriverFactory>();
 IndustrialIoT.Host.ProtocolDriverRegistration.RegisterRealDrivers(builder.Services, registry);
 
 // API
-builder.Services.AddControllers()
+builder.Services.AddScoped<HostDataScopeFilter>();
+builder.Services.AddSingleton<HostAccessValidator>();
+builder.Services.AddSingleton<DeviceDataSubscriptions>();
+builder.Services.AddHttpClient("BusinessAuthorization", client =>
+{
+    client.BaseAddress = new Uri((builder.Configuration["MachineConnectionApi:BaseUrl"] ?? "http://localhost:5087").TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(5);
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddControllers(options => options.Filters.AddService<HostDataScopeFilter>())
     .AddJsonOptions(opts =>
     {
         opts.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
@@ -120,6 +128,8 @@ using (var scope = app.Services.CreateScope())
 // Middleware
 app.UseSerilogRequestLogging();
 app.UseCors();
+app.Use((context, next) => context.RequestServices.GetRequiredService<HostAccessValidator>()
+    .AuthenticateAsync(context, next));
 
 // A client that gives up mid-request cancels the request token, which surfaces as
 // OperationCanceledException. That is not a server fault — log it as a warning and answer

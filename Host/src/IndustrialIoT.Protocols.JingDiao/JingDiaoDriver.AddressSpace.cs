@@ -3,11 +3,19 @@ namespace IndustrialIoT.Protocols.JingDiao;
 using System.Text;
 using System.Text.Json;
 using IndustrialIoT.Domain.Enums;
+using IndustrialIoT.Protocols.Addressing;
 using IndustrialIoT.Protocols.Models;
 
 public sealed partial class JingDiaoDriver
 {
     public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
+        => MacroCatalog().BrowseAsync(parentPath, ct);
+
+    private CncMacroRangeBrowser MacroCatalog() => new(addressSpaceConfig ?? new() { Host = "", Port = 0 },
+        "Macro", int.MaxValue - 1, number => $"Macro:{number}", _ => true, BrowseControllerAsync,
+        minimum: 0, requireExplicitRanges: true);
+
+    private Task<IReadOnlyList<AddressNode>> BrowseControllerAsync(string? parentPath, CancellationToken ct)
     {
         IReadOnlyList<AddressNode> nodes = string.IsNullOrWhiteSpace(parentPath) || parentPath == "/"
             ? RootNodes
@@ -16,17 +24,7 @@ public sealed partial class JingDiaoDriver
     }
 
     public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
-    {
-        if (format == ExportFormat.JSON)
-            return Task.FromResult<Stream>(new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(
-                RootNodes.SelectMany(root => ChildNodes(root.Path.Trim('/'))))));
-        if (format != ExportFormat.CSV) throw new NotSupportedException($"Unsupported export format: {format}");
-        var sb = new StringBuilder("Path,DisplayName,DataType,Readable,Writable\n");
-        foreach (var root in RootNodes)
-        foreach (var node in ChildNodes(root.Path.Trim('/')))
-            sb.AppendLine($"{node.Path},{node.DisplayName},{node.DataType},{node.IsReadable},{node.IsWritable}");
-        return Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString())));
-    }
+        => MacroCatalog().ExportAddressSpaceAsync(format, ct);
 
     private static readonly IReadOnlyList<AddressNode> RootNodes =
     [

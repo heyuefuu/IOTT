@@ -109,12 +109,12 @@ export function useKnowledgeRecords() {
     catch (error) { showError(error, '下载模板失败'); }
     finally { exporting.value = false; }
   }
-  async function exportRecord(record: KnowledgeRecord | null, format: 'xlsx' | 'pdf' | 'docx' = 'xlsx') {
-    if (!record) return;
+  async function exportRecord(record: KnowledgeRecord | null, format: 'xlsx' | 'pdf' | 'docx' = 'xlsx', templateId?: string) {
+    if (!record || exporting.value) return;
     exporting.value = true;
     try {
       const name = record.machineName.replace(/[\\/:*?"<>|]/g, '_');
-      downloadBlob(await evaluationApi.exportRecord(record.id, format), `${name}_评价报告.${format}`);
+      downloadBlob(await evaluationApi.exportRecord(record.id, format, format === 'xlsx' ? undefined : templateId), `${name}_评价报告.${format}`);
     } catch (error) { showError(error, '导出评价报告失败'); }
     finally { exporting.value = false; }
   }

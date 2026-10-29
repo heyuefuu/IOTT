@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Domain.ValueObjects;
 using IndustrialIoT.Protocols.Abstractions;
+using IndustrialIoT.Protocols.Addressing;
 using IndustrialIoT.Protocols.Models;
 using IndustrialIoT.Protocols.Registration;
 using Microsoft.Extensions.Logging;
@@ -561,7 +562,14 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
         return [];
     }
 
-    public async Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
+    public Task<IReadOnlyList<AddressNode>> BrowseAsync(string? parentPath = null, CancellationToken ct = default)
+        => MacroCatalog().BrowseAsync(parentPath, ct);
+
+    private CncMacroRangeBrowser MacroCatalog() => new(_config ?? new() { Host = "", Port = 0 }, "/CNC/Macro", 32767,
+        number => $"/CNC/Macro/{number}", path => int.TryParse(path.Split('/')[^1], out var number)
+            && number is >= 100 and <= 199 or >= 500 and <= 999, BrowseControllerAsync);
+
+    private async Task<IReadOnlyList<AddressNode>> BrowseControllerAsync(string? parentPath, CancellationToken ct)
     {
         var cncMemoryNodes = BrowseCncMemoryPaths(parentPath);
         if (cncMemoryNodes is not null)
@@ -591,16 +599,8 @@ public sealed class FocasDriver : IProtocolDriver, IAddressSpaceBrowser, IProgra
         return nodes;
     }
 
-    public async Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("Path,DisplayName,DataType,Readable,Writable");
-
-        await ExportRecursive(sb, null, ct);
-
-        Stream stream = new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
-        return stream;
-    }
+    public Task<Stream> ExportAddressSpaceAsync(ExportFormat format, CancellationToken ct = default)
+        => MacroCatalog().ExportAddressSpaceAsync(format, ct);
 
     // ───────────────────────── Dispose ─────────────────────────
 

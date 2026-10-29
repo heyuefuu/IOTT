@@ -1,6 +1,5 @@
 namespace MachineConnectionApi.Controllers;
 
-using System.Net;
 using MachineConnectionApi.Models;
 using MachineConnectionApi.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -9,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 [Route("api/report-templates")]
 public sealed class ReportTemplatesController : ControllerBase
 {
-    private static readonly JsonFileStore<ReportTemplateDto> Store = new("report-templates.json");
+    private static readonly ReportTemplateStore Store = ReportTemplateStore.Default;
 
     [HttpGet]
     public ActionResult<IReadOnlyList<ReportTemplateDto>> List([FromQuery] string? type, [FromQuery] string? keyword)
@@ -25,56 +24,37 @@ public sealed class ReportTemplatesController : ControllerBase
     [HttpPost]
     public ActionResult<ReportTemplateDto> Create([FromBody] ReportTemplateDto input)
     {
-        var item = input with { Id = Guid.NewGuid().ToString("N"), CreatedAt = DateTimeOffset.Now };
-        Store.Update(rows => { rows.Add(item); return 0; });
-        return Ok(item);
+        try { return Ok(Store.Create(input)); }
+        catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
     }
 
     [HttpPut("{id}")]
     public ActionResult<ReportTemplateDto> Update(string id, [FromBody] ReportTemplateDto input)
     {
-        var item = Store.Update<ReportTemplateDto?>(rows =>
+        try
         {
-            var index = rows.FindIndex(x => x.Id == id);
-            if (index < 0) return null;
-            rows[index] = input with { Id = id, CreatedAt = rows[index].CreatedAt };
-            return rows[index];
-        });
-        return item is null ? NotFound() : Ok(item);
+            var item = Store.Update(id, input);
+            return item is null ? NotFound() : Ok(item);
+        }
+        catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
     }
 
     [HttpDelete("{id}")]
     public IActionResult Delete(string id)
     {
-        var removed = Store.Update(rows => rows.RemoveAll(x => x.Id == id) > 0);
+        var removed = Store.Delete(id);
         return removed ? NoContent() : NotFound();
     }
 
     [HttpPost("{id}/preview")]
     public ActionResult<TemplatePreviewResponse> Preview(string id)
     {
-        var template = Store.ReadAll().FirstOrDefault(x => x.Id == id);
-        return template is null ? NotFound() : Ok(new TemplatePreviewResponse(RenderMarkdown(template.Content)));
-    }
-
-    private static string RenderMarkdown(string content)
-    {
-        var html = new List<string>();
-        var inList = false;
-        void CloseList() { if (inList) { html.Add("</ul>"); inList = false; } }
-        foreach (var raw in content.Split('\n'))
+        try
         {
-            var line = raw.TrimEnd('\r');
-            if (line.StartsWith("### ")) { CloseList(); html.Add($"<h3>{Esc(line[4..])}</h3>"); }
-            else if (line.StartsWith("## ")) { CloseList(); html.Add($"<h2>{Esc(line[3..])}</h2>"); }
-            else if (line.StartsWith("# ")) { CloseList(); html.Add($"<h1>{Esc(line[2..])}</h1>"); }
-            else if (line.StartsWith("- ")) { if (!inList) { html.Add("<ul>"); inList = true; } html.Add($"<li>{Esc(line[2..])}</li>"); }
-            else if (!string.IsNullOrWhiteSpace(line)) { CloseList(); html.Add($"<p>{Esc(line)}</p>"); }
-            else CloseList();
+            var template = Store.Require(id);
+            return Ok(new TemplatePreviewResponse(ReportTemplateRenderer.Preview(template.Content)));
         }
-        CloseList();
-        return string.Join("", html);
+        catch (KeyNotFoundException error) { return NotFound(new { error = error.Message }); }
+        catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
     }
-
-    private static string Esc(string value) => WebUtility.HtmlEncode(value);
 }

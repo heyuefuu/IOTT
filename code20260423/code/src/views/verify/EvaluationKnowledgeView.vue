@@ -56,7 +56,7 @@
       <div class="pagination-bar"><span class="selection-count">已选 {{ selectedCount }} 条（表头可全选本页）</span><el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next" :total="filteredRecords.length" /></div>
     </el-card>
     <knowledge-editor v-model:visible="editorVisible" :draft="draft" :saving="saving" :busy="syncing || categoryLoading" @save="saveRecord" @sync="taskVisible = true" @category-change="changeCategory" />
-    <knowledge-details v-model:visible="detailVisible" :record="detail" :exporting="exporting" @export="format => exportRecord(detail, format)" />
+    <knowledge-details v-model:visible="detailVisible" :record="detail" :exporting="exporting" @export="(format, templateId) => exportRecord(detail, format, templateId)" />
     <knowledge-transfer v-model:task-visible="taskVisible" v-model:import-visible="importVisible" :syncing="syncing" :category="editorVisible ? draft?.category : currentCategory" :resyncing="Boolean(draft?.id)" @sync="syncTask" @imported="loadRecords" />
   </div>
 </template>

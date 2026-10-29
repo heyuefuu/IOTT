@@ -17,7 +17,7 @@
       <el-descriptions-item v-if="run?.optionsSnapshot" label="本轮文件写入">{{ run.optionsSnapshot.allowFileWrites ? '已显式许可（不执行 NC）' : '未许可，只读' }}</el-descriptions-item>
       <el-descriptions-item v-if="run?.optionsSnapshot" label="本轮并发目标">{{ run.optionsSnapshot.concurrentDeviceIds?.join('、') || '未配置' }}</el-descriptions-item>
     </el-descriptions>
-    <el-alert v-if="isRunning" type="info" :closable="false" show-icon title="任务在后台执行，下面展示本轮真实进度；关闭页面不会中断测试。" description="上一轮完整结果保留至本轮结束，不用旧记录填充本轮实测。" />
+    <el-alert v-if="isRunning" type="info" :closable="false" show-icon :title="`任务${taskStatusLabels[task.status] || task.status}，下面展示本轮真实进度。`" description="暂停会取消当前测量，继续时重新测量该指标；已完成指标保留。关闭页面不会中断测试。" />
     <el-alert v-if="task.status === 'pending' && run" type="warning" :closable="false" title="当前展示上次运行结果；修改后的任务配置需重新执行才会产生新结果。" />
     <template v-if="run || isRunning">
       <div class="run-summary" aria-live="polite">
@@ -69,9 +69,9 @@
 import { computed } from 'vue';
 import type { VerifyMetricResult, VerifyTaskDto } from '@/api/machineConnectionVerify';
 import type { DeviceDto } from '@/api/machineConnectionDevices';
-import { metricExecutionLabels, taskRun, taskScore, taskStatusLabels, taskStatusType, taskTime } from './taskModel';
+import { isActiveTaskStatus, metricExecutionLabels, taskRun, taskScore, taskStatusLabels, taskStatusType, taskTime } from './taskModel';
 const props = defineProps<{ task: VerifyTaskDto; machine?: DeviceDto }>();
-const isRunning = computed(() => props.task.status === 'running');
+const isRunning = computed(() => isActiveTaskStatus(props.task.status));
 const run = computed(() => taskRun(props.task));
 const historicalMachine = computed(() => run.value?.machineSnapshot);
 const displayMetrics = computed<VerifyMetricResult[]>(() => run.value?.metrics ?? (isRunning.value ? props.task.metricIds.map(metricId => ({

@@ -1,4 +1,5 @@
 import { createMachineConnectionClient } from './machineConnectionClient'
+import { reportExportError } from './reportExportError'
 import type { VerifyMetricResult } from './machineConnectionVerify'
 
 export type EvaluationCategory = 'machine' | 'machining'
@@ -95,7 +96,9 @@ export const evaluationApi = {
         form.append('file', file)
         return (await client.post<KnowledgeImportResult>(`${base}/records/import`, form)).data
     },
-    async exportRecord(id: string, format: 'xlsx' | 'pdf' | 'docx'): Promise<Blob> {
-        return (await client.get(`${base}/records/${enc(id)}/export`, { params: { format }, responseType: 'blob' })).data
+    async exportRecord(id: string, format: 'xlsx' | 'pdf' | 'docx', templateId?: string): Promise<Blob> {
+        return (await client.get(`${base}/records/${enc(id)}/export`, {
+            params: { format, templateId: format === 'xlsx' ? undefined : templateId || undefined }, responseType: 'blob',
+        }).catch(reportExportError)).data
     },
 }

@@ -64,7 +64,14 @@ builder.Services.AddSingleton<IVerifyTaskRunner, VerifyTaskRunner>();
 builder.Services.AddHostedService<VerifyTaskSchedulerHostedService>();
 
 builder.Services.AddScoped<BusinessApiAuthorizationFilter>();
-builder.Services.AddControllers(options => options.Filters.AddService<BusinessApiAuthorizationFilter>());
+builder.Services.AddScoped<BusinessDataScopeFilter>();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.AddService<BusinessApiAuthorizationFilter>();
+    options.Filters.AddService<BusinessDataScopeFilter>();
+});
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<IndustrialIoTAuthorizationHandler>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -76,7 +83,8 @@ builder.Services.AddHttpClient("IndustrialIoT", client =>
 {
     client.BaseAddress = new Uri(industrialBase);
     client.Timeout = TimeSpan.FromMinutes(5);
-});
+}).AddHttpMessageHandler<IndustrialIoTAuthorizationHandler>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
 builder.Services.AddHttpClient(MachineConnectionApi.Controllers.TelemetryInfluxController.InfluxHttpClientName, client =>
 {

@@ -255,6 +255,13 @@
                 </el-form-item>
 
                 <template v-if="deviceForm.deviceType === 'CNC'">
+                    <el-form-item v-if="['FOCAS', 'HaasMdc', 'JingDiao'].includes(deviceForm.protocol)" label="宏变量范围">
+                        <div style="width: 100%">
+                            <el-input v-model="deviceForm.addressSpaceRanges" type="textarea" :rows="2"
+                                placeholder='[{"area":"MACRO","start":100,"end":999}]' />
+                            <div class="form-tip">填写实际点表范围，支持分页浏览和全量导出。精雕须配置；其他协议留空使用协议地址范围，实际可读性以控制器为准。</div>
+                        </div>
+                    </el-form-item>
                     <el-divider content-position="center">程序文件传输配置</el-divider>
                     <el-form-item label="传输协议" prop="transferProtocol">
                         <el-select v-model="deviceForm.transferProtocol" placeholder="请选择文件传输协议" style="width: 100%" @change="onTransferProtocolChange">
@@ -1009,6 +1016,7 @@ interface DeviceUi {
     connectTimeoutMs: number;
     readTimeoutMs: number;
     axisLabels: string;
+    addressSpaceRanges?: string;
     authType: string;
     username?: string;
     password?: string;
@@ -1139,6 +1147,7 @@ function mapDtoToUi(d: DeviceDto): DeviceUi {
         connectTimeoutMs: d.connectTimeoutMs ?? 10000,
         readTimeoutMs: d.readTimeoutMs ?? 5000,
         axisLabels: ext.AxisLabels ?? "",
+        addressSpaceRanges: ext.AddressSpaceRanges ?? "",
         authType: d.username ? "password" : "anonymous",
         username: d.username ?? "",
         password: "",
@@ -1185,7 +1194,9 @@ function buildExtendedProps(form: Record<string, unknown>): Record<string, strin
     }
     const editableKeys: Record<string, string[]> = {
         CAN: ["CanTransport", "PortName", "BaudRate", "CanBitRate", "DataBits", "Parity", "StopBits", "Handshake"],
-        FOCAS: ["AxisLabels"],
+        FOCAS: ["AxisLabels", "AddressSpaceRanges"],
+        HaasMdc: ["AddressSpaceRanges"],
+        JingDiao: ["AddressSpaceRanges"],
         OpcUa: ["EndpointUrl", "UseSecurity", "AutoAcceptUntrustedCerts", "RejectSHA1SignedCertificates", "SuppressNonceValidationErrors"],
         NCLink: ["DeviceGuid", "Brand", "MqttBrokerHost", "MqttBrokerPort", "MqttUsername", "MqttPassword"],
         NCLinkApi: ["DeviceId", "ApiBaseUrl"],
@@ -1201,6 +1212,10 @@ function buildExtendedProps(form: Record<string, unknown>): Record<string, strin
     const line = String(form.line ?? "").trim();
     if (line) ext.Line = line;
     const brand = String(form.brand ?? "").trim();
+    if (["FOCAS", "HaasMdc", "JingDiao"].includes(protocol)) {
+        const ranges = String(form.addressSpaceRanges ?? "").trim();
+        if (ranges) ext.AddressSpaceRanges = ranges;
+    }
     if (brand) ext.uiBrandKey = inferBrandKey(brand);
 
     if (protocol === "CAN") {
@@ -3882,6 +3897,7 @@ function treeDefaultsForNewDevice(): Record<string, unknown> {
 }
 
 const deviceForm = ref({
+    addressSpaceRanges: "",
     id: "",
     name: "",
     deviceType: "CNC" as DeviceTypeApi,
@@ -4002,6 +4018,7 @@ const openAddDeviceDialog = () => {
         connectTimeoutMs: 10000,
         readTimeoutMs: 5000,
         axisLabels: "X,Y,Z,A,B,C",
+        addressSpaceRanges: "",
         uploadPath: "",
         authType: "anonymous",
         username: "",
@@ -4068,6 +4085,7 @@ const editDevice = (device: DeviceUi) => {
         connectTimeoutMs: device.connectTimeoutMs,
         readTimeoutMs: device.readTimeoutMs,
         axisLabels: device.axisLabels,
+        addressSpaceRanges: device.addressSpaceRanges ?? "",
         uploadPath: device.uploadPath ?? "",
         authType: device.authType,
         username: device.username ?? "",
@@ -4185,6 +4203,20 @@ const saveDevice = async () => {
     if (f.protocol === "MTConnect" && f.mtWriteEndpointUrl.trim()) {
         if (!/^https?:\/\/[^\s]+$/i.test(f.mtWriteEndpointUrl.trim()) || !f.mtWriteAddresses.trim()) {
             ElMessage.warning("厂商写接口需填写有效的 HTTP(S) URL 和可写点位");
+            return;
+        }
+    }
+    if (["FOCAS", "HaasMdc", "JingDiao"].includes(f.protocol) && f.addressSpaceRanges.trim()) {
+        try {
+            const ranges: unknown = JSON.parse(f.addressSpaceRanges);
+            const maximum = f.protocol === "FOCAS" ? 32767 : f.protocol === "HaasMdc" ? 99999 : 2147483646;
+            if (!Array.isArray(ranges) || ranges.length !== 1 || ranges[0]?.area !== "MACRO"
+                || !Number.isInteger(ranges[0]?.start) || !Number.isInteger(ranges[0]?.end)
+                || ranges[0].start < (f.protocol === "JingDiao" ? 0 : 1) || ranges[0].end < ranges[0].start
+                || ranges[0].end > maximum || ranges[0].end - ranges[0].start + 1 > 1000000)
+                throw new Error("invalid macro range");
+        } catch {
+            ElMessage.warning("宏变量范围须为一个 MACRO 区域，start/end 为有效整数，总点数不超过100万");
             return;
         }
     }

@@ -7,7 +7,7 @@ import { businessValidationApi } from '@/api/businessValidation';
 import { machineConnectionDevicesApi, type DeviceDto } from '@/api/machineConnectionDevices';
 import { machineConnectionVerifyApi, type VerifyTaskDto } from '@/api/machineConnectionVerify';
 import { downloadBlob } from '@/api/browserDownload';
-import { newTask, taskMetricOptions, taskRun, type TaskMetricOption } from './taskModel';
+import { isActiveTaskStatus, newTask, taskMetricOptions, taskRun, type TaskMetricOption } from './taskModel';
 
 function reportError(error: unknown, fallback: string) {
   const message = isAxiosError(error) ? error.response?.data?.error || error.response?.data?.message || error.message : error instanceof Error ? error.message : fallback;
@@ -23,10 +23,11 @@ export function useTaskWorkbench() {
   const loading = ref(false);
   const saving = ref(false);
   const executingIds = ref(new Set<string>());
+  const controllingIds = ref(new Set<string>());
   const selectedTaskIds = ref<string[]>([]);
   const maxParallelTasks = 7;
   const runningTaskCount = computed(() => new Set([
-    ...executingIds.value, ...tasks.value.filter(task => task.status === 'running').map(task => task.id),
+    ...executingIds.value, ...tasks.value.filter(task => isActiveTaskStatus(task.status)).map(task => task.id),
   ]).size);
   let taskRevision = 0;
   let taskFetchVersion = 0;
@@ -64,7 +65,7 @@ export function useTaskWorkbench() {
   const expandedRows = ref<string[]>([]);
   const machineFor = (task: VerifyTaskDto) => machines.value.find(machine => machine.id === (task.machineId || task.deviceId));
   const metricsFor = (task: VerifyTaskDto) => categoryMetrics.value[task.evaluationCategory ?? 'machine'];
-  const isTaskRunning = (task: VerifyTaskDto) => executingIds.value.has(task.id) || task.status === 'running';
+  const isTaskRunning = (task: VerifyTaskDto) => executingIds.value.has(task.id) || isActiveTaskStatus(task.status);
   function targetKeys(task: VerifyTaskDto) {
     const registry = targetDevices.value.length ? targetDevices.value : machines.value;
     const keys = new Set<string>();
@@ -141,7 +142,7 @@ export function useTaskWorkbench() {
     const previous = new Map(tasks.value.map(task => [task.id, task]));
     tasks.value = taskList.map(task => executingIds.value.has(task.id) ? previous.get(task.id) ?? { ...task, status: 'running' } : task);
     for (const task of tasks.value) {
-      if (previous.get(task.id)?.status === 'running' && task.status !== 'running') {
+      if (isActiveTaskStatus(previous.get(task.id)?.status ?? '') && !isActiveTaskStatus(task.status)) {
         if (task.status === 'completed') ElMessage.success(`“${task.name}”执行已完成；验收结论：${task.result || '待判定'}`);
         else if (task.status === 'failed') ElMessage.warning(`“${task.name}”执行失败或中断：${task.detail}`);
       }
@@ -298,11 +299,24 @@ export function useTaskWorkbench() {
     } catch (error) { if (error !== 'cancel' && error !== 'close') reportError(error, '删除任务失败'); }
   }
   function viewResult(task: VerifyTaskDto) { selectedTask.value = task; resultVisible.value = true; }
-  async function exportTask(task: VerifyTaskDto, format: 'xlsx' | 'pdf' | 'docx' = 'xlsx') {
+  async function controlTask(task: VerifyTaskDto, action: 'pause' | 'resume' | 'stop') {
+    if (controllingIds.value.has(task.id) || !task.activeRunId) return;
+    controllingIds.value.add(task.id);
+    taskRevision++;
+    try {
+      const outcome = await machineConnectionVerifyApi.controlTask(task.id, task.activeRunId, action);
+      replaceTask(outcome.task);
+      if (outcome.applied) ElMessage.success(action === 'pause' ? '已暂停；继续时重新测量当前指标' : action === 'resume' ? '已继续执行' : '本轮已停止，实测证据已保存');
+      else ElMessage.warning('控制请求已受理，正在等待在途操作清理；请以任务实际状态为准');
+    } catch (error) { reportError(error, '任务控制未确认，请刷新核对实际状态'); }
+    finally { controllingIds.value.delete(task.id); await refreshTasks(); }
+  }
+  async function exportTask(task: VerifyTaskDto, format: 'xlsx' | 'pdf' | 'docx' = 'xlsx', templateId?: string) {
+    if (exportingId.value) return;
     exportingId.value = task.id;
     try {
-      const file = format === 'pdf' ? await machineConnectionVerifyApi.exportTaskPdf(task.id)
-        : format === 'docx' ? await machineConnectionVerifyApi.exportTaskDocx(task.id)
+      const file = format === 'pdf' ? await machineConnectionVerifyApi.exportTaskPdf(task.id, templateId)
+        : format === 'docx' ? await machineConnectionVerifyApi.exportTaskDocx(task.id, templateId)
         : await machineConnectionVerifyApi.exportTaskResult(task.id);
       downloadBlob(file.blob, file.fileName);
     } catch (error) { reportError(error, '导出验证报告失败'); }
@@ -310,14 +324,14 @@ export function useTaskWorkbench() {
   }
   function canImport(task: VerifyTaskDto) {
     const run = taskRun(task);
-    return Boolean(task.status !== 'running' && run?.completedAt && ['completed', 'failed'].includes(run.status)
+    return Boolean(!isActiveTaskStatus(task.status) && run?.completedAt && ['completed', 'failed', 'stopped'].includes(run.status)
       && run.machineSnapshot && run.evaluationSnapshot && run.metrics.length);
   }
   function importKnowledge(task: VerifyTaskDto) {
     if (!canImport(task)) return void ElMessage.warning('该任务旧结果未保存评价指标和机床快照，请重新执行后导入');
     void router.push({ path: '/verify/knowledge', query: { taskId: task.id } });
   }
-  return { tasks, machines, metrics, loading, saving, executingIds, selectedTaskIds, runningTaskCount, maxParallelTasks,
+  return { tasks, machines, metrics, loading, saving, executingIds, controllingIds, controlTask, selectedTaskIds, runningTaskCount, maxParallelTasks,
     isTaskRunning, onSelectionChange, executeSelectedTasks, exportingId, editorVisible, resultVisible,
     progressError, lastPolledAt, refreshTasks, startPolling, stopPolling,
     draft, selectedTask, expandedRows, machineFor, metricsFor, selectCategory, loadPage, addTask, editTask, saveTask, executeTask, deleteTask, viewResult, exportTask, canImport, importKnowledge };

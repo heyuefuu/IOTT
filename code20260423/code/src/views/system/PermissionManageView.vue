@@ -1,6 +1,7 @@
 <template>
 	<div class="system-permission-manage-view">
 		<h2 class="page-title">权限管理</h2>
+		<RoleDataScopes />
 
 		<el-card class="permission-manage-card">
 			<template #header>
@@ -141,6 +142,11 @@
 						inactive-value="禁用"
 					/>
 				</el-form-item>
+				<el-form-item label="数据范围">
+					<span v-if="currentUser.role === 'admin'">管理员可访问全部设备</span>
+					<DeviceScopeEditor v-else :model-value="currentUser.dataScope ?? null"
+						@update:model-value="currentUser.dataScope = $event" />
+				</el-form-item>
 			</el-form>
 			<template #footer>
 				<span class="dialog-footer">
@@ -191,6 +197,8 @@
 import { ref, reactive, computed, onMounted } from "vue";
 import { Plus } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import DeviceScopeEditor from "./DeviceScopeEditor.vue";
+import RoleDataScopes from "./RoleDataScopes.vue";
 import {
 	businessSystemApi,
 	type AppUserDto,
@@ -224,6 +232,7 @@ const currentUser = reactive<User>({
 	role: "viewer",
 	status: "启用",
 	permissions: ["data_read"],
+	dataScope: null,
 	lastLogin: "",
 });
 
@@ -240,6 +249,7 @@ const createEmptyUser = (): User => ({
 	role: "viewer",
 	status: "启用",
 	permissions: ["data_read"],
+	dataScope: null,
 	lastLogin: "",
 });
 

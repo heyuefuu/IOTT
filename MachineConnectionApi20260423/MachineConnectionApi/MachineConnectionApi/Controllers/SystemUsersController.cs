@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
 [Route("api/system/users")]
-public sealed class SystemUsersController : ControllerBase
+public sealed partial class SystemUsersController : ControllerBase
 {
     private static readonly PermissionDto[] Permissions =
     [
@@ -39,6 +39,8 @@ public sealed class SystemUsersController : ControllerBase
     [HttpPost]
     public ActionResult<AppUserDto> Create([FromBody] AppUserDto input)
     {
+        try { IndustrialIoT.Security.DeviceDataScope.Validate(input.DataScope); }
+        catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
         if (string.IsNullOrWhiteSpace(input.Password) || input.Password == "******")
             return BadRequest(new { error = "新用户必须设置登录密码" });
         var created = _store.Update<(bool Success, AppUserDto? Item)>(rows =>
@@ -64,6 +66,8 @@ public sealed class SystemUsersController : ControllerBase
     [HttpPut("{id}")]
     public ActionResult<AppUserDto> Update(string id, [FromBody] AppUserDto input)
     {
+        try { IndustrialIoT.Security.DeviceDataScope.Validate(input.DataScope); }
+        catch (ArgumentException error) { return BadRequest(new { error = error.Message }); }
         var item = _store.Update<AppUserDto?>(rows =>
         {
             var index = rows.FindIndex(x => x.Id == id);

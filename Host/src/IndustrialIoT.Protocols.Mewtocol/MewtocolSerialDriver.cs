@@ -9,6 +9,7 @@ using HslCommunication.Profinet.Panasonic;
 using IndustrialIoT.Domain.Enums;
 using IndustrialIoT.Domain.ValueObjects;
 using IndustrialIoT.Protocols.Abstractions;
+using IndustrialIoT.Protocols.Addressing;
 using IndustrialIoT.Protocols.Models;
 using IndustrialIoT.Protocols.Registration;
 using Microsoft.Extensions.Logging;
@@ -108,7 +109,10 @@ public sealed class MewtocolSerialDriver : IProtocolDriver, IAddressRangeBrowser
 
     public async Task<TagValue> ReadTagAsync(string address, DataType dataType, CancellationToken ct = default)
     {
-        if (dataType is DataType.Int8 or DataType.UInt8 || !Enum.IsDefined(dataType))
+        if (dataType is DataType.Int8 or DataType.UInt8)
+            return await HslWordByteAccess.ReadAsync(word => _client!.ReadUInt16Async(word), _semaphore,
+                address, dataType, MapAddress, ct);
+        if (!Enum.IsDefined(dataType))
             return BadTag(address, dataType, $"Mewtocol does not support {dataType}; use an explicit word or bit type.");
         EnsureConnected();
         var mapped = MapAddress(address);
@@ -159,7 +163,11 @@ public sealed class MewtocolSerialDriver : IProtocolDriver, IAddressRangeBrowser
 
     public async Task<WriteResult> WriteTagAsync(string address, DataType dataType, object value, CancellationToken ct = default)
     {
-        if (dataType is DataType.Int8 or DataType.UInt8 || !Enum.IsDefined(dataType))
+        if (dataType is DataType.Int8 or DataType.UInt8)
+            return await HslWordByteAccess.WriteAsync(word => _client!.ReadUInt16Async(word),
+                (word, merged) => _client!.WriteAsync(word, merged), _semaphore,
+                address, dataType, value, MapAddress, ct);
+        if (!Enum.IsDefined(dataType))
             return new() { Success = false, ErrorMessage = $"Mewtocol does not support {dataType}; use an explicit word or bit type." };
         EnsureConnected();
         var mapped = MapAddress(address);

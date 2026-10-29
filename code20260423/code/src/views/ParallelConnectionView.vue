@@ -474,16 +474,17 @@
 					</el-row>
 				</div>
 
+				<report-template-select v-model="reportTemplateId" :disabled="reportDownloading" />
 				<div class="report-actions">
-					<el-button type="primary" @click="downloadReport('pdf')">
+					<el-button type="primary" :loading="reportDownloading" @click="downloadReport('pdf')">
 						<el-icon><Download /></el-icon>
 						下载PDF报告
 					</el-button>
-					<el-button @click="downloadReport('docx')">
+					<el-button :loading="reportDownloading" @click="downloadReport('docx')">
 						<el-icon><Download /></el-icon>
 						下载Word报告
 					</el-button>
-					<el-button type="success" @click="downloadReport('html')">
+					<el-button type="success" :loading="reportDownloading" @click="downloadReport('html')">
 						<el-icon><Download /></el-icon>
 						下载HTML报告
 					</el-button>
@@ -499,6 +500,7 @@ import { Download } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { csApi, type CsParallelTestRequest, type CsParallelTestResult } from "@/api/cs";
 import { downloadBlob } from "@/api/browserDownload";
+import reportTemplateSelect from "./verify/evaluation/reportTemplateSelect.vue";
 import {
 	machineConnectionVerificationApi,
 	type BatchTestRequest,
@@ -805,12 +807,17 @@ const resetConfig = () => {
 };
 
 // 下载报告
+const reportTemplateId = ref("");
+const reportDownloading = ref(false);
 const downloadReport = async (format: "pdf" | "html" | "docx") => {
+	if (reportDownloading.value) return;
 	if (!lastParallelRequest.value || !lastParallelResult.value) {
 		ElMessage.warning("请先完成一次并行连接验证");
 		return;
 	}
 
+	const selectedTemplateId = format === "html" ? undefined : reportTemplateId.value || undefined;
+	reportDownloading.value = true;
 	try {
 		const blob = await csApi.downloadParallelReport(format, {
 			request: lastParallelRequest.value,
@@ -818,12 +825,13 @@ const downloadReport = async (format: "pdf" | "html" | "docx") => {
 			connectionMode: reportConnectionMode.value,
 			durationSeconds: testConfig.duration,
 			generatedAt: new Date().toLocaleString(),
+			templateId: selectedTemplateId,
 		});
 		downloadBlob(blob, `parallel-connection-report-${Date.now()}.${format}`);
 	} catch (e: unknown) {
 		const ax = e as { message?: string };
 		ElMessage.error(ax.message ?? "报告下载失败");
-	}
+	} finally { reportDownloading.value = false; }
 };
 
 onMounted(() => {

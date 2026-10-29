@@ -165,6 +165,10 @@ public class CsController : ControllerBase
             var report = _reportService.Generate(request, format);
             return File(report.Content, report.ContentType, report.FileName);
         }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });

@@ -15,8 +15,9 @@ public class CsGateway
     /// <summary>目标主机/IP。</summary>
     public string Ip { get; set; } = "";
     public int Port { get; set; }
-    /// <summary>协议标签：Modbus / OPCUA / MQTT / REST。当前底层统一以 TCP 连通性验证。</summary>
+    /// <summary>协议：Modbus / OPCUA / MQTT / REST / FTP / TCP；不支持的协议明确返回失败。</summary>
     public string Type { get; set; } = "Modbus";
+    public string? ProbeConfig { get; set; }
     /// <summary>FTP 登录用户名（type=FTP 时使用，留空为匿名）。</summary>
     public string? Username { get; set; }
     /// <summary>FTP 登录密码（type=FTP 时使用）。write-only：接收前端提交，不随响应回传。</summary>
@@ -43,7 +44,7 @@ public class CsDataSource
     public string Type { get; set; } = "Modbus";
     /// <summary>关联的网关 Id（探测目标来源）。</summary>
     public string GatewayId { get; set; } = "";
-    /// <summary>自由配置（如 Modbus 寄存器、OPC UA NodeId 等），当前仅作记录。</summary>
+    /// <summary>实际协议请求配置；非空时覆盖关联网关的 ProbeConfig。</summary>
     public string? Config { get; set; }
     /// <summary>探测周期（秒）。</summary>
     public int UpdateInterval { get; set; } = 5;
@@ -55,7 +56,7 @@ public class CsDataSource
     public string? LastResult { get; set; }
 }
 
-/// <summary>服务端服务：软件作为 TCP server 监听端口，等待外部客户端/设备连入。</summary>
+/// <summary>服务端服务：按选定协议监听并处理请求，等待外部客户端/设备连入。</summary>
 public class CsServerService
 {
     public string Id { get; set; } = "";
@@ -115,7 +116,7 @@ public record CsParallelTestResult(
 /// <summary>并发连接压测报告导出请求。</summary>
 public record CsParallelReportRequest(
     CsParallelTestRequest Request, CsParallelTestResult Result,
-    string? ConnectionMode = null, int DurationSeconds = 0, string? GeneratedAt = null);
+    string? ConnectionMode = null, int DurationSeconds = 0, string? GeneratedAt = null, string? TemplateId = null);
 
 /// <summary>报告文件输出。</summary>
 public record CsReportFile(string FileName, string ContentType, byte[] Content);

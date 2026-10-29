@@ -61,7 +61,7 @@ public class AddressSpaceController : ControllerBase
                 return await _browseService.BrowseAsync(
                     browser,
                     parentPath,
-                    recursive: device.Protocol == ProtocolType.FOCAS,
+                    recursive: false,
                     ct: ct);
             },
             ct);
